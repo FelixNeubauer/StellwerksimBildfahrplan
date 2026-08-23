@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import re
 import socket
 import threading
 import xml.etree.ElementTree as ET
@@ -44,6 +45,94 @@ class LineXMLFramer:
 
     def remainder(self) -> bytes:
         return bytes(self.buffer)
+
+
+@dataclass(frozen=True)
+class TrainInfo:
+    name: str
+    zid: str
+
+
+@dataclass(frozen=True)
+class ProtocolParseResult:
+    """Ergebnis einer Protokollzeile; ``element`` gibt es erst am Containerende."""
+
+    state: str
+    element: ET.Element | None = None
+    error: str | None = None
+
+
+class StellwerkSimProtocolParser:
+    """Setzt zeilenweise uebertragene XML-Container generisch zusammen.
+
+    StellwerkSim terminiert Protokollzeilen mit LF, aber eine Antwort kann aus
+    einem offenen Container, vielen Kindzeilen und einer Schlusszeile bestehen.
+    ElementTree darf daher erst das zusammengesetzte Dokument erhalten.
+    """
+
+    _OPENING_TAG = re.compile(rb"^\s*<([A-Za-z_][\w.:-]*)(?:\s[^<>]*)?>\s*$")
+    _CLOSING_TAG = re.compile(rb"^\s*</([A-Za-z_][\w.:-]*)\s*>\s*$")
+
+    def __init__(self) -> None:
+        self._container_lines: list[bytes] = []
+        self._container_tag: bytes | None = None
+        self.trains: list[TrainInfo] = []
+
+    @property
+    def in_container(self) -> bool:
+        return bool(self._container_lines)
+
+    def reset(self) -> None:
+        """Verwirft nur eine unvollstaendige Antwort, etwa nach einem Reconnect."""
+        self._container_lines.clear()
+        self._container_tag = None
+
+    def feed_line(self, raw: bytes) -> ProtocolParseResult:
+        if self._container_lines:
+            self._container_lines.append(raw)
+            document = b"\n".join(self._container_lines)
+            try:
+                element = ET.fromstring(document)
+            except (ET.ParseError, ValueError) as exc:
+                # Solange kein End-Tag vorliegt, ist ein unvollstaendiges
+                # Dokument der erwartete Zustand und kein Parserfehler.
+                closing = self._CLOSING_TAG.match(raw)
+                if closing is None or closing.group(1) != self._container_tag:
+                    return ProtocolParseResult("pending")
+                self._container_lines.clear()
+                self._container_tag = None
+                return ProtocolParseResult("error", error=str(exc))
+            self._container_lines.clear()
+            self._container_tag = None
+            self._store_response_data(element)
+            return ProtocolParseResult("complete", element=element)
+
+        try:
+            element = ET.fromstring(raw)
+        except (ET.ParseError, ValueError) as exc:
+            # Eine syntaktisch gueltige, nicht selbstschliessende Startzeile
+            # beginnt eine mehrzeilige Antwort (zugliste, wege, ...).
+            opening = self._OPENING_TAG.match(raw)
+            if opening and not raw.rstrip().endswith(b"/>"):
+                self._container_lines.append(raw)
+                self._container_tag = opening.group(1)
+                return ProtocolParseResult("pending")
+            return ProtocolParseResult("error", error=str(exc))
+        self._store_response_data(element)
+        return ProtocolParseResult("complete", element=element)
+
+    def _store_response_data(self, element: ET.Element) -> None:
+        if element.tag != "zugliste":
+            return
+        trains: list[TrainInfo] = []
+        for train in element.iter("zug"):
+            zid = train.get("zid")
+            if not zid:
+                continue
+            name = train.get("name") or train.get("zugname") or train.get("nummer") or "Unbenannter Zug"
+            trains.append(TrainInfo(name=name, zid=zid))
+        # Erst die abgeschlossene Antwort ersetzt die bisherige Auswahl.
+        self.trains = trains
 
 
 @dataclass(frozen=True)
@@ -152,6 +241,7 @@ class StellwerkSimTesterGUI:
         self.zid_var = tk.StringVar()
         self.train_var = tk.StringVar()
         self.train_ids: dict[str, str] = {}
+        self.protocol_parser = StellwerkSimProtocolParser()
         self.event_vars: dict[str, tk.BooleanVar] = {}
         self._build_gui()
         self.root.after(80, self._process_events)
@@ -213,7 +303,7 @@ class StellwerkSimTesterGUI:
         log_header.pack(fill=tk.X, pady=(6, 2))
         ttk.Label(log_header, text="6. Kommunikation / Debug-Log").pack(side=tk.LEFT)
         ttk.Button(log_header, text="Log speichern", command=self.save_log).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(log_header, text="Log leeren", command=lambda: self.log.delete("1.0", tk.END)).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(log_header, text="Log leeren", command=self.clear_log).pack(side=tk.RIGHT, padx=2)
         self.log = ScrolledText(outer, wrap=tk.NONE, state=tk.DISABLED, font=("Consolas", 10))
         self.log.pack(fill=tk.BOTH, expand=True)
 
@@ -315,6 +405,7 @@ class StellwerkSimTesterGUI:
 
     def _handle_event(self, event: ClientEvent) -> None:
         if event.kind == "connected":
+            self.protocol_parser.reset()
             self.status_var.set("Verbunden")
             self._log("VERBINDUNG", str(event.data))
         elif event.kind in {"closed", "error", "connect_error"}:
@@ -334,11 +425,15 @@ class StellwerkSimTesterGUI:
     def _handle_received(self, raw: bytes) -> None:
         text = self._decode(raw)
         self._log(f"RECEIVE << RAW ({len(raw)} Bytes)", text)
-        try:
-            element = ET.fromstring(raw)
-        except (ET.ParseError, ValueError) as exc:
-            self._log("PARSE-FEHLER", f"{exc}\nHexdump: {raw.hex(' ')}")
+        result = self.protocol_parser.feed_line(raw)
+        if result.state == "pending":
+            self._log("XML-CONTAINER", "Mehrzeilige Antwort wird gesammelt.")
             return
+        if result.state == "error":
+            self._log("PARSE-FEHLER", f"{result.error}\nHexdump: {raw.hex(' ')}")
+            return
+        element = result.element
+        assert element is not None
         parsed_lines = [f"Tag: {element.tag}", f"Attribute: {element.attrib!r}"]
         try:
             ET.indent(element, space="  ")
@@ -356,23 +451,25 @@ class StellwerkSimTesterGUI:
             category = "SERVER-FEHLER" if is_error else "SERVER-STATUS"
             self._log(category, f"Status {code}: {message}")
         if element.tag == "zugliste":
-            self._update_trains(element)
+            self._update_trains()
 
-    def _update_trains(self, root: ET.Element) -> None:
+    def _update_trains(self) -> None:
         found: dict[str, str] = {}
-        for train in root.iter("zug"):
-            zid = train.get("zid")
-            if not zid:
-                continue
-            name = train.get("name") or train.get("zugname") or train.get("nummer") or "Unbenannter Zug"
-            label = f"{name} – ZID {zid}"
+        for train in self.protocol_parser.trains:
+            label = f"{train.name} — ZID {train.zid}"
             if label in found:
                 label = f"{label} ({len(found) + 1})"
-            found[label] = zid
+            found[label] = train.zid
         self.train_ids = found
         self.train_combo["values"] = list(found)
         if found:
             self._log("KOMFORTFUNKTION", f"{len(found)} Züge für die Auswahlliste erkannt.")
+
+    def clear_log(self) -> None:
+        """Leert nur das sichtbare Log, auch wenn das Widget gesperrt ist."""
+        self.log.configure(state=tk.NORMAL)
+        self.log.delete("1.0", tk.END)
+        self.log.configure(state=tk.DISABLED)
 
     def save_log(self) -> None:
         path = filedialog.asksaveasfilename(
