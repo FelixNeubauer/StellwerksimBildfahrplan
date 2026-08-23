@@ -49,6 +49,7 @@ class ProtocolParserTests(unittest.TestCase):
         self.assertEqual(results[-1].element.tag, "zugliste")
         self.assertFalse(parser.in_container)
         self.assertTrue(all(result.error is None for result in results))
+        self.assertEqual(results[-1].raw_document, self.ZUGLISTE.rstrip(b"\n"))
 
     def test_train_list_fragmented_across_recv_calls(self):
         parser, results = self.feed_packets(

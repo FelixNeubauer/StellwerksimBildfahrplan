@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from sts_collector import STSLiveCollector
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
@@ -60,6 +62,7 @@ class ProtocolParseResult:
     state: str
     element: ET.Element | None = None
     error: str | None = None
+    raw_document: bytes | None = None
 
 
 class StellwerkSimProtocolParser:
@@ -105,7 +108,7 @@ class StellwerkSimProtocolParser:
             self._container_lines.clear()
             self._container_tag = None
             self._store_response_data(element)
-            return ProtocolParseResult("complete", element=element)
+            return ProtocolParseResult("complete", element=element, raw_document=document)
 
         try:
             element = ET.fromstring(raw)
@@ -119,7 +122,7 @@ class StellwerkSimProtocolParser:
                 return ProtocolParseResult("pending")
             return ProtocolParseResult("error", error=str(exc))
         self._store_response_data(element)
-        return ProtocolParseResult("complete", element=element)
+        return ProtocolParseResult("complete", element=element, raw_document=raw)
 
     def _store_response_data(self, element: ET.Element) -> None:
         if element.tag != "zugliste":
@@ -242,6 +245,8 @@ class StellwerkSimTesterGUI:
         self.train_var = tk.StringVar()
         self.train_ids: dict[str, str] = {}
         self.protocol_parser = StellwerkSimProtocolParser()
+        self.collector = STSLiveCollector(Path("sts_collector_state.json"))
+        self.collector_active = False
         self.event_vars: dict[str, tk.BooleanVar] = {}
         self._build_gui()
         self.root.after(80, self._process_events)
@@ -272,6 +277,7 @@ class StellwerkSimTesterGUI:
             ("Wege / Fahrwege", "<wege />"),
         ):
             ttk.Button(commands, text=label, command=lambda value=command: self.send(value)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(commands, text="Live-Collector starten", command=self.start_collector).pack(side=tk.LEFT, padx=8)
 
         train = ttk.LabelFrame(outer, text="3. Zugbezogene Abfragen", padding=6)
         train.pack(fill=tk.X, pady=(6, 0))
@@ -345,6 +351,23 @@ class StellwerkSimTesterGUI:
             '<register name="STS Schnittstellen Tester" autor="Test" version="0.1" '
             'protokoll="1" text="Testprogramm für die StellwerkSim Plugin-Schnittstelle" />'
         )
+
+    def start_collector(self) -> None:
+        """Startet bewusst opt-in; der reine Diagnosetester bleibt unveraendert nutzbar."""
+        if self.collector_active:
+            self._log("COLLECTOR", "Der Live-Collector ist bereits aktiv.")
+            return
+        self.collector_active = True
+        self._log("COLLECTOR", "Persistent aktiv; Zustand: sts_collector_state.json")
+        for command in self.collector.startup_commands():
+            self.send(command)
+        self.root.after(5000, self._poll_collector_simtime)
+
+    def _poll_collector_simtime(self) -> None:
+        if not self.collector_active:
+            return
+        self.send('<simzeit sender="sts_collector" />')
+        self.root.after(5000, self._poll_collector_simtime)
 
     def send(self, xml_text: str) -> bool:
         try:
@@ -434,6 +457,10 @@ class StellwerkSimTesterGUI:
             return
         element = result.element
         assert element is not None
+        if self.collector_active:
+            raw_document = result.raw_document or raw
+            for command in self.collector.process(element, self._decode(raw_document)):
+                self.send(command)
         parsed_lines = [f"Tag: {element.tag}", f"Attribute: {element.attrib!r}"]
         try:
             ET.indent(element, space="  ")

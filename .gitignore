@@ -3,3 +3,5 @@ __pycache__/
 build/
 dist/
 *.spec
+sts_collector_state.json
+sts_collector_state.json.tmp
