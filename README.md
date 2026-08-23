@@ -1,0 +1,56 @@
+# StellwerkSim Schnittstellen-Tester
+
+Ein bewusst kleines Windows-Diagnoseprogramm für die XML-Plugin-Schnittstelle von
+StellwerkSim. Es zeigt gesendete und empfangene Daten an, erstellt aber **keinen**
+Bildfahrplan.
+
+## Voraussetzungen und Start
+
+- Python 3.9 oder neuer (empfohlen: aktuelles Python 3 für Windows)
+- `tkinter` (in der normalen Windows-Python-Installation enthalten)
+- Ein laufendes StellwerkSim mit verfügbarer Plugin-Schnittstelle
+
+Es sind keine Python-Pakete von Drittanbietern erforderlich. Start im Projektordner:
+
+```bash
+python sts_tester.py
+```
+
+StellwerkSim verwendet standardmäßig `127.0.0.1:3691`. Je nach Simulatorzustand
+muss die Plugin-Verbindung dort zunächst freigegeben werden.
+
+## Bedienung
+
+1. **Verbinden / Trennen** öffnet beziehungsweise schließt die TCP-Verbindung.
+2. **Plugin registrieren** meldet das Testprogramm mit Protokollversion 1 an.
+3. **Anlageninfo**, **Simulationszeit**, **Zugliste**, **Bahnsteigliste** und
+   **Wege / Fahrwege** senden die entsprechenden parameterlosen XML-Abfragen.
+4. Für **Zugdetails**, **Zugfahrplan** und Ereignisse muss eine numerische ZID
+   eingetragen sein. Nach einer Zugliste können erkannte Züge im Dropdown gewählt
+   werden. Ereignis-Abonnements gelten jeweils für diese ZID.
+5. **Eigenes XML senden** validiert das XML, verändert den Inhalt aber nicht; für
+   das zeilenbasierte Protokoll wird beim Senden lediglich ein LF angehängt.
+6. Im Log erscheinen Raw-Nachrichten, Parsergebnis, Fehler und Verbindungsstatus.
+   **Log speichern** schreibt den vollständigen Inhalt als UTF-8-Textdatei.
+
+Der Simulator bestätigt oder verwirft Kommandos selbst. Seine Status- und
+Fehlerantworten werden deshalb absichtlich ungefiltert im Log angezeigt.
+
+## Windows-EXE mit PyInstaller (optional)
+
+```bash
+python -m pip install pyinstaller
+pyinstaller --onefile --windowed --name sts_tester sts_tester.py
+```
+
+Die EXE liegt anschließend unter `dist/sts_tester.exe`. Für eine übliche
+python.org-Windows-Installation erkennt PyInstaller `tkinter` automatisch. Falls
+eine stark reduzierte Python-Distribution ohne Tcl/Tk verwendet wird, muss zuerst
+eine vollständige Python-Installation einschließlich Tcl/Tk installiert werden.
+
+## Protokollhinweis
+
+Die Plugin-Schnittstelle überträgt ein XML-Element je Zeile über TCP. Der Client
+puffert deshalb unvollständige `recv()`-Fragmente und trennt mehrere gemeinsam
+empfangene Nachrichten an LF beziehungsweise CRLF. Nutzdaten werden als UTF-8
+gesendet und sowohl roh als auch zusätzlich geparst protokolliert.
