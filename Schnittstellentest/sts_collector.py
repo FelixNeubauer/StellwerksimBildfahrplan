@@ -8,16 +8,19 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 
 EVENT_TYPES = ("einfahrt", "ausfahrt", "ankunft", "abfahrt", "rothalt", "wurdegruen", "kuppeln", "fluegeln")
 TRACK_RESOLUTIONS = {"exact", "section", "abstract", "unknown"}
 RELATION_TYPES = {"continuation", "coupling", "splitting", "rename", "locomotive_runaround", "locomotive_change"}
+SERVICE_KINDS = {"train", "locomotive_movement", "wagon_set", "unknown"}
 
 
 def _bool(value: str | None) -> bool | None:
@@ -56,6 +59,7 @@ class SchedulePoint:
     planned_arrival: str | None = None
     planned_departure: str | None = None
     flags_raw: str = ""
+    hint_text: str | None = None
     operating_point: str | None = None
     physical_track: str | None = None
     track_section: str | None = None
@@ -94,6 +98,25 @@ class TrainRelation:
 
 
 @dataclass
+class DepartureState:
+    track: str | None
+    status: str = "in_progress"
+    started_event: TrainEvent | None = None
+    completed_event: TrainEvent | None = None
+
+
+@dataclass
+class SessionMetadata:
+    session_id: str = field(default_factory=lambda: str(uuid4()))
+    aid: int | None = None
+    name: str | None = None
+    region: str | None = None
+    simbuild: str | None = None
+    online: bool | None = None
+    raw_xml: str | None = None
+
+
+@dataclass
 class TrainService:
     zid: int
     name: str
@@ -116,6 +139,12 @@ class TrainService:
     raw_schedules: list[str] = field(default_factory=list)
     initialized: bool = False
     temporary_locomotive: bool = False
+    service_kind: str = "unknown"
+    departure_states: dict[str, DepartureState] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.service_kind not in SERVICE_KINDS:
+            raise ValueError(f"Unbekannte Service-Kategorie: {self.service_kind}")
 
 
 @dataclass
@@ -151,15 +180,30 @@ class STSLiveCollector:
         self.services: dict[int, TrainService] = {}
         self.families: dict[str, TrainFamily] = {}
         self.raw_xml: list[str] = []
+        self.session = SessionMetadata()
         self.simtime: int | None = None
         self._last_train_list_simtime: int | None = None
+        self._last_schedule_slot: tuple[int, int] | None = None
+        self._sim_day = 0
+        self._previous_simtime: int | None = None
+        self._active_zids: set[int] = set()
+        self._initial_train_list_requested = False
         self._signal_stop_open: set[tuple[int, str | None]] = set()
+        self.messages: list[str] = []
         if self.storage_path and self.storage_path.exists():
             self.load()
 
-    @staticmethod
-    def startup_commands(sender: str = "sts_collector") -> list[str]:
-        return [f'<simzeit sender="{sender}" />', "<zugliste />"]
+    def startup_commands(self, sender: str = "sts_collector") -> list[str]:
+        """Fordert jede Startressource genau einmal an.
+
+        Die erste Simzeit-Antwort darf deshalb keine zweite Zugliste ausloesen.
+        """
+        self._initial_train_list_requested = True
+        return ["<anlageninfo />", f'<simzeit sender="{sender}" />', "<zugliste />"]
+
+    def drain_messages(self) -> list[str]:
+        messages, self.messages = self.messages, []
+        return messages
 
     def process(self, element: ET.Element, raw_xml: str | None = None) -> list[str]:
         raw = raw_xml if raw_xml is not None else ET.tostring(element, encoding="unicode")
@@ -167,6 +211,8 @@ class STSLiveCollector:
         commands: list[str] = []
         if element.tag == "simzeit":
             commands.extend(self._process_simtime(element))
+        elif element.tag == "anlageninfo":
+            self._process_facility(element, raw)
         elif element.tag == "zugliste":
             commands.extend(self._process_train_list(element))
         elif element.tag == "zugdetails":
@@ -182,11 +228,49 @@ class STSLiveCollector:
         value = _int(element.get("zeit"))
         if value is None:
             return []
+        if self._previous_simtime is not None and value < self._previous_simtime:
+            self._sim_day += 1
+        previous = self._previous_simtime
+        self._previous_simtime = value
         self.simtime = value
-        if self._last_train_list_simtime is None or self._elapsed(self._last_train_list_simtime, value) >= 120_000:
+        commands: list[str] = []
+        slot = self._schedule_slot(value)
+        crossed_slot = previous is not None and self._schedule_slot(previous) != slot
+        exactly_on_slot = (value // 1000) % 20 == 10
+        slot_key = (self._sim_day, slot)
+        if (exactly_on_slot or crossed_slot) and slot_key != self._last_schedule_slot:
+            self._last_schedule_slot = slot_key
+            refresh_zids = [zid for zid in sorted(self._active_zids) if self._refresh_relevant(self.services[zid])]
+            commands.extend(f'<zugfahrplan zid="{zid}" />' for zid in refresh_zids)
+            if refresh_zids:
+                self.messages.append(
+                    f"Schedule-Refresh {self._format_simtime(value)}\n{len(refresh_zids)} aktive Services"
+                )
+        if self._last_train_list_simtime is None:
+            if not self._initial_train_list_requested:
+                self._last_train_list_simtime = value
+                commands.append("<zugliste />")
+        elif self._elapsed(self._last_train_list_simtime, value) >= 120_000:
             self._last_train_list_simtime = value
-            return ["<zugliste />"]
-        return []
+            commands.append("<zugliste />")
+        return commands
+
+    @staticmethod
+    def _schedule_slot(value: int) -> int:
+        """Index des letzten Slots 10/30/50 innerhalb des Simulationstags."""
+        seconds = value // 1000
+        return (seconds - 10) // 20
+
+    @staticmethod
+    def _format_simtime(value: int | None) -> str:
+        if value is None:
+            return "unbekannt"
+        seconds = value // 1000
+        return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+    @staticmethod
+    def _refresh_relevant(service: TrainService) -> bool:
+        return service.zid > 0 and service.service_kind != "locomotive_movement"
 
     @staticmethod
     def _elapsed(previous: int, current: int) -> int:
@@ -204,12 +288,16 @@ class STSLiveCollector:
             name = item.get("name") or item.get("zugname") or item.get("nummer") or "Unbenannter Zug"
             service = self.services.get(zid)
             if service is None:
-                temporary = zid < 0 or name.startswith("Lok ")
+                kind = self._classify_service(zid, name)
+                temporary = kind == "locomotive_movement"
                 service = self.services[zid] = TrainService(
                     zid=zid, name=name, first_seen_simtime=self.simtime,
                     temporary_locomotive=temporary, status="temporary_locomotive" if temporary else "active",
+                    service_kind=kind,
                 )
             service.name = name
+            service.service_kind = self._classify_service(zid, name)
+            service.temporary_locomotive = service.service_kind == "locomotive_movement"
             service.last_seen_simtime = self.simtime
             if not service.temporary_locomotive:
                 service.status = "active"
@@ -220,8 +308,18 @@ class STSLiveCollector:
         for zid, service in self.services.items():
             if zid not in active and service.status == "active":
                 service.status = "inactive_unknown"
+        self._active_zids = active
         self._last_train_list_simtime = self.simtime
+        self._initial_train_list_requested = False
         return commands
+
+    @staticmethod
+    def _classify_service(zid: int, name: str) -> str:
+        if zid < 0 or name.startswith("Lok "):
+            return "locomotive_movement"
+        if name.startswith("Wagen "):
+            return "wagon_set"
+        return "train" if name.strip() else "unknown"
 
     def _service(self, element: ET.Element) -> TrainService | None:
         zid = _int(element.get("zid"))
@@ -229,8 +327,9 @@ class STSLiveCollector:
             return None
         if zid not in self.services:
             name = element.get("name") or "Unbenannter Zug"
+            kind = self._classify_service(zid, name)
             self.services[zid] = TrainService(zid=zid, name=name, first_seen_simtime=self.simtime,
-                                              temporary_locomotive=zid < 0 or name.startswith("Lok "))
+                                              temporary_locomotive=kind == "locomotive_movement", service_kind=kind)
         return self.services[zid]
 
     def _update_state(self, service: TrainService, element: ET.Element) -> None:
@@ -262,14 +361,27 @@ class STSLiveCollector:
             points.append(SchedulePoint(
                 raw_name=current, current_name=current, planned_name=planned,
                 planned_arrival=item.get("an"), planned_departure=item.get("ab"), flags_raw=item.get("flags", ""),
+                hint_text=item.get("hinweistext"),
                 operating_point=location.operating_point, physical_track=location.physical_track,
                 track_section=location.track_section, stop_position=location.stop_position,
                 track_resolution=location.track_resolution, raw_xml=ET.tostring(item, encoding="unicode"),
             ))
+        self._record_track_changes(service, points)
         if not service.original_schedule:
             service.original_schedule = points
         service.current_schedule = points
         service.raw_schedules.append(raw)
+
+    def _record_track_changes(self, service: TrainService, points: list[SchedulePoint]) -> None:
+        previous = {(p.planned_name, p.planned_arrival, p.planned_departure): p for p in service.current_schedule}
+        for point in points:
+            old = previous.get((point.planned_name, point.planned_arrival, point.planned_departure))
+            if old and old.current_name != point.current_name and old.planned_name == point.planned_name:
+                self.messages.append(
+                    "Gleisänderung erkannt\n"
+                    f"{service.name} (ZID {service.zid})\n{old.current_name} → {point.current_name}\n"
+                    f"Plan: {point.planned_name}"
+                )
 
     def _process_event(self, element: ET.Element, raw: str) -> None:
         service = self._service(element)
@@ -285,6 +397,9 @@ class STSLiveCollector:
         )
         service.raw_events.append(event)
         key = (service.zid, event.track)
+        if event.art == "abfahrt":
+            self._process_departure(service, event)
+            return
         if event.art == "rothalt":
             if key in self._signal_stop_open:
                 return
@@ -295,6 +410,62 @@ class STSLiveCollector:
             return
         service.interpreted_events.append(event)
 
+    def _process_departure(self, service: TrainService, event: TrainEvent) -> None:
+        key = event.track or ""
+        state = service.departure_states.get(key)
+        if state is not None and state.status == "completed" and event.at_track is False:
+            return
+        if state is None or state.status == "completed":
+            state = DepartureState(track=event.track, started_event=event)
+            service.departure_states[key] = state
+            service.interpreted_events.append(event)
+        if event.at_track is False:
+            state.status = "completed"
+            state.completed_event = event
+            # Der eine fachliche Datensatz repraesentiert nach Abschluss das
+            # tatsaechliche Verlassen, nicht einen vorherigen Heartbeat.
+            for index in range(len(service.interpreted_events) - 1, -1, -1):
+                candidate = service.interpreted_events[index]
+                if candidate.art == "abfahrt" and candidate.track == event.track:
+                    service.interpreted_events[index] = event
+                    break
+            self.messages.append(
+                f"Abfahrtsvorgang abgeschlossen\n{service.name}\n{event.track or 'Gleis unbekannt'}\n"
+                f"Simzeit: {self._format_simtime(event.simtime)}"
+            )
+
+    def _process_facility(self, element: ET.Element, raw: str) -> None:
+        aid = _int(element.get("aid"))
+        if self.session.aid is not None and aid is not None and self.session.aid != aid:
+            old_aid = self.session.aid
+            archive = self._archive_current_state(old_aid)
+            self.services.clear()
+            self.families.clear()
+            self.raw_xml = [raw]
+            self._active_zids.clear()
+            self._last_train_list_simtime = None
+            self._last_schedule_slot = None
+            self._sim_day = 0
+            self._previous_simtime = None
+            self._signal_stop_open.clear()
+            self.messages.append(
+                f"Stellwerkwechsel erkannt: AID {old_aid} → {aid}. Alter Zustand archiviert: {archive}"
+            )
+        self.session = SessionMetadata(
+            aid=aid, name=element.get("name"), region=element.get("region"),
+            simbuild=element.get("simbuild"), online=_bool(element.get("online")), raw_xml=raw,
+        )
+        self.messages.append(f"Neue Stellwerk-Session\nAID: {aid}\nName: {self.session.name or 'unbekannt'}")
+
+    def _archive_current_state(self, aid: int) -> str:
+        if not self.storage_path or not self.storage_path.exists():
+            return "nur im Speicher"
+        archive = self.storage_path.with_name(
+            f"{self.storage_path.stem}.aid-{aid}.{self.session.session_id}{self.storage_path.suffix}"
+        )
+        shutil.copy2(self.storage_path, archive)
+        return str(archive)
+
     @staticmethod
     def _event_identity(event: TrainEvent) -> tuple[Any, ...]:
         return (event.art, event.zid, event.track, event.planned_track, event.at_track, event.delay)
@@ -303,8 +474,11 @@ class STSLiveCollector:
         if not self.storage_path:
             return
         data = {
-            "schema_version": 1, "simtime": self.simtime,
+            "schema_version": 2, "simtime": self.simtime,
             "last_train_list_simtime": self._last_train_list_simtime,
+            "last_schedule_slot": self._last_schedule_slot, "sim_day": self._sim_day,
+            "previous_simtime": self._previous_simtime, "active_zids": sorted(self._active_zids),
+            "session": asdict(self.session),
             "services": [asdict(item) for item in self.services.values()],
             "families": [asdict(item) for item in self.families.values()], "raw_xml": self.raw_xml,
         }
@@ -315,17 +489,32 @@ class STSLiveCollector:
 
     def load(self) -> None:
         data = json.loads(self.storage_path.read_text(encoding="utf-8"))  # type: ignore[union-attr]
-        if data.get("schema_version") != 1:
+        if data.get("schema_version", 1) not in {1, 2}:
             raise ValueError("Nicht unterstuetzte Collector-Dateiversion")
         self.simtime = data.get("simtime")
         self._last_train_list_simtime = data.get("last_train_list_simtime")
+        slot = data.get("last_schedule_slot")
+        self._last_schedule_slot = tuple(slot) if slot is not None else None
+        self._sim_day = data.get("sim_day", 0)
+        self._previous_simtime = data.get("previous_simtime")
+        self._active_zids = set(data.get("active_zids", []))
+        self.session = SessionMetadata(**data.get("session", {}))
         self.raw_xml = data.get("raw_xml", [])
         for raw_service in data.get("services", []):
-            raw_service["original_schedule"] = [SchedulePoint(**p) for p in raw_service["original_schedule"]]
-            raw_service["current_schedule"] = [SchedulePoint(**p) for p in raw_service["current_schedule"]]
+            raw_service["original_schedule"] = [SchedulePoint(**p) for p in raw_service.get("original_schedule", [])]
+            raw_service["current_schedule"] = [SchedulePoint(**p) for p in raw_service.get("current_schedule", [])]
             raw_service["raw_events"] = [TrainEvent(**e) for e in raw_service["raw_events"]]
             raw_service["interpreted_events"] = [TrainEvent(**e) for e in raw_service["interpreted_events"]]
             raw_service["relations"] = [TrainRelation(**r) for r in raw_service["relations"]]
+            name, zid = raw_service.get("name", ""), raw_service["zid"]
+            raw_service.setdefault("service_kind", self._classify_service(zid, name))
+            raw_service["departure_states"] = {
+                key: DepartureState(
+                    **{**state,
+                       "started_event": TrainEvent(**state["started_event"]) if state.get("started_event") else None,
+                       "completed_event": TrainEvent(**state["completed_event"]) if state.get("completed_event") else None}
+                ) for key, state in raw_service.get("departure_states", {}).items()
+            }
             service = TrainService(**raw_service)
             self.services[service.zid] = service
         for raw_family in data.get("families", []):

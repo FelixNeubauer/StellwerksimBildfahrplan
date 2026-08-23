@@ -6,6 +6,7 @@ import queue
 import re
 import socket
 import threading
+import traceback
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
@@ -247,6 +248,8 @@ class StellwerkSimTesterGUI:
         self.protocol_parser = StellwerkSimProtocolParser()
         self.collector = STSLiveCollector(Path("sts_collector_state.json"))
         self.collector_active = False
+        self.collector_commands: queue.Queue[str] = queue.Queue()
+        self._collector_sender_running = False
         self.event_vars: dict[str, tk.BooleanVar] = {}
         self._build_gui()
         self.root.after(80, self._process_events)
@@ -360,14 +363,32 @@ class StellwerkSimTesterGUI:
         self.collector_active = True
         self._log("COLLECTOR", "Persistent aktiv; Zustand: sts_collector_state.json")
         for command in self.collector.startup_commands():
-            self.send(command)
+            self._enqueue_collector_command(command)
         self.root.after(5000, self._poll_collector_simtime)
 
     def _poll_collector_simtime(self) -> None:
         if not self.collector_active:
             return
-        self.send('<simzeit sender="sts_collector" />')
+        self._enqueue_collector_command('<simzeit sender="sts_collector" />')
         self.root.after(5000, self._poll_collector_simtime)
+
+    def _enqueue_collector_command(self, command: str) -> None:
+        """Serialisiert automatische Requests, ohne den GUI-Thread zu blockieren."""
+        self.collector_commands.put(command)
+        if not self._collector_sender_running:
+            self._collector_sender_running = True
+            self.root.after(0, self._send_next_collector_command)
+
+    def _send_next_collector_command(self) -> None:
+        try:
+            command = self.collector_commands.get_nowait()
+        except queue.Empty:
+            self._collector_sender_running = False
+            return
+        self.send(command)
+        # Kleine Taktung statt eines Bursts; Antworten/Events werden weiterhin
+        # ausschliesslich vom vorhandenen Empfangsthread verarbeitet.
+        self.root.after(100, self._send_next_collector_command)
 
     def send(self, xml_text: str) -> bool:
         try:
@@ -460,7 +481,9 @@ class StellwerkSimTesterGUI:
         if self.collector_active:
             raw_document = result.raw_document or raw
             for command in self.collector.process(element, self._decode(raw_document)):
-                self.send(command)
+                self._enqueue_collector_command(command)
+            for message in self.collector.drain_messages():
+                self._log("COLLECTOR", message)
         parsed_lines = [f"Tag: {element.tag}", f"Attribute: {element.attrib!r}"]
         try:
             ET.indent(element, space="  ")
@@ -518,8 +541,25 @@ class StellwerkSimTesterGUI:
         self.root.destroy()
 
 
+def _write_gui_exception(error_log: Path, exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
+    with error_log.open("a", encoding="utf-8") as stream:
+        stream.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] Unbehandelte GUI-Ausnahme\n")
+        traceback.print_exception(exc_type, exc, tb, file=stream)
+
+
 def main() -> None:
     root = tk.Tk()
+    error_log = Path("sts_tester_error.log")
+
+    def report_callback_exception(exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
+        _write_gui_exception(error_log, exc_type, exc, tb)
+        messagebox.showerror(
+            "Unerwarteter Fehler",
+            f"Details wurden in {error_log.resolve()} protokolliert.",
+            parent=root,
+        )
+
+    root.report_callback_exception = report_callback_exception
     StellwerkSimTesterGUI(root)
     root.mainloop()
 
