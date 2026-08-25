@@ -188,6 +188,7 @@ class STSLiveCollector:
         self._previous_simtime: int | None = None
         self._active_zids: set[int] = set()
         self._initial_train_list_requested = False
+        self._has_received_train_list = False
         self._signal_stop_open: set[tuple[int, str | None]] = set()
         self.messages: list[str] = []
         if self.storage_path and self.storage_path.exists():
@@ -199,6 +200,7 @@ class STSLiveCollector:
         Die erste Simzeit-Antwort darf deshalb keine zweite Zugliste ausloesen.
         """
         self._initial_train_list_requested = True
+        self._has_received_train_list = False
         return ["<anlageninfo />", f'<simzeit sender="{sender}" />', "<zugliste />"]
 
     def drain_messages(self) -> list[str]:
@@ -247,7 +249,12 @@ class STSLiveCollector:
                     f"Schedule-Refresh {self._format_simtime(value)}\n{len(refresh_zids)} aktive Services"
                 )
         if self._last_train_list_simtime is None:
-            if not self._initial_train_list_requested:
+            if self._has_received_train_list:
+                # Die initiale Zugliste kann vor ihrer zuvor angeforderten
+                # Simzeitantwort eintreffen. Diese erste Zeit ist dann nur die
+                # Basis fuer den Zwei-Minuten-Takt, kein neuer Initialrequest.
+                self._last_train_list_simtime = value
+            elif not self._initial_train_list_requested:
                 self._last_train_list_simtime = value
                 commands.append("<zugliste />")
         elif self._elapsed(self._last_train_list_simtime, value) >= 120_000:
@@ -309,7 +316,9 @@ class STSLiveCollector:
             if zid not in active and service.status == "active":
                 service.status = "inactive_unknown"
         self._active_zids = active
-        self._last_train_list_simtime = self.simtime
+        self._has_received_train_list = True
+        if self.simtime is not None:
+            self._last_train_list_simtime = self.simtime
         self._initial_train_list_requested = False
         return commands
 

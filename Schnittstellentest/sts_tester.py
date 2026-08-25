@@ -23,6 +23,9 @@ from tkinter.scrolledtext import ScrolledText
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 3691
 ENCODING = "utf-8"
+APPLICATION_DIR = Path(__file__).resolve().parent
+COLLECTOR_STATE_PATH = APPLICATION_DIR / "sts_collector_state.json"
+ERROR_LOG_PATH = APPLICATION_DIR / "sts_tester_error.log"
 
 
 class LineXMLFramer:
@@ -246,7 +249,7 @@ class StellwerkSimTesterGUI:
         self.train_var = tk.StringVar()
         self.train_ids: dict[str, str] = {}
         self.protocol_parser = StellwerkSimProtocolParser()
-        self.collector = STSLiveCollector(Path("sts_collector_state.json"))
+        self.collector = STSLiveCollector(COLLECTOR_STATE_PATH)
         self.collector_active = False
         self.collector_commands: queue.Queue[str] = queue.Queue()
         self._collector_sender_running = False
@@ -361,7 +364,7 @@ class StellwerkSimTesterGUI:
             self._log("COLLECTOR", "Der Live-Collector ist bereits aktiv.")
             return
         self.collector_active = True
-        self._log("COLLECTOR", "Persistent aktiv; Zustand: sts_collector_state.json")
+        self._log("COLLECTOR", f"Persistent aktiv; Zustand: {COLLECTOR_STATE_PATH}")
         for command in self.collector.startup_commands():
             self._enqueue_collector_command(command)
         self.root.after(5000, self._poll_collector_simtime)
@@ -549,13 +552,12 @@ def _write_gui_exception(error_log: Path, exc_type: type[BaseException], exc: Ba
 
 def main() -> None:
     root = tk.Tk()
-    error_log = Path("sts_tester_error.log")
 
     def report_callback_exception(exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
-        _write_gui_exception(error_log, exc_type, exc, tb)
+        _write_gui_exception(ERROR_LOG_PATH, exc_type, exc, tb)
         messagebox.showerror(
             "Unerwarteter Fehler",
-            f"Details wurden in {error_log.resolve()} protokolliert.",
+            f"Details wurden in {ERROR_LOG_PATH} protokolliert.",
             parent=root,
         )
 
@@ -564,5 +566,17 @@ def main() -> None:
     root.mainloop()
 
 
+def launch() -> None:
+    """Gemeinsamer robuster Einstieg fuer python.exe und pythonw.exe."""
+    try:
+        main()
+    except Exception as exc:
+        _write_gui_exception(ERROR_LOG_PATH, type(exc), exc, exc.__traceback__)
+        try:
+            messagebox.showerror("Start fehlgeschlagen", f"Details: {ERROR_LOG_PATH}")
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
-    main()
+    launch()

@@ -19,7 +19,9 @@ python sts_tester.py
 Unter Windows startet ein Doppelklick auf `sts_tester.pyw` dieselbe GUI ueber
 `pythonw.exe` ohne zusaetzliches Konsolenfenster. Start- und unbehandelte
 GUI-Fehler werden dabei in `sts_tester_error.log` protokolliert; das sichtbare
-Kommunikations-/Debuglog bleibt unveraendert erhalten.
+Kommunikations-/Debuglog bleibt unveraendert erhalten. Collector-Zustand und
+Fehlerlog liegen stabil neben den Programmdateien, unabhaengig vom beim
+Doppelklick verwendeten Windows-Arbeitsverzeichnis.
 
 StellwerkSim verwendet standardmäßig `127.0.0.1:3691`. Je nach Simulatorzustand
 muss die Plugin-Verbindung dort zunächst freigegeben werden.
