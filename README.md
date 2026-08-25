@@ -13,6 +13,17 @@ python -m pip install -r requirements.txt
 python bildfahrplan_app.py
 ```
 
+### Windows-Live-Start per Doppelklick
+
+Nach dem Anlegen von `.venv` und der Installation der Abhängigkeiten genügt ein
+Doppelklick auf `Bildfahrplan_Live_Start.bat`. Der Launcher verwendet immer
+`.venv\Scripts\pythonw.exe` relativ zum Anwendungsordner und startet unmittelbar
+den Live-Betrieb, ohne einen Offline-State zu laden.
+
+Dafür muss StellwerkSim bereits laufen und seine Plugin-Schnittstelle unter
+`127.0.0.1:3691` erreichbar sein. Fehlt die virtuelle Umgebung oder deren
+`pythonw.exe`, zeigt der Launcher eine verständliche Fehlermeldung an.
+
 Live werden standardmäßig `127.0.0.1:3691` sowie der persistente Collector-State
 neben dem Diagnosetester verwendet. Ein vorhandener Zustand kann ohne Simulator
 geöffnet werden:
