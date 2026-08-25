@@ -708,7 +708,7 @@ Für einen Bildfahrplan ist das unproblematisch. Für eine Gleisbelegungsanzeige
 
 ---
 
-# 13. Haltepositionen wie `Flügel` und `Kuppel`
+# 13. Haltepositionen wie `Flügel`, `Kuppel` und `G`
 
 StellwerkSim kann mehrere unterschiedliche Fahrplanpunkte für dasselbe physische Gleis verwenden, z. B.:
 
@@ -716,11 +716,13 @@ StellwerkSim kann mehrere unterschiedliche Fahrplanpunkte für dasselbe physisch
 TU 3
 TU 3 Flügel
 TU 3 Kuppel
+TU 1
+TU 1G
 ```
 
-Diese Bezeichnungen können lediglich unterschiedliche Haltepositionen auf demselben physischen Gleis darstellen.
+Diese Bezeichnungen können lediglich unterschiedliche **Haltepositionen auf demselben physischen Gleis** darstellen.
 
-Daher intern trennen:
+Beispiele:
 
 ```text
 raw_name        = "TU 3 Flügel"
@@ -729,8 +731,6 @@ physical_track  = 3
 stop_position   = Flügel
 ```
 
-und:
-
 ```text
 raw_name        = "TU 3 Kuppel"
 operating_point = TU
@@ -738,13 +738,38 @@ physical_track  = 3
 stop_position   = Kuppel
 ```
 
+```text
+raw_name        = "TU 1G"
+operating_point = TU
+physical_track  = 1
+stop_position   = G
+```
+
+**BETRIEBLICHE/STS-BEOBACHTUNG**
+
+Ein angehängtes `G` kann in StellwerkSim einen abweichenden Haltepunkt auf demselben physischen Gleis kennzeichnen, der insbesondere für lange Güterzüge verwendet wird, wenn der normale kurze Bahnsteighaltepunkt für die Zuglänge ungeeignet ist.
+
+Für unsere Modellierung bedeutet dies typischerweise:
+
+```text
+TU 1  und  TU 1G
+→ gleiches physisches Gleis
+→ unterschiedliche Halteposition
+```
+
+Für eine spätere Gleisbelegungsanzeige wirken beide daher auf dieselbe physische Gleisressource.
+
+**Wichtig:** Daraus darf **keine globale Parserregel** "`G` bedeutet immer Güterzughaltepunkt" abgeleitet werden. Die Bedeutung muss stellwerksspezifisch konfigurierbar bleiben.
+
 **Wichtig:** Originalbezeichnung immer behalten.
 
 ---
 
-# 14. Nord-/Süd-/Ost-/West-Gleisabschnitte
+# 14. Gleisabschnitte und mehrdeutige Suffixe
 
-Ein physisches Bahnsteiggleis kann in unabhängig nutzbare Abschnitte unterteilt sein, z. B.:
+## 14.1 Nord-/Süd-/Ost-/West-Abschnitte
+
+Ein **physisches Gleis** kann in mehrere betriebliche Abschnitte unterteilt sein, z. B.:
 
 ```text
 3N
@@ -763,15 +788,23 @@ oder mit uneinheitlicher Schreibweise:
 
 analog ggf. Ost/West.
 
-## 14.1 Bedeutung
-
 Typischer Fall:
 
-- `3N` = Nordteil
-- `3S` = Südteil
-- `3` = gesamtes Bahnsteiggleis
+- `3N` = Nordteil von physischem Gleis `3`
+- `3S` = Südteil von physischem Gleis `3`
+- `3` = das gesamte physische Gleis `3`
 
-Dann können ggf. zwei kurze Züge gleichzeitig in `3N` und `3S` stehen, während ein langer Zug auf `3` beide Abschnitte belegt.
+Damit gilt ausdrücklich:
+
+```text
+3N und 3S
+→ dasselbe physische Gleis 3
+→ unterschiedliche Gleisabschnitte
+```
+
+Sie sind also **keine zwei verschiedenen physischen Gleise**.
+
+Je nach örtlicher Infrastruktur können zwei kurze Züge gleichzeitig verschiedene Abschnitte desselben Gleises nutzen, während ein langer Zug mit Belegung des Vollgleises beide Abschnitte blockiert.
 
 ## 14.2 Konfliktmodell
 
@@ -787,20 +820,56 @@ Empfohlene Konfliktbeziehungen:
 
 Für eine spätere Gleisbelegungsanzeige ist dies wesentlich.
 
-## 14.3 Normalisierung
+## 14.3 Normalisierung bekannter Abschnittsmuster
 
-Uneinheitliche Schreibweisen sollen intern normalisiert werden:
+Wenn die Stellwerkskonfiguration bestätigt, dass `N/S/O/W` echte Abschnitte desselben physischen Gleises darstellen, kann intern normalisiert werden:
 
 ```text
-"3N"  -> track=3, section=N
-"3 N" -> track=3, section=N
-"3S"  -> track=3, section=S
-"3 S" -> track=3, section=S
+"3N"  -> physical_track=3, track_section=N
+"3 N" -> physical_track=3, track_section=N
+"3S"  -> physical_track=3, track_section=S
+"3 S" -> physical_track=3, track_section=S
 ```
 
 Aber:
 
 > Der unveränderte `raw_name` bleibt immer erhalten.
+
+## 14.4 Mehrdeutige Suffixe wie `a` / `b`
+
+Bezeichnungen wie:
+
+```text
+5a
+5b
+```
+
+dürfen **nicht automatisch** als zwei Abschnitte desselben Gleises interpretiert werden.
+
+Je nach Stellwerk können sie beispielsweise bedeuten:
+
+```text
+Fall A:
+5a und 5b
+→ dasselbe physische Gleis 5
+→ unterschiedliche Abschnitte
+```
+
+oder:
+
+```text
+Fall B:
+5a und 5b
+→ zwei tatsächlich unterschiedliche physische Gleise
+```
+
+oder auch eine andere örtliche bzw. simulatorische Unterscheidung.
+
+Daher gilt:
+
+> Aus einem Buchstabensuffix allein darf keine allgemeine Aussage über physisches Gleis, Gleisabschnitt oder Halteposition abgeleitet werden.
+
+Die Zuordnung muss stellwerksspezifisch konfiguriert bzw. bestätigt werden.
 
 ---
 
@@ -873,6 +942,29 @@ track_section   = "N"
 resolution      = section
 ```
 
+### Halteposition auf demselben physischen Gleis
+
+```text
+raw_name        = "TU 1G"
+operating_point = "TU"
+physical_track  = "1"
+stop_position   = "G"
+resolution      = exact
+```
+
+### Mehrdeutige Bezeichnung
+
+```text
+raw_name        = "5a"
+operating_point = "..."
+physical_track  = None
+track_section   = None
+stop_position   = None
+resolution      = unknown
+```
+
+Bis eine stellwerksspezifische Zuordnung vorliegt, darf nicht geraten werden, ob `5a` ein eigenes Gleis, ein Abschnitt oder nur eine Halteposition ist.
+
 ### Haltepunkt ohne Gleisauflösung
 
 ```text
@@ -916,9 +1008,24 @@ Beispielkonfiguration:
     "operating_point": "Ulm Hbf",
     "physical_track": "3",
     "track_section": "N"
+  },
+  "TU 1G": {
+    "operating_point": "TU",
+    "physical_track": "1",
+    "stop_position": "G"
+  },
+  "5a": {
+    "operating_point": "Beispielbahnhof",
+    "physical_track": "5a"
+  },
+  "5b": {
+    "operating_point": "Beispielbahnhof",
+    "physical_track": "5b"
   }
 }
 ```
+
+Die letzten beiden Einträge sind nur ein **Beispiel für eine bestätigte stellwerksspezifische Zuordnung**. In einem anderen Stellwerk könnten `5a` und `5b` stattdessen Abschnitte desselben physischen Gleises sein.
 
 ---
 
@@ -1110,6 +1217,24 @@ sollte sowohl `3N` als auch `3S` blockieren, sofern die Stellwerkskonfiguration 
 
 `TU 3`, `TU 3 Flügel`, `TU 3 Kuppel` können auf dasselbe physische Gleis wirken, müssen aber als unterschiedliche Haltepositionen erhalten bleiben.
 
+Dasselbe gilt für bestätigte Varianten wie:
+
+```text
+TU 1
+TU 1G
+```
+
+wenn `1G` lediglich einen abweichenden Haltepunkt auf demselben physischen Gleis bezeichnet.
+
+Dagegen dürfen Bezeichnungen wie:
+
+```text
+5a
+5b
+```
+
+nicht ohne stellwerksspezifische Kenntnis zusammengelegt werden. Sie können Abschnitte desselben Gleises sein, aber ebenso zwei verschiedene physische Gleise.
+
 ---
 
 # 22. Weitere mögliche Tools auf Basis derselben Daten
@@ -1157,9 +1282,11 @@ Die folgenden Punkte können für die weitere Implementierung als belastbar beha
 15. Ausgeschriebene Betriebsstellennamen, reine Gleisnummern und Mischformen sind möglich.
 16. Haltepunkte können ohne Gleisnummer erscheinen, obwohl real mehrere Gleise/Bahnsteige existieren.
 17. Zusätze wie `Flügel`/`Kuppel` können nur unterschiedliche Haltepositionen desselben physischen Gleises darstellen.
-18. Teilgleise wie `3N`, `3S`, `3 N`, `3 S` müssen getrennt von Vollgleis `3` modelliert werden.
-19. Originalbezeichnungen müssen immer unverändert erhalten bleiben.
-20. Stellwerksspezifische Mapping-/Normalisierungskonfigurationen sind für universelle Tools sinnvoll.
+18. Ein Suffix wie `G` kann stellwerksspezifisch eine andere Halteposition auf demselben physischen Gleis kennzeichnen, z. B. für lange Güterzüge; daraus darf keine universelle Parserregel entstehen.
+19. Teilgleise wie `3N`, `3S`, `3 N`, `3 S` können Abschnitte **desselben physischen Gleises** sein und müssen vom Vollgleis `3` getrennt modelliert werden.
+20. Buchstabensuffixe wie `a`/`b` sind nicht eindeutig: `5a` und `5b` können Abschnitte desselben Gleises, aber auch verschiedene physische Gleise sein.
+21. Originalbezeichnungen müssen immer unverändert erhalten bleiben.
+22. Stellwerksspezifische Mapping-/Normalisierungskonfigurationen sind für universelle Tools sinnvoll.
 
 ---
 
@@ -1171,7 +1298,9 @@ Nicht ohne zusätzliche Tests verallgemeinern:
 - Exaktes Verhalten von `ausfahrt`-Events in allen Stellwerken.
 - Ob abstrakte Haltepunkte über `wege` zuverlässig einem konkreten Streckengleis zugeordnet werden können.
 - Vollständige Semantik aller Fahrplan-Flags.
-- Ob alle Stellwerke dieselben Namensmuster für `Flügel`, `Kuppel`, Nord/Süd/Ost/West verwenden.
+- Ob alle Stellwerke dieselben Namensmuster für `Flügel`, `Kuppel`, `G`, Nord/Süd/Ost/West verwenden.
+- Welche konkrete Bedeutung Buchstabensuffixe wie `a`, `b`, `G` usw. in einem jeweiligen Stellwerk haben.
+- Ob `a`/`b` in einer konkreten Betriebsstelle Abschnitte desselben physischen Gleises oder getrennte physische Gleise bezeichnen.
 - Ob negative ZIDs ausschließlich für temporäre Lokbewegungen vorkommen.
 - Welche Event-Duplikate generell auftreten und ob das Verhalten stellwerks-/situationsabhängig ist.
 
@@ -1192,13 +1321,15 @@ Diese Regeln sollten im Code grundsätzlich gelten:
 9. **Events deduplizieren.**
 10. **Simulationszeit statt PC-Zeit für betriebliche Historie verwenden.**
 11. **Betriebsstelle nicht allein aus einem Präfix erraten.**
-12. **Teilgleise, Vollgleise und Haltepositionen getrennt modellieren.**
-13. **Bei fehlender Gleisauflösung keine Gleisnummer erfinden.**
-14. **Automatische Normalisierung muss korrigierbar sein.**
-15. **Stellwerksspezifische Konfiguration anhand Anlagen-ID/Name speichern.**
-16. **`zugliste` etwa alle 2 Minuten Simulationszeit erneut abfragen.**
-17. **Neue ZIDs sofort initialisieren und Events abonnieren.**
-18. **Temporäre `Lok ...`-Züge nicht als normale Bildfahrplantrassen behandeln.**
+12. **Physisches Gleis, Gleisabschnitt und Halteposition getrennt modellieren.**
+13. **`3N`/`3S` nicht als eigenständige physische Gleise behandeln, wenn sie laut Stellwerkskonfiguration Abschnitte desselben Gleises sind.**
+14. **Suffixe wie `a`/`b`/`G` niemals allein anhand ihrer Schreibweise universell deuten.**
+15. **Bei fehlender Gleisauflösung keine Gleisnummer oder Ressourcenbeziehung erfinden.**
+16. **Automatische Normalisierung muss korrigierbar sein.**
+17. **Stellwerksspezifische Konfiguration anhand Anlagen-ID/Name speichern.**
+18. **`zugliste` etwa alle 2 Minuten Simulationszeit erneut abfragen.**
+19. **Neue ZIDs sofort initialisieren und Events abonnieren.**
+20. **Temporäre `Lok ...`-Züge nicht als normale Bildfahrplantrassen behandeln.**
 
 ---
 
