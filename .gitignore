@@ -7,3 +7,4 @@ sts_collector_state.json
 sts_collector_state.json.tmp
 sts_collector_state.aid-*.json
 sts_tester_error.log
+.venv/

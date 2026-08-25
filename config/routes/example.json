@@ -1,0 +1,8 @@
+{
+  "name": "Beispielstrecke (explizites Mapping)",
+  "operating_points": [
+    {"id": "entry", "label": "Einfahrt", "position": 0, "raw_names": ["Einfahrt"]},
+    {"id": "station", "label": "Beispielbahnhof", "position": 10, "raw_names": ["Beispielbahnhof", "Beispielbahnhof 1"]},
+    {"id": "exit", "label": "Ausfahrt", "position": 20, "raw_names": ["Ausfahrt"]}
+  ]
+}
