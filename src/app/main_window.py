@@ -11,7 +11,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, adapter, profile) -> None:
         super().__init__()
         self.adapter = adapter
-        self.setWindowTitle("StellwerkSim Bildfahrplan V0.2")
+        self.setWindowTitle("StellwerkSim Bildfahrplan V0.3")
         self.resize(1200, 760)
         self.tabs = QtWidgets.QTabWidget()
         self.diagram = BildfahrplanTab(adapter, profile)
@@ -36,8 +36,11 @@ class MainWindow(QtWidgets.QMainWindow):
         snapshot = self.adapter.snapshot()
         self.connection.setText(f"Verbindung: {'verbunden' if snapshot.connected else 'offline'} · {snapshot.status}")
         self.facility.setText(f"Stellwerk: {snapshot.facility_name or 'unbekannt'} · AID: {snapshot.aid or '–'}")
-        absolute = snapshot.sim_day * 86400 + (snapshot.simtime or 0) / 1000
-        self.clock.setText(f"Simzeit: {format_axis_time(absolute, True) if snapshot.simtime is not None else '–'}")
+        suffix = "" if snapshot.display_simtime_running else " (synchronisiert)"
+        self.clock.setText(
+            f"Simzeit: {format_axis_time(snapshot.display_simtime, True)}{suffix}"
+            if snapshot.display_simtime is not None else "Simzeit: –"
+        )
         self.diagram.refresh(snapshot)
         self.infrastructure.refresh(snapshot)
 

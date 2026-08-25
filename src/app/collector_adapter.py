@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from .simtime import SimTimeInterpolator
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DIAGNOSTIC_DIR = REPOSITORY_ROOT / "Schnittstellentest"
@@ -29,6 +30,8 @@ class CollectorSnapshot:
     aid: int | None
     services: tuple[object, ...]
     infrastructure_documents: tuple[str, ...]
+    display_simtime: float | None
+    display_simtime_running: bool
 
 
 class CollectorAdapter:
@@ -45,6 +48,8 @@ class CollectorAdapter:
         self._worker: threading.Thread | None = None
         self._poller: threading.Thread | None = None
         self._stop = threading.Event()
+        self._display_clock = SimTimeInterpolator()
+        self._last_display_sync: tuple[int, int] | None = None
 
     def start(self, host: str = "127.0.0.1", port: int = 3691) -> None:
         if self.offline:
@@ -71,7 +76,7 @@ class CollectorAdapter:
                 with self._lock:
                     self.status = "Collector aktiv"
                 self._send('<register name="StellwerkSim Bildfahrplan" autor="StellwerkSimBildfahrplan" '
-                           'version="0.1" protokoll="1" text="Live-Bildfahrplan" />')
+                           'version="0.3" protokoll="1" text="Live-Bildfahrplan" />')
                 for command in self.collector.startup_commands("bildfahrplan"):
                     self._send(command)
                 self._poller = threading.Thread(target=self._poll_simtime, name="STS-Simzeit", daemon=True)
@@ -101,14 +106,22 @@ class CollectorAdapter:
 
     def snapshot(self) -> CollectorSnapshot:
         with self._lock:
+            sync = ((self.collector.simtime, self.collector._sim_day)
+                    if self.collector.simtime is not None else None)
+            if sync is not None and sync != self._last_display_sync:
+                self._display_clock.synchronize(*sync)
+                self._last_display_sync = sync
+            connected = self._client.connected
+            display_simtime, running = self._display_clock.value(connected)
             return CollectorSnapshot(
-                connected=self._client.connected, status=self.status, simtime=self.collector.simtime,
+                connected=connected, status=self.status, simtime=self.collector.simtime,
                 sim_day=self.collector._sim_day, facility_name=self.collector.session.name,
                 aid=self.collector.session.aid, services=tuple(copy.deepcopy(list(self.collector.services.values()))),
                 infrastructure_documents=tuple(
                     raw for raw in self.collector.raw_xml
                     if raw.lstrip().startswith(("<wege", "<bahnsteigliste"))
                 ),
+                display_simtime=display_simtime, display_simtime_running=running,
             )
 
     def close(self) -> None:
