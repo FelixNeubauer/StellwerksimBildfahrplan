@@ -15,8 +15,8 @@ from .graph_builder import InfrastructureGraphBuilder
 from .persistence import save_generated_graph
 from .wege_parser import parse_bahnsteigliste, parse_wege
 from .schedule_graph import (
-    OperatingPoint, OperatingPointGraph, OperatingPointResolver,
-    ScheduleEdge, SchedulePointGraph, SchedulePointNode,
+    OperatingPoint, OperatingPointGraph, OperatingPointResolver, PlatformRelationGraph,
+    RouteAxisGraph, RouteAxisNode, ScheduleEdge, SchedulePointGraph, SchedulePointNode, station_key,
 )
 
 __all__ = [
@@ -26,4 +26,5 @@ __all__ = [
     "parse_bahnsteigliste", "parse_wege", "save_generated_graph",
     "OperatingPoint", "OperatingPointGraph", "OperatingPointResolver", "ScheduleEdge",
     "SchedulePointGraph", "SchedulePointNode",
+    "PlatformRelationGraph", "RouteAxisGraph", "RouteAxisNode", "station_key",
 ]

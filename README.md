@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3
+# StellwerkSim Bildfahrplan V0.3.1
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3
+## Umfang V0.3.1
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -47,7 +47,10 @@ dargestellt. Lokbewegungen und Wagenparks werden nicht gezeichnet.
 Der Tab **Strecke** leitet den sichtbaren betrieblichen Graphen ausschließlich
 aus den unveränderlichen `original_schedule` normaler Züge ab. Exakte manuelle
 Mappings haben Vorrang; anschließend dürfen explizite Beziehungen aus der
-`bahnsteigliste` Fahrplan-Rawnamen gruppieren. Ohne solche Evidenz bleibt jeder
+`bahnsteigliste`, mehrfach bestätigte Betriebsstellenkürzel und lokale
+Sandwich-/Closed-Excursion-Fahrplanmuster Rawnamen gruppieren. Eine separate
+RouteAxis-Ebene kann Ein-/Ausfahrt-Aliasse auf dieselbe X-Position abbilden,
+ohne SchedulePoints oder OperatingPoints zu löschen. Ohne solche Evidenz bleibt jeder
 Name als eigener virtueller Fahrplanpunkt erhalten. `<wege>` erzeugt weiterhin
 einen verlustfreien Raw-Graph, bestimmt aber keine sichtbaren Betriebsstellen.
 Automatisch erzeugte Daten werden AID-spezifisch unter `config/generated/`
@@ -60,7 +63,7 @@ liest diese Datei nur und überschreibt sie nicht.
 Die relative X-Position stammt weiterhin aus einem expliziten linearen
 RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
 Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische
-Gleisrekonstruktion sind nicht Teil von V0.3. Die Streckenachse liegt oben und
+Gleisrekonstruktion sind nicht Teil von V0.3.1. Die Streckenachse liegt oben und
 ist fest; ausschließlich der auf 05:00–21:00 begrenzte Zeitbereich ist vertikal
 zoom- und scrollbar. Zwischen den fünfsekündlichen STS-Abfragen interpoliert die
 UI die Simulationszeit monoton und friert bei Verbindungsverlust konservativ ein.

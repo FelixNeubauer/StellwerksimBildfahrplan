@@ -20,7 +20,7 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 2, "aid": aid, "facility": facility,
+        "schema_version": 3, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -34,6 +34,11 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
         } if operating else {"nodes": [], "edges": [], "raw_to_operating_point": {}}),
         "manual_confirmation": [asdict(item) for item in (operating.nodes.values() if operating else ())
                                 if item.manual_confirmation],
+        "route_axis": ({
+            "nodes": [asdict(item) for item in operating.to_route_axis_graph().nodes.values()],
+            "edges": [asdict(item) for item in operating.to_route_axis_graph().edges.values()],
+            "operating_to_axis": operating.to_route_axis_graph().operating_to_axis,
+        } if operating else {"nodes": [], "edges": [], "operating_to_axis": {}}),
         "derived": {"anchors": [asdict(item) for item in anchors.values()],
                     "operational_nodes": [asdict(item) for item in operational.nodes.values()],
                     "operational_edges": [asdict(item) for item in operational.edges]},
