@@ -9,7 +9,8 @@ sys.path.insert(0, str(ROOT / "Schnittstellentest"))
 
 from bildfahrplan.profile import OperatingPoint, RouteProfile
 from bildfahrplan.timeline import (
-    build_trace, format_axis_time, is_renderable_service, parse_clock, schedule_to_points, unwrap_time,
+    DISTANCE_AXIS, NOW_LINE_ANGLE, TIME_AXIS, build_trace, format_axis_time,
+    is_renderable_service, parse_clock, schedule_to_points, unwrap_time,
 )
 from sts_collector import SchedulePoint
 
@@ -47,6 +48,11 @@ class TimelineTests(unittest.TestCase):
         points = schedule_to_points([point("A 1", "12:00", "12:05")], self.profile, parse_clock("12:00"))
         self.assertEqual([item.kind for item in points], ["arrival", "departure"])
         self.assertEqual([item.position for item in points], [0, 0])
+        self.assertNotEqual(points[0].time_seconds, points[1].time_seconds)
+
+    def test_classical_axis_orientation_contract(self):
+        self.assertEqual((DISTANCE_AXIS, TIME_AXIS), ("x", "y"))
+        self.assertEqual(NOW_LINE_ANGLE, 0)  # horizontale Linie y = Simulationszeit
 
     def test_passage_has_one_point(self):
         points = schedule_to_points([point("B", "12:05", "12:05")], self.profile, parse_clock("12:00"))
@@ -78,4 +84,3 @@ class TimelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

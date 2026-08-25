@@ -2,20 +2,23 @@ from PySide6 import QtCore, QtWidgets
 
 from bildfahrplan.timeline import format_axis_time
 from .tabs.bildfahrplan_tab import BildfahrplanTab
+from .tabs.infrastructure_tab import InfrastructureTab
 from .tabs.placeholders import PlaceholderTab
+from .collector_adapter import REPOSITORY_ROOT
 
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, adapter, profile) -> None:
         super().__init__()
         self.adapter = adapter
-        self.setWindowTitle("StellwerkSim Bildfahrplan V0.1")
+        self.setWindowTitle("StellwerkSim Bildfahrplan V0.2")
         self.resize(1200, 760)
         self.tabs = QtWidgets.QTabWidget()
         self.diagram = BildfahrplanTab(adapter, profile)
         self.tabs.addTab(self.diagram, "Bildfahrplan")
         self.tabs.addTab(PlaceholderTab("Gleisbelegung – folgt in einer späteren Version"), "Gleisbelegung")
-        self.tabs.addTab(PlaceholderTab("Streckenprofile und Betriebsstellen – Konfiguration folgt"), "Strecke")
+        self.infrastructure = InfrastructureTab(REPOSITORY_ROOT / "config")
+        self.tabs.addTab(self.infrastructure, "Strecke")
         self.tabs.addTab(PlaceholderTab("Explizite Gleis- und Ortszuordnung – Konfiguration folgt"), "Gleise / Ortszuordnung")
         self.tabs.addTab(PlaceholderTab("Allgemeine Einstellungen – folgen in einer späteren Version"), "Einstellungen")
         self.setCentralWidget(self.tabs)
@@ -36,8 +39,8 @@ class MainWindow(QtWidgets.QMainWindow):
         absolute = snapshot.sim_day * 86400 + (snapshot.simtime or 0) / 1000
         self.clock.setText(f"Simzeit: {format_axis_time(absolute, True) if snapshot.simtime is not None else '–'}")
         self.diagram.refresh(snapshot)
+        self.infrastructure.refresh(snapshot)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
         self.adapter.close()
         super().closeEvent(event)
-

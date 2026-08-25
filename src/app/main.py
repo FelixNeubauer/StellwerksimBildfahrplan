@@ -12,7 +12,7 @@ from .main_window import MainWindow
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="StellwerkSim Bildfahrplan V0.1")
+    result = argparse.ArgumentParser(description="StellwerkSim Bildfahrplan V0.2")
     result.add_argument("--state", type=Path, help="Collector-State offline laden")
     result.add_argument("--profile", type=Path, default=REPOSITORY_ROOT / "config/routes/example.json")
     result.add_argument("--host", default="127.0.0.1")
@@ -33,4 +33,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -28,6 +28,7 @@ class CollectorSnapshot:
     facility_name: str | None
     aid: int | None
     services: tuple[object, ...]
+    infrastructure_documents: tuple[str, ...]
 
 
 class CollectorAdapter:
@@ -104,10 +105,13 @@ class CollectorAdapter:
                 connected=self._client.connected, status=self.status, simtime=self.collector.simtime,
                 sim_day=self.collector._sim_day, facility_name=self.collector.session.name,
                 aid=self.collector.session.aid, services=tuple(copy.deepcopy(list(self.collector.services.values()))),
+                infrastructure_documents=tuple(
+                    raw for raw in self.collector.raw_xml
+                    if raw.lstrip().startswith(("<wege", "<bahnsteigliste"))
+                ),
             )
 
     def close(self) -> None:
         self._stop.set()
         self._client.disconnect()
         self._events.put(None)
-

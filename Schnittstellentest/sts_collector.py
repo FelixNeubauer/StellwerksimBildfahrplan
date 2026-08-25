@@ -201,7 +201,10 @@ class STSLiveCollector:
         """
         self._initial_train_list_requested = True
         self._has_received_train_list = False
-        return ["<anlageninfo />", f'<simzeit sender="{sender}" />', "<zugliste />"]
+        return [
+            "<anlageninfo />", f'<simzeit sender="{sender}" />',
+            "<bahnsteigliste />", "<wege />", "<zugliste />",
+        ]
 
     def drain_messages(self) -> list[str]:
         messages, self.messages = self.messages, []

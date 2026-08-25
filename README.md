@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.1
+# StellwerkSim Bildfahrplan V0.2
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,11 +36,22 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.1
+## Umfang V0.2
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
-Projektion aus Planzeit plus aktueller Verspätung. Lokbewegungen und Wagenparks
-werden nicht gezeichnet. Die übrigen vier Tabs bilden die dauerhafte Navigation,
-sind aber absichtlich Platzhalter. Echte Istzeit-Zuordnung, Mapping-Editor,
-Gleisbelegung, Konfliktmodell und automatische Topologieauswertung sind nicht Teil
-von V0.1.
+Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
+der X-Achse und die nach unten zunehmende Zeit auf der Y-Achse; Halte werden als
+vertikale Abschnitte und die aktuelle Simulationszeit als horizontale Linie
+dargestellt. Lokbewegungen und Wagenparks werden nicht gezeichnet.
+
+Der Tab **Strecke** wertet vollständige `<wege>`-Antworten konservativ aus. Ein
+verlustfreier Raw-Graph wird strikt über exakte Namen mit Fahrplanpunkten
+verankert. Eindeutig auflösbare, aufeinanderfolgende Fahrplanpunkte liefern
+zählbare Pfad-Evidenz für einen getrennten, komprimierten OperationalRouteGraph.
+Automatisch erzeugte Daten werden AID-spezifisch unter `config/generated/`
+gespeichert; manuelle Streckenprofile bleiben davon unberührt.
+
+Die relative X-Position stammt weiterhin aus einem expliziten linearen
+RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
+Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische
+Gleisrekonstruktion sind nicht Teil von V0.2.
