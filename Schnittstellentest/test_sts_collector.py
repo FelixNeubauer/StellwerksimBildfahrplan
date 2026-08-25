@@ -1,0 +1,204 @@
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
+
+from sts_collector import EVENT_TYPES, LocationResolver, STSLiveCollector
+
+
+def xml(value):
+    return ET.fromstring(value)
+
+
+class CollectorTests(unittest.TestCase):
+    @staticmethod
+    def simtime(hour, minute, second):
+        return ((hour * 60 + minute) * 60 + second) * 1000
+
+    def test_new_regular_train_is_initialized_once_and_missing_train_is_kept(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<simzeit zeit="1000" />'))
+        commands = collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>'))
+        self.assertEqual(commands[:2], ['<zugdetails zid="7" />', '<zugfahrplan zid="7" />'])
+        self.assertEqual(len(commands), 2 + len(EVENT_TYPES))
+        self.assertEqual(collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>')), [])
+        collector.process(xml("<zugliste />"))
+        self.assertEqual(collector.services[7].status, "inactive_unknown")
+        self.assertIn(7, collector.services)
+
+    def test_temporary_locomotive_is_separate_and_not_initialized(self):
+        collector = STSLiveCollector()
+        commands = collector.process(xml('<zugliste><zug zid="-1" name="Lok IC 2085" /></zugliste>'))
+        self.assertEqual(commands, [])
+        self.assertTrue(collector.services[-1].temporary_locomotive)
+        self.assertEqual(collector.services[-1].status, "temporary_locomotive")
+
+    def test_original_schedule_never_changes_but_current_schedule_does(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>'))
+        collector.process(xml(
+            '<zugfahrplan zid="7"><gleis name="MBLH 1" plan="MBLH 1" an="15:00" ab="15:01" flags="D" /></zugfahrplan>'
+        ))
+        collector.process(xml(
+            '<zugfahrplan zid="7"><gleis name="MBLH 2" plan="MBLH 1" an="15:00" ab="15:01" flags="D" /></zugfahrplan>'
+        ))
+        service = collector.services[7]
+        self.assertEqual(service.original_schedule[0].current_name, "MBLH 1")
+        self.assertEqual(service.current_schedule[0].current_name, "MBLH 2")
+        self.assertEqual(service.current_schedule[0].planned_name, "MBLH 1")
+        self.assertEqual(len(service.raw_schedules), 2)
+
+    def test_location_mapping_is_explicit_and_raw_name_survives(self):
+        resolver = LocationResolver({"3 N": {"operating_point": "Ulm Hbf", "physical_track": "3",
+                                                "track_section": "N", "track_resolution": "section"}})
+        collector = STSLiveCollector(resolver=resolver)
+        collector.process(xml('<zugfahrplan zid="2"><gleis name="3 N" plan="3 N" /></zugfahrplan>'))
+        point = collector.services[2].current_schedule[0]
+        self.assertEqual((point.raw_name, point.physical_track, point.track_section), ("3 N", "3", "N"))
+        collector.process(xml('<zugfahrplan zid="3"><gleis name="Martinszell" /></zugfahrplan>'))
+        unknown = collector.services[3].current_schedule[0]
+        self.assertEqual(unknown.raw_name, "Martinszell")
+        self.assertEqual(unknown.track_resolution, "unknown")
+        self.assertIsNone(unknown.physical_track)
+
+    def test_raw_events_are_complete_while_interpreted_events_are_stateful(self):
+        times = iter(datetime(2026, 1, 1, 0, 0, i, tzinfo=timezone.utc) for i in range(4))
+        collector = STSLiveCollector(clock=lambda: next(times))
+        for art in ("rothalt", "rothalt", "rothalt", "wurdegruen"):
+            collector.process(xml(f'<ereignis art="{art}" zid="7" name="RE 7" gleis="A 1" />'))
+        service = collector.services[7]
+        self.assertEqual(len(service.raw_events), 4)
+        self.assertEqual([event.art for event in service.interpreted_events], ["rothalt", "wurdegruen"])
+        self.assertTrue(all(event.raw_xml for event in service.raw_events))
+
+    def test_simtime_drives_train_list_refresh_including_midnight(self):
+        collector = STSLiveCollector()
+        self.assertEqual(collector.process(xml('<simzeit zeit="86340000" />')), ["<zugliste />"])
+        self.assertEqual(collector.process(xml('<simzeit zeit="30000" />')), [])
+        self.assertEqual(collector.process(xml('<simzeit zeit="60000" />')), ["<zugliste />"])
+
+    def test_schedule_refresh_uses_unique_10_30_50_slots(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugliste><zug zid="7" name="RE 7" /><zug zid="8" name="Wagen IC 8" />'
+                              '<zug zid="-1" name="Lok RE 7" /></zugliste>'))
+        cases = (
+            ((12, 0, 9), []),
+            ((12, 0, 10), ['<zugfahrplan zid="7" />', '<zugfahrplan zid="8" />']),
+            ((12, 0, 10), []),
+            ((12, 0, 29), []),
+            ((12, 0, 30), ['<zugfahrplan zid="7" />', '<zugfahrplan zid="8" />']),
+            ((12, 0, 50), ['<zugfahrplan zid="7" />', '<zugfahrplan zid="8" />']),
+            ((12, 1, 10), ['<zugfahrplan zid="7" />', '<zugfahrplan zid="8" />']),
+        )
+        for parts, expected_schedules in cases:
+            commands = collector.process(xml(f'<simzeit zeit="{self.simtime(*parts)}" />'))
+            schedules = [command for command in commands if command.startswith("<zugfahrplan")]
+            self.assertEqual(schedules, expected_schedules, parts)
+
+    def test_schedule_slots_survive_midnight(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>'))
+        before = collector.process(xml(f'<simzeit zeit="{self.simtime(23, 59, 50)}" />'))
+        after = collector.process(xml(f'<simzeit zeit="{self.simtime(0, 0, 10)}" />'))
+        self.assertIn('<zugfahrplan zid="7" />', before)
+        self.assertIn('<zugfahrplan zid="7" />', after)
+
+    def test_schedule_refresh_does_not_change_train_list_cadence(self):
+        collector = STSLiveCollector()
+        collector.process(xml(f'<simzeit zeit="{self.simtime(12, 0, 0)}" />'))
+        collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>'))
+        commands = collector.process(xml(f'<simzeit zeit="{self.simtime(12, 0, 10)}" />'))
+        self.assertNotIn("<zugliste />", commands)
+        commands = collector.process(xml(f'<simzeit zeit="{self.simtime(12, 2, 0)}" />'))
+        self.assertIn("<zugliste />", commands)
+
+    def test_departure_is_one_stateful_operation(self):
+        collector = STSLiveCollector()
+        for at_track, delay in (("true", 0), ("true", 0), ("true", 1), ("false", 1)):
+            collector.process(xml(
+                f'<ereignis art="abfahrt" zid="7" name="RE 7" gleis="A 1" '
+                f'amgleis="{at_track}" verspaetung="{delay}" />'
+            ))
+        service = collector.services[7]
+        self.assertEqual(len(service.raw_events), 4)
+        departures = [event for event in service.interpreted_events if event.art == "abfahrt"]
+        self.assertEqual(len(departures), 1)
+        self.assertFalse(departures[0].at_track)
+        state = service.departure_states["A 1"]
+        self.assertEqual(state.status, "completed")
+        self.assertEqual(state.started_event.delay, 0)
+        self.assertEqual(state.completed_event.delay, 1)
+
+    def test_service_kinds_are_conservative(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugliste><zug zid="1" name="RE 32926" />'
+                              '<zug zid="-1" name="Lok ALX 39953" />'
+                              '<zug zid="2" name="Wagen IC 2084" /></zugliste>'))
+        self.assertEqual(collector.services[1].service_kind, "train")
+        self.assertEqual(collector.services[-1].service_kind, "locomotive_movement")
+        self.assertEqual(collector.services[2].service_kind, "wagon_set")
+
+    def test_startup_has_one_train_list_and_facility_request(self):
+        collector = STSLiveCollector()
+        commands = collector.startup_commands()
+        self.assertEqual(commands.count("<zugliste />"), 1)
+        self.assertIn("<anlageninfo />", commands)
+        follow_up = collector.process(xml('<simzeit zeit="1000" />'))
+        self.assertNotIn("<zugliste />", follow_up)
+
+    def test_persistence_round_trip_keeps_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "collector.json"
+            collector = STSLiveCollector(path)
+            raw = '<ereignis art="abfahrt" zid="7" name="RE 7" gleis="A 1" plangleis="A 2" />'
+            collector.process(xml(raw), raw)
+            restored = STSLiveCollector(path)
+            self.assertEqual(restored.services[7].raw_events[0].planned_track, "A 2")
+            self.assertIn(raw, restored.raw_xml)
+
+    def test_hint_text_is_persisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "collector.json"
+            collector = STSLiveCollector(path)
+            collector.process(xml('<zugfahrplan zid="7"><gleis name="A 1" plan="A 1" '
+                                  'hinweistext="Lok von rechts nach links umsetzen" /></zugfahrplan>'))
+            restored = STSLiveCollector(path)
+            self.assertEqual(
+                restored.services[7].current_schedule[0].hint_text,
+                "Lok von rechts nach links umsetzen",
+            )
+
+    def test_different_aid_archives_and_starts_clean_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "collector.json"
+            collector = STSLiveCollector(path)
+            collector.process(xml('<anlageninfo aid="823" name="Immenstadt" region="S" simbuild="1" online="true" />'))
+            collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>'))
+            restored = STSLiveCollector(path)
+            restored.process(xml('<anlageninfo aid="999" name="Andere Anlage" region="N" simbuild="2" online="false" />'))
+            self.assertEqual(restored.session.aid, 999)
+            self.assertEqual(restored.services, {})
+            self.assertTrue(list(Path(directory).glob("collector.aid-823.*.json")))
+
+    def test_track_change_creates_message_without_overwriting_original(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>'))
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="MBLH 1" plan="MBLH 1" an="12:00" /></zugfahrplan>'))
+        collector.drain_messages()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="MBLH 2" plan="MBLH 1" an="12:00" /></zugfahrplan>'))
+        self.assertEqual(collector.services[7].original_schedule[0].current_name, "MBLH 1")
+        self.assertEqual(collector.services[7].current_schedule[0].current_name, "MBLH 2")
+        self.assertTrue(any("MBLH 1 → MBLH 2" in message for message in collector.drain_messages()))
+
+    def test_details_preserve_plan_and_actual_track(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugdetails zid="7" name="RE 7" verspaetung="5" gleis="MBLH 2" '
+                              'plangleis="MBLH 1" sichtbar="true" amgleis="false" von="A" nach="B" />'))
+        service = collector.services[7]
+        self.assertEqual((service.current_track, service.planned_track), ("MBLH 2", "MBLH 1"))
+        self.assertEqual((service.visible, service.at_track), (True, False))
+
+
+if __name__ == "__main__":
+    unittest.main()

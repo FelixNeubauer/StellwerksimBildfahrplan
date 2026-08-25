@@ -6,11 +6,14 @@ import queue
 import re
 import socket
 import threading
+import traceback
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+
+from sts_collector import STSLiveCollector
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -20,6 +23,9 @@ from tkinter.scrolledtext import ScrolledText
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 3691
 ENCODING = "utf-8"
+APPLICATION_DIR = Path(__file__).resolve().parent
+COLLECTOR_STATE_PATH = APPLICATION_DIR / "sts_collector_state.json"
+ERROR_LOG_PATH = APPLICATION_DIR / "sts_tester_error.log"
 
 
 class LineXMLFramer:
@@ -60,6 +66,7 @@ class ProtocolParseResult:
     state: str
     element: ET.Element | None = None
     error: str | None = None
+    raw_document: bytes | None = None
 
 
 class StellwerkSimProtocolParser:
@@ -105,7 +112,7 @@ class StellwerkSimProtocolParser:
             self._container_lines.clear()
             self._container_tag = None
             self._store_response_data(element)
-            return ProtocolParseResult("complete", element=element)
+            return ProtocolParseResult("complete", element=element, raw_document=document)
 
         try:
             element = ET.fromstring(raw)
@@ -119,7 +126,7 @@ class StellwerkSimProtocolParser:
                 return ProtocolParseResult("pending")
             return ProtocolParseResult("error", error=str(exc))
         self._store_response_data(element)
-        return ProtocolParseResult("complete", element=element)
+        return ProtocolParseResult("complete", element=element, raw_document=raw)
 
     def _store_response_data(self, element: ET.Element) -> None:
         if element.tag != "zugliste":
@@ -242,6 +249,10 @@ class StellwerkSimTesterGUI:
         self.train_var = tk.StringVar()
         self.train_ids: dict[str, str] = {}
         self.protocol_parser = StellwerkSimProtocolParser()
+        self.collector = STSLiveCollector(COLLECTOR_STATE_PATH)
+        self.collector_active = False
+        self.collector_commands: queue.Queue[str] = queue.Queue()
+        self._collector_sender_running = False
         self.event_vars: dict[str, tk.BooleanVar] = {}
         self._build_gui()
         self.root.after(80, self._process_events)
@@ -272,6 +283,7 @@ class StellwerkSimTesterGUI:
             ("Wege / Fahrwege", "<wege />"),
         ):
             ttk.Button(commands, text=label, command=lambda value=command: self.send(value)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(commands, text="Live-Collector starten", command=self.start_collector).pack(side=tk.LEFT, padx=8)
 
         train = ttk.LabelFrame(outer, text="3. Zugbezogene Abfragen", padding=6)
         train.pack(fill=tk.X, pady=(6, 0))
@@ -345,6 +357,41 @@ class StellwerkSimTesterGUI:
             '<register name="STS Schnittstellen Tester" autor="Test" version="0.1" '
             'protokoll="1" text="Testprogramm für die StellwerkSim Plugin-Schnittstelle" />'
         )
+
+    def start_collector(self) -> None:
+        """Startet bewusst opt-in; der reine Diagnosetester bleibt unveraendert nutzbar."""
+        if self.collector_active:
+            self._log("COLLECTOR", "Der Live-Collector ist bereits aktiv.")
+            return
+        self.collector_active = True
+        self._log("COLLECTOR", f"Persistent aktiv; Zustand: {COLLECTOR_STATE_PATH}")
+        for command in self.collector.startup_commands():
+            self._enqueue_collector_command(command)
+        self.root.after(5000, self._poll_collector_simtime)
+
+    def _poll_collector_simtime(self) -> None:
+        if not self.collector_active:
+            return
+        self._enqueue_collector_command('<simzeit sender="sts_collector" />')
+        self.root.after(5000, self._poll_collector_simtime)
+
+    def _enqueue_collector_command(self, command: str) -> None:
+        """Serialisiert automatische Requests, ohne den GUI-Thread zu blockieren."""
+        self.collector_commands.put(command)
+        if not self._collector_sender_running:
+            self._collector_sender_running = True
+            self.root.after(0, self._send_next_collector_command)
+
+    def _send_next_collector_command(self) -> None:
+        try:
+            command = self.collector_commands.get_nowait()
+        except queue.Empty:
+            self._collector_sender_running = False
+            return
+        self.send(command)
+        # Kleine Taktung statt eines Bursts; Antworten/Events werden weiterhin
+        # ausschliesslich vom vorhandenen Empfangsthread verarbeitet.
+        self.root.after(100, self._send_next_collector_command)
 
     def send(self, xml_text: str) -> bool:
         try:
@@ -434,6 +481,12 @@ class StellwerkSimTesterGUI:
             return
         element = result.element
         assert element is not None
+        if self.collector_active:
+            raw_document = result.raw_document or raw
+            for command in self.collector.process(element, self._decode(raw_document)):
+                self._enqueue_collector_command(command)
+            for message in self.collector.drain_messages():
+                self._log("COLLECTOR", message)
         parsed_lines = [f"Tag: {element.tag}", f"Attribute: {element.attrib!r}"]
         try:
             ET.indent(element, space="  ")
@@ -491,11 +544,39 @@ class StellwerkSimTesterGUI:
         self.root.destroy()
 
 
+def _write_gui_exception(error_log: Path, exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
+    with error_log.open("a", encoding="utf-8") as stream:
+        stream.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] Unbehandelte GUI-Ausnahme\n")
+        traceback.print_exception(exc_type, exc, tb, file=stream)
+
+
 def main() -> None:
     root = tk.Tk()
+
+    def report_callback_exception(exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
+        _write_gui_exception(ERROR_LOG_PATH, exc_type, exc, tb)
+        messagebox.showerror(
+            "Unerwarteter Fehler",
+            f"Details wurden in {ERROR_LOG_PATH} protokolliert.",
+            parent=root,
+        )
+
+    root.report_callback_exception = report_callback_exception
     StellwerkSimTesterGUI(root)
     root.mainloop()
 
 
+def launch() -> None:
+    """Gemeinsamer robuster Einstieg fuer python.exe und pythonw.exe."""
+    try:
+        main()
+    except Exception as exc:
+        _write_gui_exception(ERROR_LOG_PATH, type(exc), exc, exc.__traceback__)
+        try:
+            messagebox.showerror("Start fehlgeschlagen", f"Details: {ERROR_LOG_PATH}")
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
-    main()
+    launch()
