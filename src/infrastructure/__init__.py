@@ -19,8 +19,9 @@ from .schedule_graph import (
     RouteAxisGraph, RouteAxisNode, ScheduleEdge, SchedulePointGraph, SchedulePointNode, station_key,
 )
 from .corridor import (
-    BackboneEdge, CorridorGraph, CorridorGraphBuilder, DerivedRouteEdge, DirectionChangeEvidence,
-    PathTimeStats, TerminalEvidence, TravelTimeStats,
+    BackboneEdge, BackboneScore, CorridorGraph, CorridorGraphBuilder, DerivedRouteEdge,
+    DirectionChangeEvidence, PathTimeStats, RawAdjacencyEvidence, TerminalEvidence,
+    TravelTimeStats, TriangleResolutionEvidence,
 )
 
 __all__ = [
@@ -32,5 +33,6 @@ __all__ = [
     "SchedulePointGraph", "SchedulePointNode",
     "PlatformRelationGraph", "RouteAxisGraph", "RouteAxisNode", "station_key",
     "CorridorGraph", "CorridorGraphBuilder", "DerivedRouteEdge", "DirectionChangeEvidence",
-    "BackboneEdge", "PathTimeStats", "TerminalEvidence", "TravelTimeStats",
+    "BackboneEdge", "BackboneScore", "PathTimeStats", "RawAdjacencyEvidence", "TerminalEvidence",
+    "TravelTimeStats", "TriangleResolutionEvidence",
 ]

@@ -216,6 +216,9 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertNotIn(("TBI", "TBSC"), {(e.source, e.target) for e in corridor.visible_edges})
         self.assertEqual(corridor.edges[("TAU", "TAT")].classification, "branch")
         self.assertTrue(all(corridor.node_roles[name] == "local_industrial" for name in ("U1", "U4", "U5")))
+        self.assertEqual(corridor.node_roles["TLW"], "branch_junction")
+        self.assertNotIn("branch_junction", {corridor.node_roles[name] for name in ("TER", "TSX", "TUDT")})
+        self.assertGreaterEqual(sum(edge.classification == "skip" for edge in corridor.edges.values()), 2)
 
     def test_recursive_skip_and_strong_triangle_is_not_blindly_reduced(self):
         manual = {"operating_points": {
@@ -241,10 +244,10 @@ class ScheduleGraphTests(unittest.TestCase):
         manual = {"operating_points": {
             name: {"display_name": name, "raw_names": [name]} for name in ("TSX", "TLW", "TLM")}}
         services = [
-            timed_service(1, ("TSX", "08:00", "08:00"), ("TLW", "08:04", "08:04")),
-            timed_service(2, ("TSX", "08:10", "08:10"), ("TLW", "08:14", "08:14")),
-            timed_service(3, ("TSX", "09:00", "09:00"), ("TLM", "09:08", "09:18"),
-                          ("TLW", "09:26", "09:26")),
+            timed_service(1, ("TSX", "08:00:00", "08:00:00"), ("TLW", "08:02:30", "08:02:30")),
+            timed_service(2, ("TSX", "08:10:00", "08:10:00"), ("TLW", "08:12:30", "08:12:30")),
+            timed_service(3, ("TSX", "09:00:00", "09:00:00"), ("TLM", "09:04:30", "09:10:30"),
+                          ("TLW", "09:15:00", "09:15:00")),
             timed_service(4, ("TLW", "10:00", "10:00"), ("TLM", "10:08", "10:18"),
                           ("TLW", "10:26", "10:26")),
         ]
@@ -252,13 +255,52 @@ class ScheduleGraphTests(unittest.TestCase):
         operating = OperatingPointResolver((), manual).resolve(schedule)
         corridor = CorridorGraphBuilder(schedule, operating).build()
         via = corridor.travel_time_stats[("TSX", "TLM", "TLW")]
-        self.assertEqual(via.movement.median, 16 * 60)
-        self.assertEqual(via.dwell.median, 10 * 60)
-        self.assertEqual(via.total_elapsed.median, 26 * 60)
+        self.assertEqual(via.movement.median, 9 * 60)
+        self.assertEqual(via.dwell.median, 6 * 60)
+        self.assertEqual(via.total_elapsed.median, 15 * 60)
         direct = corridor.travel_time_stats[("TSX", "TLW")]
-        self.assertEqual(direct.movement.median, 4 * 60)
+        self.assertEqual(direct.movement.median, 150)
         self.assertIn(frozenset(("TSX", "TLW")), corridor.backbone_edges)
         self.assertEqual(corridor.node_roles["TLM"], "branch_terminal")
+        rejected = corridor.between_evidence[("TSX", "TLM", "TLW")]
+        self.assertEqual(rejected["confidence"], "rejected")
+        self.assertGreater(
+            corridor.backbone_scores[frozenset(("TSX", "TLW"))].travel_time_support, 0)
+
+    def test_laupheim_timed_chain_wins_before_forest_and_direct_becomes_skip(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("TER", "TEIN", "TUDT")}}
+        services = [
+            timed_service(1, ("TER", "08:00", "08:00"), ("TEIN", "08:02", "08:02"),
+                          ("TUDT", "08:04", "08:04")),
+            timed_service(2, ("TUDT", "09:00", "09:00"), ("TEIN", "09:02", "09:02"),
+                          ("TER", "09:04", "09:04")),
+            timed_service(3, ("TER", "10:00", "10:00"), ("TUDT", "10:05", "10:05")),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertIn(frozenset(("TER", "TEIN")), corridor.backbone_edges)
+        self.assertIn(frozenset(("TEIN", "TUDT")), corridor.backbone_edges)
+        self.assertEqual(corridor.edges[("TER", "TUDT")].classification, "skip")
+        self.assertEqual(corridor.edges[("TER", "TUDT")].covered_path, ("TER", "TEIN", "TUDT"))
+        self.assertEqual(corridor.between_evidence[("TER", "TEIN", "TUDT")]["confidence"], "high")
+
+    def test_raw_continuation_rejects_observed_terminal_but_mof_remains_terminal(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("TAU", "TAT")}}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "TAU", "TAT"), service(2, "TAU", "TAT"),
+            service(3, "TAT", "TAU"), service(4, "TAT", "TAU"),
+        ])
+        raw = parse_wege("""<wege>
+          <e enr='1' name='TAU'/><e enr='2'/><e enr='3' name='TAT'/><e enr='4'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/><connector enr1='3' enr2='4'/>
+        </wege>""")
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
+        self.assertEqual(corridor.node_roles["TAT"], "observed_schedule_boundary")
+        self.assertIn("raw_external_continuation",
+                      corridor.terminal_evidence["TAT"].contradicting_terminal_evidence)
 
     def test_travel_time_normalizes_midnight(self):
         manual = {"operating_points": {

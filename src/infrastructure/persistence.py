@@ -22,7 +22,7 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 5, "aid": aid, "facility": facility,
+        "schema_version": 6, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -56,10 +56,17 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                 {"nodes": list(nodes), "evidence": evidence}
                 for nodes, evidence in corridor.between_evidence.items()
             ],
+            "triangle_resolutions": [asdict(item) for item in corridor.triangle_resolutions],
+            "raw_adjacency_evidence": [asdict(item) for item in corridor.raw_adjacency_evidence.values()],
+            "backbone_scores": [
+                {"nodes": sorted(nodes), "score": asdict(score)}
+                for nodes, score in corridor.backbone_scores.items()
+            ],
             "component_roles": corridor.component_roles,
         } if corridor else {"edges": [], "backbone_edges": [], "backbone_candidates": [],
                             "node_roles": {}, "direction_changes": [], "terminal_evidence": [],
-                            "travel_time_stats": [], "between_evidence": [], "component_roles": {}}),
+                            "travel_time_stats": [], "between_evidence": [], "triangle_resolutions": [],
+                            "raw_adjacency_evidence": [], "backbone_scores": [], "component_roles": {}}),
         "derived": {"anchors": [asdict(item) for item in anchors.values()],
                     "operational_nodes": [asdict(item) for item in operational.nodes.values()],
                     "operational_edges": [asdict(item) for item in operational.edges]},

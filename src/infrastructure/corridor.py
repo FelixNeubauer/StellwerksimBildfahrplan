@@ -48,8 +48,47 @@ class TerminalEvidence:
     through_count: int
     reversal_count: int
     stable_external_neighbors: tuple[str, ...]
+    external_continuation_evidence: tuple[str, ...]
+    raw_outgoing_corridors: int
+    boundary_connections: tuple[str, ...]
+    contradicting_terminal_evidence: tuple[str, ...]
     classification: str
     evidence: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RawAdjacencyEvidence:
+    source: str
+    target: str
+    connected: bool
+    path: tuple[str, ...]
+    intermediate_operating_points: tuple[str, ...]
+    confidence: str
+
+
+@dataclass(frozen=True)
+class TriangleResolutionEvidence:
+    nodes: tuple[str, str, str]
+    between_candidate: str | None
+    confidence: str
+    supporting_evidence: tuple[str, ...]
+    contradicting_evidence: tuple[str, ...]
+    direct_edge: tuple[str, str] | None = None
+    chain_edges: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class BackboneScore:
+    schedule_support: float
+    reverse_support: float
+    infrastructure_support: float
+    travel_time_support: float
+    between_support: float
+    mainline_support: float
+    terminal_penalty: float
+    branch_penalty: float
+    contradiction_penalty: float
+    final_score: float
 
 
 @dataclass(frozen=True)
@@ -83,6 +122,9 @@ class CorridorGraph:
     terminal_evidence: dict[str, TerminalEvidence] = field(default_factory=dict)
     travel_time_stats: dict[tuple[str, ...], PathTimeStats] = field(default_factory=dict)
     between_evidence: dict[tuple[str, str, str], dict[str, Any]] = field(default_factory=dict)
+    triangle_resolutions: list[TriangleResolutionEvidence] = field(default_factory=list)
+    raw_adjacency_evidence: dict[frozenset[str], RawAdjacencyEvidence] = field(default_factory=dict)
+    backbone_scores: dict[frozenset[str], BackboneScore] = field(default_factory=dict)
     component_roles: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -257,15 +299,148 @@ class CorridorGraphBuilder:
             label = self.axis.nodes[node].display_name
             boundary = label.startswith(("EA ", "Einfahrt ", "Ausfahrt ", "Abzw "))
             endpoint_weight = starts[node] + ends[node]
-            terminal = not boundary and endpoint_weight >= 2 and through[node] == 0 and len(neighbours[node]) <= 1
-            classification = "external_boundary" if boundary else "terminal" if terminal else "candidate"
+            raw_outgoing, boundary_connections = self._raw_continuations(node)
+            contradictions = tuple(filter(None, (
+                "raw_external_continuation" if raw_outgoing > len(neighbours[node]) else "",
+                "multiple_raw_corridors" if raw_outgoing > 1 else "",
+            )))
+            terminal = (not boundary and endpoint_weight >= 2 and through[node] == 0
+                        and len(neighbours[node]) <= 1 and not contradictions)
+            observed = not boundary and endpoint_weight >= 2 and through[node] == 0 and bool(contradictions)
+            classification = ("external_boundary" if boundary else "terminal" if terminal else
+                              "observed_schedule_boundary" if observed else "candidate")
             evidence = (("boundary_name",) if boundary else ()) + (("schedule_start_end", "single_stable_neighbor") if terminal else ())
             result[node] = TerminalEvidence(node, starts[node], ends[node], through[node], reversal_counts[node],
-                                            tuple(sorted(neighbours[node])), classification, evidence)
+                                            tuple(sorted(neighbours[node])), boundary_connections, raw_outgoing,
+                                            boundary_connections, contradictions, classification, evidence)
         return result
 
+    def _raw_anchors(self) -> dict[str, set[str]]:
+        anchors: dict[str, set[str]] = defaultdict(set)
+        if self.raw_graph is None:
+            return anchors
+        for axis_id, axis_node in self.axis.nodes.items():
+            raw_names = {raw for op in axis_node.operating_points for raw in self.operating.nodes[op].raw_names}
+            for raw_node in self.raw_graph.nodes.values():
+                if raw_node.raw_name in raw_names:
+                    anchors[axis_id].add(raw_node.id)
+        return anchors
+
+    def _raw_continuations(self, node: str) -> tuple[int, tuple[str, ...]]:
+        """Conservative first-anchor projection; raw elements never become visible nodes."""
+        if self.raw_graph is None:
+            return 0, ()
+        anchors = self._raw_anchors()
+        reverse = {raw: axis for axis, values in anchors.items() for raw in values}
+        found: set[str] = set(); exits = 0
+        for start in anchors.get(node, ()):
+            for first in self.raw_graph.neighbours(start):
+                queue = deque([(first, start)]); visited = {start}
+                reached = False
+                while queue:
+                    current, previous = queue.popleft()
+                    if current in visited:
+                        continue
+                    visited.add(current)
+                    if current in reverse and reverse[current] != node:
+                        found.add(reverse[current]); reached = True; break
+                    following = self.raw_graph.neighbours(current) - {previous}
+                    if not following:
+                        exits += 1; reached = True; break
+                    queue.extend((item, current) for item in following)
+                if not reached:
+                    exits += 1
+        labels = tuple(sorted(found | ({"raw_graph_boundary"} if exits else set())))
+        return len(found) + (1 if exits else 0), labels
+
+    def _raw_adjacencies(self) -> dict[frozenset[str], RawAdjacencyEvidence]:
+        result: dict[frozenset[str], RawAdjacencyEvidence] = {}
+        if self.raw_graph is None:
+            return result
+        anchors = self._raw_anchors(); reverse = {raw: axis for axis, values in anchors.items() for raw in values}
+        for source, targets in anchors.items():
+            for start in targets:
+                queue = deque([(start, (start,))]); visited = {start}
+                while queue:
+                    raw, path = queue.popleft()
+                    for nxt in self.raw_graph.neighbours(raw):
+                        if nxt in visited:
+                            continue
+                        visited.add(nxt); candidate = (*path, nxt)
+                        other = reverse.get(nxt)
+                        if other and other != source:
+                            key = frozenset((source, other))
+                            current = result.get(key)
+                            if current is None or len(candidate) < len(current.path):
+                                result[key] = RawAdjacencyEvidence(source, other, True, candidate, (), "exact")
+                            continue
+                        queue.append((nxt, candidate))
+        return result
+
+    def _triangles(self, result: CorridorGraph, undirected: dict[frozenset[str], dict[str, Any]]) -> None:
+        adjacency: dict[str, set[str]] = defaultdict(set)
+        for key in undirected:
+            a, b = tuple(key); adjacency[a].add(b); adjacency[b].add(a)
+        seen: set[frozenset[str]] = set()
+        for a in sorted(adjacency):
+            for b in sorted(adjacency[a]):
+                for c in sorted(adjacency[a] & adjacency[b]):
+                    nodes_key = frozenset((a, b, c))
+                    if len(nodes_key) != 3 or nodes_key in seen:
+                        continue
+                    seen.add(nodes_key); nodes = tuple(sorted(nodes_key))
+                    interpretations: list[tuple[
+                        float, str, tuple[str, ...], tuple[str, ...], tuple[str, str],
+                        tuple[tuple[str, str], ...],
+                    ]] = []
+                    for middle in nodes:
+                        outer = tuple(node for node in nodes if node != middle)
+                        if ((outer[1], middle, outer[0]) in result.travel_time_stats
+                                and (outer[0], middle, outer[1]) not in result.travel_time_stats):
+                            outer = tuple(reversed(outer))
+                        direct = self._best_time(outer, result.travel_time_stats)
+                        via = self._best_time((outer[0], middle, outer[1]), result.travel_time_stats)
+                        support: list[str] = []; contradict: list[str] = []; score = 0.0
+                        if direct and via:
+                            ratio = direct.movement.median / max(via.movement.median, 1.0)
+                            if ratio >= .8:
+                                score += 3.0
+                                support.append(
+                                    f"via_movement_plausible:{via.movement.median:g}s/"
+                                    f"direct:{direct.movement.median:g}s")
+                            elif ratio <= .6:
+                                score -= 4.0
+                                contradict.append(
+                                    f"direct_much_faster:{direct.movement.median:g}s/"
+                                    f"via:{via.movement.median:g}s")
+                            if via.dwell.median:
+                                (contradict if ratio <= .6 else support).append(f"via_dwell:{via.dwell.median:g}s")
+                        chain = tuple(tuple(sorted((middle, endpoint))) for endpoint in outer)
+                        chain_support = min(undirected[frozenset(edge)]["direct"] for edge in chain)
+                        direct_support = undirected[frozenset(outer)]["direct"]
+                        if chain_support >= direct_support:
+                            score += 1.0; support.append("chain_schedule_support")
+                        raw_chain = sum(frozenset(edge) in result.raw_adjacency_evidence for edge in chain)
+                        raw_direct = frozenset(outer) in result.raw_adjacency_evidence
+                        if raw_chain == 2 and not raw_direct:
+                            score += 2.0; support.append("raw_chain_adjacency")
+                        interpretations.append((score, middle, tuple(support), tuple(contradict), outer, chain))
+                    best = max(interpretations, key=lambda item: item[0])
+                    positive = best[0] >= 3.0
+                    resolution = TriangleResolutionEvidence(
+                        nodes, best[1] if positive else None, "high" if abs(best[0]) >= 3 else "low",
+                        best[2], best[3], tuple(sorted(best[4])), best[5],
+                    )
+                    result.triangle_resolutions.append(resolution)
+                    for score, middle, support, contradict, outer, chain in interpretations:
+                        result.between_evidence[(outer[0], middle, outer[1])] = {
+                            "confidence": "high" if score >= 3 else "rejected" if score < 0 else "low",
+                            "score": score, "supporting_evidence": support,
+                            "contradicting_evidence": contradict,
+                        }
+
     def _backbone(self, result: CorridorGraph, terminal_approach: dict[str, DirectionChangeEvidence]) -> None:
-        """Selects a deterministic maximum-evidence forest before any skip decision."""
+        """Score contextual evidence first, then select the maximum-evidence forest."""
         undirected: dict[frozenset[str], dict[str, Any]] = {}
         for source, target in self.axis.edges:
             key = frozenset((source, target))
@@ -273,6 +448,8 @@ class CorridorGraphBuilder:
             item["direct"] = self._support(self.axis.edges, source, target)
             item["forward"] = self.axis.edges.get((source, target), ScheduleEdge(source, target)).observation_count
             item["reverse"] = self.axis.edges.get((target, source), ScheduleEdge(target, source)).observation_count
+        result.raw_adjacency_evidence = self._raw_adjacencies()
+        self._triangles(result, undirected)
         candidate_adjacency: dict[str, set[str]] = defaultdict(set)
         for key in undirected:
             left, right = tuple(key); candidate_adjacency[left].add(right); candidate_adjacency[right].add(left)
@@ -286,28 +463,55 @@ class CorridorGraphBuilder:
                         "classification": "alternative_route_candidate", "covered_path": alternative,
                         "direct_support": item["direct"], "path_support": min(supports),
                     }
-        # Travel comparison can protect a fast direct edge from a slower terminal detour.
-        protected: set[frozenset[str]] = set()
+        positive_chain: dict[frozenset[str], float] = defaultdict(float)
+        transitive_penalty: dict[frozenset[str], float] = defaultdict(float)
+        fast_direct: dict[frozenset[str], float] = defaultdict(float)
+        rejected_middle: set[str] = set()
+        for triangle in result.triangle_resolutions:
+            if triangle.between_candidate:
+                for edge in triangle.chain_edges:
+                    positive_chain[frozenset(edge)] += 24.0
+                if triangle.direct_edge:
+                    transitive_penalty[frozenset(triangle.direct_edge)] += 24.0
+            else:
+                for outer_a, middle, outer_b in (
+                        (key[0], key[1], key[2]) for key, value in result.between_evidence.items()
+                        if frozenset(key) == frozenset(triangle.nodes) and value["score"] < 0):
+                    fast_direct[frozenset((outer_a, outer_b))] += 28.0
+                    rejected_middle.add(middle)
         for key, item in undirected.items():
             source, target = item["source"], item["target"]
             direct_stats = self._best_time((source, target), result.travel_time_stats)
             if direct_stats:
                 item["median_movement_time"] = direct_stats.movement.median
-            for terminal in terminal_approach:
-                via = self._best_time((source, terminal, target), result.travel_time_stats)
-                if direct_stats and via and direct_stats.movement.observations >= 1 and (
-                        direct_stats.movement.median < via.movement.median * 0.8):
-                    protected.add(key)
-                    item["travel_time_support"] = {
-                        "direct_median": direct_stats.movement.median,
-                        "via_median": via.movement.median,
-                        "relative_ratio": direct_stats.movement.median / via.movement.median,
-                    }
+            reverse = min(item["forward"], item["reverse"])
+            infra = 8.0 if key in result.raw_adjacency_evidence else 0.0
+            terminal_penalty = 0.0
+            for node in key:
+                terminal = result.terminal_evidence[node]
+                if terminal.classification == "terminal" or node in rejected_middle:
+                    terminal_penalty += 5.0
+            branch_penalty = 6.0 if any(
+                node in terminal_approach and (key - {node}) != {terminal_approach[node].approach}
+                for node in key) else 0.0
+            components = BackboneScore(
+                schedule_support=item["direct"] * 10.0,
+                reverse_support=reverse * 4.0,
+                infrastructure_support=infra,
+                travel_time_support=fast_direct[key],
+                between_support=positive_chain[key],
+                mainline_support=0.0,
+                terminal_penalty=terminal_penalty,
+                branch_penalty=branch_penalty,
+                contradiction_penalty=transitive_penalty[key],
+                final_score=(item["direct"] * 10.0 + reverse * 4.0 + infra + fast_direct[key]
+                             + positive_chain[key] - terminal_penalty - branch_penalty
+                             - transitive_penalty[key]),
+            )
+            result.backbone_scores[key] = components
+            item["score"] = components
         ranked = sorted(undirected.items(), key=lambda entry: (
-            entry[0] not in protected,
-            -(entry[1]["direct"] + min(entry[1]["forward"], entry[1]["reverse"])),
-            tuple(sorted(entry[0])),
-        ))
+            -result.backbone_scores[entry[0]].final_score, tuple(sorted(entry[0]))))
         parent = {node: node for node in self.axis.nodes}
 
         def root(node: str) -> str:
@@ -323,10 +527,14 @@ class CorridorGraphBuilder:
                 for terminal, change in terminal_approach.items()
             )
             if terminal_blocked or root(source) == root(target):
+                evidence["selection"] = "rejected_terminal" if terminal_blocked else "rejected_cycle"
                 continue
             parent[root(source)] = root(target)
             confidence = "exact" if evidence["forward"] and evidence["reverse"] else "inferred"
-            evidence["infrastructure_support"] = "available" if self.raw_graph is not None else "not_available"
+            evidence["selection"] = "selected_maximum_evidence_forest"
+            evidence["infrastructure_support"] = (
+                "raw_adjacent" if key in result.raw_adjacency_evidence else
+                "not_observed" if self.raw_graph is not None else "not_available")
             result.backbone_edges[key] = BackboneEdge(source, target, evidence, confidence)
 
     @staticmethod
@@ -391,17 +599,20 @@ class CorridorGraphBuilder:
                 confidence = result.backbone_edges[key].confidence
             else:
                 path = self._backbone_path(source, target, result)
-                if key in result.backbone_candidates:
-                    classification = "alternative_route"
-                    evidence["backbone_candidate"] = result.backbone_candidates[key]
-                elif path and len(path) > 2:
+                confirmed_between = bool(path and len(path) == 3 and result.between_evidence.get(
+                    (path[0], path[1], path[2]), result.between_evidence.get(
+                        (path[2], path[1], path[0]), {})).get("confidence") == "high")
+                if path and len(path) > 2 and (confirmed_between or key not in result.backbone_candidates):
                     classification, covered = "skip", path
                     evidence["backbone_covered_path"] = True
                     for middle in path[1:-1]:
-                        result.between_evidence[(source, middle, target)] = {
+                        result.between_evidence.setdefault((source, middle, target), {}).update({
                             "backbone_path": path, "schedule_direct": raw_edge.observation_count,
                             "reverse_schedule": (target, source) in self.axis.edges,
-                        }
+                        })
+                elif key in result.backbone_candidates:
+                    classification = "alternative_route"
+                    evidence["backbone_candidate"] = result.backbone_candidates[key]
                 else:
                     classification = "alternative_route" if path else "unresolved"
             result.edges[pair] = DerivedRouteEdge(
@@ -420,12 +631,29 @@ class CorridorGraphBuilder:
                 elif frozenset((terminal, other)) not in result.backbone_edges:
                     edge.classification = "local_internal"
 
+        # A strongly rejected between interpretation is a generic spur signal even
+        # when the return working is represented by a separate STS schedule.
+        rejected_middles = {middle for (_, middle, _), evidence in result.between_evidence.items()
+                            if evidence.get("score", 0) < 0}
+        for terminal in rejected_middles:
+            incident = [key for key in result.backbone_edges if terminal in key]
+            if len(incident) != 1:
+                continue
+            approach = next(iter(incident[0] - {terminal}))
+            result.node_roles[terminal] = "branch_terminal"
+            for edge in result.edges.values():
+                if terminal in (edge.source, edge.target) and approach in (edge.source, edge.target):
+                    edge.classification = "branch"
+                    edge.evidence["negative_between_spur"] = True
+
         # Schedule-end terminals (e.g. terminus with separate outbound services).
         for node, evidence in result.terminal_evidence.items():
             if evidence.classification == "terminal":
                 result.node_roles[node] = "terminal"
             elif evidence.classification == "external_boundary":
                 result.node_roles[node] = "external_boundary"
+            elif evidence.classification == "observed_schedule_boundary":
+                result.node_roles[node] = "observed_schedule_boundary"
 
         components = self._components(result.visible_edges)
         largest = max(components, key=len, default=set())

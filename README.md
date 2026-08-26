@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.3
+# StellwerkSim Bildfahrplan V0.3.4
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3.3
+## Umfang V0.3.4
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -78,3 +78,12 @@ Richtungs-, Fahrzeit-, Terminal- und optionaler Raw-Infrastrukturevidenz
 gewählt. Erst danach dürfen übrige ScheduleEdges über ausschließlich bestätigte
 Backbone-Kanten als Skip erklärt werden; zirkuläre Skip-Beweise sind damit
 ausgeschlossen.
+
+V0.3.4 bewertet lokale Dreiecks- und Between-Motive bereits vor der
+Forest-Auswahl. Der diagnostizierbare BackboneScore kombiniert Fahrplan- und
+Gegenrichtungssupport, Fahrzeitvergleiche, Raw-Adjazenz sowie positive und
+negative Between-, Branch- und Terminal-Evidenz. Raw-Fortsetzungen können ein
+scheinbares Fahrplanende als `observed_schedule_boundary` statt als echten
+Terminal kennzeichnen; Raw-Elemente werden dabei weiterhin niemals zu sichtbaren
+Betriebsstellen. Transitive Direktfolgen werden erst gegen den so festgelegten
+Backbone als Skip klassifiziert.

@@ -45,6 +45,8 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("backbone_edges", "BackboneEdges"), ("backbone_candidates", "Backbone Candidates"),
             ("travel_time_comparisons", "TravelTime Comparisons"),
             ("between_evidence", "Between-Evidence"), ("terminal_candidates", "Terminal Candidates"),
+            ("triangle_resolutions", "Triangle Resolutions"),
+            ("terminal_contradictions", "Terminal Contradictions"),
             ("external_boundaries", "External Boundaries"),
             ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
             ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
@@ -119,6 +121,9 @@ class InfrastructureTab(QtWidgets.QWidget):
                 "backbone_candidates": len(corridor.backbone_candidates),
                 "travel_time_comparisons": len(corridor.travel_time_stats),
                 "between_evidence": len(corridor.between_evidence),
+                "triangle_resolutions": len(corridor.triangle_resolutions),
+                "terminal_contradictions": sum(bool(item.contradicting_terminal_evidence)
+                                                for item in corridor.terminal_evidence.values()),
                 "terminal_candidates": sum(item.classification == "terminal"
                                            for item in corridor.terminal_evidence.values()),
                 "external_boundaries": sum(item.classification == "external_boundary"
@@ -137,6 +142,14 @@ class InfrastructureTab(QtWidgets.QWidget):
             ) + "\n\n" + "\n".join(
                 f"Backbone: {edge.source} ↔ {edge.target}\n  evidence: {edge.evidence}"
                 for edge in corridor.backbone_edges.values()
+            ) + "\n\n" + "\n".join(
+                f"Triangle: {' / '.join(item.nodes)}\n  between: {item.between_candidate or 'rejected'}"
+                f"\n  supports: {item.supporting_evidence}\n  contradictions: {item.contradicting_evidence}"
+                for item in corridor.triangle_resolutions
+            ) + "\n\n" + "\n".join(
+                f"Terminal rejected: {item.node}\n  classification: {item.classification}"
+                f"\n  contradictions: {item.contradicting_terminal_evidence}"
+                for item in corridor.terminal_evidence.values() if item.contradicting_terminal_evidence
             ) + "\n\n" + "\n".join(
                 f"Skip: {edge.source} → {edge.target}\n  covered by: {' → '.join(edge.covered_path)}"
                 for edge in corridor.edges.values() if edge.classification == "skip"
