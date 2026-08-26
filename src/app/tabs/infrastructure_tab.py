@@ -61,6 +61,9 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("hidden_boundaries", "Hidden External Boundaries"),
             ("external_targets", "External Target Resolutions"),
             ("topology_questions", "Topology Questions Pending"),
+            ("uncertain_schedule_starts", "Schedules With Uncertain Start"),
+            ("ignored_endpoints", "Endpoint Observations Ignored"),
+            ("deferred_questions", "Questions Deferred For History"),
             ("external_boundaries", "External Boundaries"),
             ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
             ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
@@ -160,6 +163,10 @@ class InfrastructureTab(QtWidgets.QWidget):
                 "external_targets": len(corridor.external_target_resolutions),
                 "topology_questions": sum(item.status == "needs_user_confirmation"
                                           for item in corridor.topology_questions.values()),
+                "uncertain_schedule_starts": sum(not item.start_trusted
+                                                  for item in schedule.service_provenance.values()),
+                "ignored_endpoints": len(corridor.ignored_endpoint_observations),
+                "deferred_questions": len(corridor.deferred_questions),
                 "terminal_candidates": sum(item.classification == "terminal"
                                            for item in corridor.terminal_evidence.values()),
                 "external_boundaries": sum(item.classification == "external_boundary"
@@ -171,6 +178,25 @@ class InfrastructureTab(QtWidgets.QWidget):
             }
             for key, count in counts.items():
                 self.values[key].setText(str(count))
+
+            def triangle_diagnostic(item) -> str:
+                text = (f"Triangle: {' / '.join(item.nodes)}\n  between: "
+                        f"{item.between_candidate or 'rejected'}\n  supports: {item.supporting_evidence}"
+                        f"\n  contradictions: {item.contradicting_evidence}")
+                key = next((candidate for candidate in corridor.halt_aware_time_comparisons
+                            if frozenset(candidate) == frozenset(item.nodes)
+                            and candidate[1] == item.between_candidate), None)
+                if key is None:
+                    return text
+                comparison = corridor.halt_aware_time_comparisons[key]
+                between = corridor.between_evidence.get(key, {})
+                return (text + f"\n  direct movement: {comparison.direct_movement_median} s"
+                        f"\n  via movement: {comparison.via_movement_sum} s"
+                        f"\n  intermediate dwell: {comparison.intermediate_dwell_median} s"
+                        f"\n  intermediate stop: {comparison.intermediate_stop_observed}"
+                        f"\n  stop-aware interpretation: {comparison.comparison_interpretation}"
+                        f"\n  raw between support: {between.get('raw_between_support', 'unresolved')}")
+
             self.status.setText("Betrieblicher Graph aus original_schedule; <wege> dient nur als Raw-Evidenz.")
             self.clusters.setPlainText("\n\n".join(
                 f"OperatingPoint {point.display_name}\n    " + "\n    ".join(point.raw_names)
@@ -179,8 +205,7 @@ class InfrastructureTab(QtWidgets.QWidget):
                 f"Backbone: {edge.source} ↔ {edge.target}\n  evidence: {edge.evidence}"
                 for edge in corridor.backbone_edges.values()
             ) + "\n\n" + "\n".join(
-                f"Triangle: {' / '.join(item.nodes)}\n  between: {item.between_candidate or 'rejected'}"
-                f"\n  supports: {item.supporting_evidence}\n  contradictions: {item.contradicting_evidence}"
+                triangle_diagnostic(item)
                 for item in corridor.triangle_resolutions
             ) + "\n\n" + "\n".join(
                 f"Terminal rejected: {item.node}\n  classification: {item.classification}"
@@ -209,6 +234,13 @@ class InfrastructureTab(QtWidgets.QWidget):
                 f"\n  directionality: {item.directionality}\n  confidence: {item.confidence}"
                 f"\n  evidence: {item.evidence}"
                 for item in corridor.hidden_boundary_evidence.values()
+            ) + "\n\n" + "\n".join(
+                f"Deferred endpoint: ZID {item['zid']} / {item['source_node']} ↔ {item['external_name']}"
+                f"\n  discovery source: {item['discovery_source']}"
+                f"\n  start completeness: {item['start_completeness']}"
+                f"\n  end completeness: {item['end_completeness']}"
+                f"\n  reason: {item['uncertainty_source']}"
+                for item in corridor.deferred_questions
             ) + "\n\n" + "\n".join(
                 f"Topology question: {item.question_text}\n  status: {item.status}"
                 f"\n  options: {item.options}\n  evidence: {item.evidence_summary}"

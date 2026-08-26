@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.5.3
+# StellwerkSim Bildfahrplan V0.3.5.4
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3.5.3
+## Umfang V0.3.5.4
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -125,3 +125,13 @@ bleiben als `conflicting_between_constraints` offen. Ein vorgeschalteter
 bekannten Mitgliedern derselben Betriebsstelle und sichtbaren Punkten ab, bevor
 externe Connectoren oder Nutzerfragen abgeleitet werden. Diese zusätzlichen
 Entscheidungsdaten werden in Schema 10 persistiert.
+
+V0.3.5.4 bewertet Fahrzeitvergleiche an Zwischenhalten haltbewusst. Expliziter
+Aufenthalt bleibt vom Movement getrennt; der in den Legs enthaltene Brems-/
+Anfahranteil wird bei starkem bidirektionalem Through-or-Skip-Muster nicht mehr
+als alleiniger Gegenbeweis behandelt. Massive Umwege bleiben negative Evidenz.
+Zusätzlich kennzeichnet der Collector additiv die Herkunft des ersten
+Fahrplancaptures. Unsichere Starts aus der initialen Zugliste liefern keine
+Incoming-Boundary-Evidenz und keine vorschnellen Nutzerfragen, während das
+vertrauenswürdige Fahrplanende weiterhin ausgewertet wird. Schema 11 persistiert
+diese Vergleiche, Provenienz und zurückgestellte Beobachtungsfragen.

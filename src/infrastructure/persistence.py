@@ -22,13 +22,16 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 10, "aid": aid, "facility": facility,
+        "schema_version": 11, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
         "schedule": ({"nodes": [asdict(item) for item in schedule.nodes.values()],
-                      "edges": [asdict(item) for item in schedule.edges.values()]}
-                     if schedule else {"nodes": [], "edges": []}),
+                      "edges": [asdict(item) for item in schedule.edges.values()],
+                      "service_provenance": [
+                          {"zid": zid, **asdict(item)} for zid, item in schedule.service_provenance.items()
+                      ]}
+                     if schedule else {"nodes": [], "edges": [], "service_provenance": []}),
         "operating_point_clustering": ({
             "nodes": [asdict(item) for item in operating.nodes.values()],
             "edges": [asdict(item) for item in operating.edges.values()],
@@ -52,6 +55,14 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
             "direction_changes": [asdict(item) for item in corridor.direction_changes],
             "terminal_evidence": [asdict(item) for item in corridor.terminal_evidence.values()],
             "travel_time_stats": [asdict(item) for item in corridor.travel_time_stats.values()],
+            "halt_aware_travel_time_comparisons": [
+                {"nodes": list(nodes), "comparison": asdict(item)}
+                for nodes, item in corridor.halt_aware_time_comparisons.items()
+            ],
+            "intermediate_stop_or_skipped_point_evidence": [
+                {"nodes": list(nodes), "evidence": asdict(item)}
+                for nodes, item in corridor.intermediate_stop_or_skip_evidence.items()
+            ],
             "between_evidence": [
                 {"nodes": list(nodes), "evidence": evidence}
                 for nodes, evidence in corridor.between_evidence.items()
@@ -96,10 +107,14 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                 asdict(item) for item in corridor.external_target_resolutions.values()
                 if item.classification == "same_operating_point_internal"
             ],
+            "ignored_endpoint_observations": corridor.ignored_endpoint_observations,
+            "deferred_questions": corridor.deferred_questions,
             "component_roles": corridor.component_roles,
         } if corridor else {"edges": [], "backbone_edges": [], "backbone_candidates": [],
                             "node_roles": {}, "direction_changes": [], "terminal_evidence": [],
-                            "travel_time_stats": [], "between_evidence": [], "triangle_resolutions": [],
+                            "travel_time_stats": [], "halt_aware_travel_time_comparisons": [],
+                            "intermediate_stop_or_skipped_point_evidence": [],
+                            "between_evidence": [], "triangle_resolutions": [],
                             "raw_adjacency_evidence": [], "backbone_scores": [], "synthetic_junctions": [],
                             "branch_attachments": [], "junction_position_estimates": [],
                             "final_node_roles": {}, "pre_split_node_roles": {}, "role_changes": {},
@@ -108,6 +123,7 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                             "between_constraint_conflicts": [], "hidden_boundary_evidence": [],
                             "synthetic_external_boundaries": [], "topology_questions": [],
                             "external_target_resolutions": [], "internal_target_matches": [],
+                            "ignored_endpoint_observations": [], "deferred_questions": [],
                             "component_roles": {}}),
         "derived": {"anchors": [asdict(item) for item in anchors.values()],
                     "operational_nodes": [asdict(item) for item in operational.nodes.values()],

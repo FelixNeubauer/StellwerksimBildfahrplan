@@ -36,6 +36,35 @@ class PathTimeStats:
 
 
 @dataclass(frozen=True)
+class HaltAwareTravelTimeComparison:
+    direct_movement_median: float | None
+    via_leg_1_movement_median: float | None
+    via_leg_2_movement_median: float | None
+    via_movement_sum: float | None
+    intermediate_dwell_median: float | None
+    intermediate_stop_observed: bool
+    intermediate_stop_frequency: float
+    movement_excess: float | None
+    total_elapsed_excess: float | None
+    estimated_stop_penalty: float | None
+    adjusted_movement_excess: float | None
+    comparison_interpretation: str
+
+
+@dataclass(frozen=True)
+class IntermediateStopOrSkippedPointEvidence:
+    intermediate: str
+    outer_nodes: tuple[str, str]
+    chain_observations: int
+    direct_observations: int
+    forward_chain_complete: bool
+    reverse_chain_complete: bool
+    chain_services: tuple[int, ...]
+    direct_services: tuple[int, ...]
+    confidence: str
+
+
+@dataclass(frozen=True)
 class DirectionChangeEvidence:
     terminal: str
     approach: str
@@ -175,6 +204,7 @@ class HiddenExternalBoundaryEvidence:
     directionality: str
     confidence: str
     evidence: tuple[str, ...]
+    endpoint_observation_trust: str = "trusted"
 
 
 @dataclass(frozen=True)
@@ -215,6 +245,7 @@ class TopologyQuestion:
     recommended_option: str | None
     status: str = "needs_user_confirmation"
     answer: str | None = None
+    uncertainty_source: str = "topology_uncertainty"
 
 
 @dataclass(frozen=True)
@@ -247,6 +278,8 @@ class CorridorGraph:
     direction_changes: list[DirectionChangeEvidence] = field(default_factory=list)
     terminal_evidence: dict[str, TerminalEvidence] = field(default_factory=dict)
     travel_time_stats: dict[tuple[str, ...], PathTimeStats] = field(default_factory=dict)
+    halt_aware_time_comparisons: dict[tuple[str, str, str], HaltAwareTravelTimeComparison] = field(default_factory=dict)
+    intermediate_stop_or_skip_evidence: dict[tuple[str, str, str], IntermediateStopOrSkippedPointEvidence] = field(default_factory=dict)
     between_evidence: dict[tuple[str, str, str], dict[str, Any]] = field(default_factory=dict)
     triangle_resolutions: list[TriangleResolutionEvidence] = field(default_factory=list)
     raw_adjacency_evidence: dict[frozenset[str], RawAdjacencyEvidence] = field(default_factory=dict)
@@ -262,6 +295,8 @@ class CorridorGraph:
     synthetic_external_boundaries: dict[str, SyntheticExternalBoundaryNode] = field(default_factory=dict)
     topology_questions: dict[str, TopologyQuestion] = field(default_factory=dict)
     external_target_resolutions: dict[tuple[str, str], ExternalTargetResolution] = field(default_factory=dict)
+    ignored_endpoint_observations: list[dict[str, Any]] = field(default_factory=list)
+    deferred_questions: list[dict[str, Any]] = field(default_factory=list)
     component_roles: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -653,6 +688,21 @@ class CorridorGraphBuilder:
                 key = self._external_key(external)
                 if not key:
                     continue
+                provenance = self.schedule.service_provenance.get(zid)
+                trusted = (provenance.start_trusted if direction == "incoming" else
+                           provenance.end_trusted) if provenance else True
+                if not trusted:
+                    ignored = {
+                        "zid": zid, "source_node": source, "external_name": external.strip(),
+                        "direction": direction, "endpoint_observation_trust": "untrusted",
+                        "uncertainty_source": "insufficient_observation_history",
+                        "discovery_source": provenance.discovery_source if provenance else "unknown",
+                        "start_completeness": provenance.start_completeness if provenance else "unknown",
+                        "end_completeness": provenance.end_completeness if provenance else "unknown",
+                    }
+                    result.ignored_endpoint_observations.append(ignored)
+                    result.deferred_questions.append(ignored)
+                    continue
                 resolution = self._external_target_resolution(source, external.strip())
                 result.external_target_resolutions[(source, external.strip())] = resolution
                 if resolution.classification in {
@@ -673,7 +723,8 @@ class CorridorGraphBuilder:
             # requires repeated endpoint evidence plus a matching raw connector;
             # bidirectional details without raw confirmation become a question.
             resolved = total >= 2 and raw_connector is not None
-            directionality = "bidirectional" if bidirectional else "observed_one_way"
+            directionality = ("bidirectional" if bidirectional else
+                              "observed_incoming" if incoming else "observed_outgoing")
             evidence = ("schedule_endpoint", "zugdetails_von_nach") + (
                 ("reverse_observations",) if bidirectional else ()) + (
                 ("raw_external_connector",) if raw_connector else ())
@@ -699,7 +750,8 @@ class CorridorGraphBuilder:
                     f"destination_observations:{outgoing}", f"origin_observations:{incoming}",
                     f"raw_connector:{'confirmed' if raw_connector else 'none'}", "internal_match:none",
                     *evidence), confidence,
-                "hidden_external_boundary" if raw_connector else None)
+                "hidden_external_boundary" if raw_connector else None,
+                uncertainty_source="ambiguous_endpoint")
 
     def _raw_adjacencies(self) -> dict[frozenset[str], RawAdjacencyEvidence]:
         result: dict[frozenset[str], RawAdjacencyEvidence] = {}
@@ -725,6 +777,92 @@ class CorridorGraphBuilder:
                         queue.append((nxt, candidate))
         return result
 
+    def _stop_frequency(self, outer: tuple[str, str], middle: str) -> tuple[int, int]:
+        observed = stops = 0
+        for points in self.schedule.service_schedules.values():
+            mapped: list[tuple[str, object]] = []
+            for point in points:
+                raw = getattr(point, "planned_name", "") or getattr(point, "raw_name", "")
+                operating = self.operating.raw_to_operating_point.get(raw)
+                if operating is None:
+                    continue
+                axis = self.axis.operating_to_axis[operating]
+                if not mapped or mapped[-1][0] != axis:
+                    mapped.append((axis, point))
+            for left, candidate, right in zip(mapped, mapped[1:], mapped[2:]):
+                if candidate[0] != middle or {left[0], right[0]} != set(outer):
+                    continue
+                observed += 1
+                arrival = _clock(getattr(candidate[1], "planned_arrival", None))
+                departure = _clock(getattr(candidate[1], "planned_departure", None))
+                if (_forward(departure, arrival) or 0) > 0:
+                    stops += 1
+        return stops, observed
+
+    def _raw_between_support(self, a: str, middle: str, c: str) -> str:
+        anchors = self._raw_anchors()
+        if self.raw_graph is None or any(len(anchors.get(node, ())) != 1 for node in (a, middle, c)):
+            return "unresolved"
+        path = self._raw_shortest_path(anchors[a], anchors[c])
+        if not path:
+            return "unresolved"
+        middle_anchor = next(iter(anchors[middle]))
+        return "positive" if middle_anchor in path[1:-1] else "branch_like"
+
+    def _stop_or_skip_evidence(
+            self, middle: str, outer: tuple[str, str], undirected: dict[frozenset[str], dict[str, Any]],
+    ) -> IntermediateStopOrSkippedPointEvidence:
+        a, c = outer
+        forward = all((edge in self.axis.edges) for edge in ((a, middle), (middle, c)))
+        reverse = all((edge in self.axis.edges) for edge in ((c, middle), (middle, a)))
+        chain_edges = (self.axis.edges.get((a, middle)), self.axis.edges.get((middle, c)),
+                       self.axis.edges.get((c, middle)), self.axis.edges.get((middle, a)))
+        chain_services = tuple(sorted({zid for edge in chain_edges if edge for zid in edge.services}))
+        direct_edges = (self.axis.edges.get((a, c)), self.axis.edges.get((c, a)))
+        direct_services = tuple(sorted({zid for edge in direct_edges if edge for zid in edge.services}))
+        chain_observations = min(undirected[frozenset((a, middle))]["direct"],
+                                 undirected[frozenset((middle, c))]["direct"])
+        direct_observations = undirected[frozenset((a, c))]["direct"]
+        confidence = "high" if forward and reverse and len(chain_services) >= 2 else "inferred"
+        return IntermediateStopOrSkippedPointEvidence(
+            middle, outer, chain_observations, direct_observations, forward, reverse,
+            chain_services, direct_services, confidence)
+
+    def _halt_aware_comparison(
+            self, outer: tuple[str, str], middle: str, direct: PathTimeStats | None,
+            via: PathTimeStats | None, strong_chain: bool,
+    ) -> HaltAwareTravelTimeComparison:
+        leg1 = self._best_time((outer[0], middle), self._current_travel_stats)
+        leg2 = self._best_time((middle, outer[1]), self._current_travel_stats)
+        direct_movement = direct.movement.median if direct else None
+        via_movement = via.movement.median if via else None
+        dwell = via.dwell.median if via else None
+        stops, stop_observations = self._stop_frequency(outer, middle)
+        stop_frequency = stops / stop_observations if stop_observations else 0.0
+        movement_excess = (via_movement - direct_movement
+                           if via_movement is not None and direct_movement is not None else None)
+        elapsed_excess = (via.total_elapsed.median - direct.total_elapsed.median
+                          if via and direct else None)
+        ratio = direct_movement / max(via_movement, 1.0) if direct_movement is not None and via_movement else None
+        stop_observed = stops > 0 or bool(dwell)
+        if ratio is None:
+            interpretation = "insufficient_data"
+        elif ratio >= .8:
+            interpretation = "consistent"
+        elif ratio >= .55 and stop_observed and strong_chain:
+            interpretation = "consistent_with_intermediate_stop"
+        elif ratio >= .55:
+            interpretation = "weakly_slower"
+        elif ratio >= .4:
+            interpretation = "strongly_slower"
+        else:
+            interpretation = "implausible_detour"
+        return HaltAwareTravelTimeComparison(
+            direct_movement, leg1.movement.median if leg1 else None,
+            leg2.movement.median if leg2 else None, via_movement, dwell,
+            stop_observed, stop_frequency, movement_excess, elapsed_excess,
+            None, movement_excess, interpretation)
+
     def _triangles(self, result: CorridorGraph, undirected: dict[frozenset[str], dict[str, Any]]) -> None:
         adjacency: dict[str, set[str]] = defaultdict(set)
         for key in undirected:
@@ -749,29 +887,35 @@ class CorridorGraphBuilder:
                         direct = self._best_time(outer, result.travel_time_stats)
                         via = self._best_time((outer[0], middle, outer[1]), result.travel_time_stats)
                         support: list[str] = []; contradict: list[str] = []; score = 0.0
-                        if direct and via:
-                            ratio = direct.movement.median / max(via.movement.median, 1.0)
-                            if ratio >= .8:
-                                score += 3.0
-                                support.append(
-                                    f"via_movement_plausible:{via.movement.median:g}s/"
-                                    f"direct:{direct.movement.median:g}s")
-                            elif ratio <= .6:
-                                score -= 4.0
-                                contradict.append(
-                                    f"direct_much_faster:{direct.movement.median:g}s/"
-                                    f"via:{via.movement.median:g}s")
-                            if via.dwell.median:
-                                (contradict if ratio <= .6 else support).append(f"via_dwell:{via.dwell.median:g}s")
                         chain = tuple(tuple(sorted((middle, endpoint))) for endpoint in outer)
                         chain_support = min(undirected[frozenset(edge)]["direct"] for edge in chain)
                         direct_support = undirected[frozenset(outer)]["direct"]
+                        pattern = self._stop_or_skip_evidence(middle, outer, undirected)
+                        result.intermediate_stop_or_skip_evidence[(outer[0], middle, outer[1])] = pattern
+                        strong_chain = pattern.forward_chain_complete and pattern.reverse_chain_complete
+                        if strong_chain:
+                            score += 3.0; support.append("bidirectional_schedule_chain")
+                        if len(pattern.chain_services) >= 2 and pattern.direct_observations:
+                            score += 1.0; support.append("intermediate_stop_or_skipped_point")
+                        comparison = self._halt_aware_comparison(outer, middle, direct, via, strong_chain)
+                        result.halt_aware_time_comparisons[(outer[0], middle, outer[1])] = comparison
+                        if comparison.comparison_interpretation == "consistent":
+                            score += 3.0; support.append("travel_time_consistent")
+                        elif comparison.comparison_interpretation == "consistent_with_intermediate_stop":
+                            score += 1.0; support.append("travel_time_consistent_with_intermediate_stop")
+                        elif comparison.comparison_interpretation == "strongly_slower":
+                            score -= 2.0; contradict.append("via_movement_strongly_slower")
+                        elif comparison.comparison_interpretation == "implausible_detour":
+                            score -= 4.0; contradict.append("travel_time_implausible_detour")
+                        if comparison.intermediate_dwell_median:
+                            support.append(f"intermediate_dwell:{comparison.intermediate_dwell_median:g}s")
                         if chain_support >= direct_support:
                             score += 1.0; support.append("chain_schedule_support")
-                        raw_chain = sum(frozenset(edge) in result.raw_adjacency_evidence for edge in chain)
-                        raw_direct = frozenset(outer) in result.raw_adjacency_evidence
-                        if raw_chain == 2 and not raw_direct:
-                            score += 2.0; support.append("raw_chain_adjacency")
+                        raw_between = self._raw_between_support(outer[0], middle, outer[1])
+                        if raw_between == "positive":
+                            score += 3.0; support.append("raw_between_positive")
+                        elif raw_between == "branch_like":
+                            score -= 2.0; contradict.append("raw_between_branch_like")
                         interpretations.append((score, middle, tuple(support), tuple(contradict), outer, chain))
                     best = max(interpretations, key=lambda item: item[0])
                     positive = best[0] >= 3.0
@@ -785,6 +929,13 @@ class CorridorGraphBuilder:
                             "confidence": "high" if score >= 3 else "rejected" if score < 0 else "low",
                             "score": score, "supporting_evidence": support,
                             "contradicting_evidence": contradict,
+                            "stop_aware_interpretation": result.halt_aware_time_comparisons[
+                                (outer[0], middle, outer[1])].comparison_interpretation,
+                            "intermediate_stop_observed": result.halt_aware_time_comparisons[
+                                (outer[0], middle, outer[1])].intermediate_stop_observed,
+                            "through_or_skip_confidence": result.intermediate_stop_or_skip_evidence[
+                                (outer[0], middle, outer[1])].confidence,
+                            "raw_between_support": self._raw_between_support(outer[0], middle, outer[1]),
                         }
 
     def _compile_between_constraints(
@@ -834,7 +985,7 @@ class CorridorGraphBuilder:
                     question_id, constraint.path[1], "conflicting_between_constraints",
                     f"Widersprüchliche High-Between-Entscheidungen betreffen {' – '.join(constraint.path)}.",
                     tuple((constraint_id, *conflict_ids)), constraint.evidence,
-                    "low", None)
+                    "low", None, uncertainty_source="topology_conflict")
                 continue
             applied = replace(constraint, status="applied")
             result.between_constraints[constraint_id] = applied

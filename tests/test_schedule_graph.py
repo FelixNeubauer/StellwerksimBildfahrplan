@@ -14,18 +14,18 @@ from infrastructure import (
 )
 
 
-def service(zid, *names, kind="train", origin=None, destination=None):
+def service(zid, *names, kind="train", origin=None, destination=None, **metadata):
     points = [SimpleNamespace(planned_name=name, raw_name=name) for name in names]
     return SimpleNamespace(zid=zid, service_kind=kind, original_schedule=points, current_schedule=[],
-                           origin=origin, destination=destination)
+                           origin=origin, destination=destination, **metadata)
 
 
-def timed_service(zid, *points, origin=None, destination=None):
+def timed_service(zid, *points, origin=None, destination=None, **metadata):
     schedule = [SimpleNamespace(
         planned_name=name, raw_name=name, planned_arrival=arrival, planned_departure=departure,
     ) for name, arrival, departure in points]
     return SimpleNamespace(zid=zid, service_kind="train", original_schedule=schedule, current_schedule=[],
-                           origin=origin, destination=destination)
+                           origin=origin, destination=destination, **metadata)
 
 
 class ScheduleGraphTests(unittest.TestCase):
@@ -400,6 +400,36 @@ class ScheduleGraphTests(unittest.TestCase):
             self.assertNotEqual(corridor.node_roles[c], "branch_junction")
         self.assertFalse(corridor.branch_nodes)
 
+    def test_halt_aware_timing_keeps_stopped_intermediate_as_between(self):
+        names = ("TUE", "TOLC", "TTL", "LEFT", "RIGHT")
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in names}}
+        services = [
+            timed_service(1, ("TUE", "08:00", "08:00"), ("TOLC", "08:02", "08:03"),
+                          ("TTL", "08:06", "08:06")),
+            timed_service(2, ("TTL", "09:00", "09:00"), ("TOLC", "09:03", "09:04"),
+                          ("TUE", "09:06", "09:06")),
+            timed_service(3, ("TUE", "10:00", "10:00"), ("TTL", "10:03", "10:03")),
+            timed_service(4, ("TTL", "11:00", "11:00"), ("TUE", "11:03", "11:03")),
+            service(5, "LEFT", "TUE"), service(6, "TUE", "LEFT"),
+            service(7, "TTL", "RIGHT"), service(8, "RIGHT", "TTL"),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        comparison_key = next(key for key in corridor.halt_aware_time_comparisons if key[1] == "TOLC")
+        comparison = corridor.halt_aware_time_comparisons[comparison_key]
+        self.assertEqual(comparison.direct_movement_median, 180)
+        self.assertEqual(comparison.via_movement_sum, 300)
+        self.assertTrue(comparison.intermediate_stop_observed)
+        self.assertEqual(comparison.comparison_interpretation,
+                         "consistent_with_intermediate_stop")
+        self.assertEqual(corridor.between_evidence[comparison_key]["confidence"], "high")
+        self.assertIn(frozenset(("TUE", "TTL")), corridor.applied_between_resolutions)
+        self.assertEqual(corridor.edges[("TUE", "TTL")].classification, "skip")
+        self.assertNotEqual(corridor.node_roles["TUE"], "branch_junction")
+        self.assertNotEqual(corridor.node_roles["TTL"], "branch_junction")
+
     def test_between_constraints_are_order_independent_and_conflicts_become_questions(self):
         schedule = SchedulePointGraph.from_services([service(1, "A", "B", "C")])
         operating = OperatingPointResolver().resolve(schedule)
@@ -493,6 +523,29 @@ class ScheduleGraphTests(unittest.TestCase):
         question = next(iter(corridor.topology_questions.values()))
         self.assertEqual(question.question_type, "terminal_or_external_boundary")
         self.assertEqual(question.status, "needs_user_confirmation")
+
+    def test_untrusted_start_origin_is_deferred_but_destination_remains_usable(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "THD", "TUO")}}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "THD", "A", origin="Aalen",
+                    discovery_source="initial_train_list",
+                    schedule_start_completeness="possibly_truncated_at_startup",
+                    schedule_end_completeness="likely_complete"),
+            service(2, "A", "TUO", destination="External Unknown",
+                    discovery_source="initial_train_list",
+                    schedule_start_completeness="possibly_truncated_at_startup",
+                    schedule_end_completeness="likely_complete"),
+        ])
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertEqual(len(corridor.ignored_endpoint_observations), 1)
+        self.assertEqual(corridor.ignored_endpoint_observations[0]["external_name"], "Aalen")
+        self.assertEqual(len(corridor.deferred_questions), 1)
+        self.assertFalse(any("Aalen" in question.question_text
+                             for question in corridor.topology_questions.values()))
+        self.assertTrue(any("External Unknown" in question.question_text
+                            for question in corridor.topology_questions.values()))
 
     def test_raw_continuation_rejects_observed_terminal_but_mof_remains_terminal(self):
         manual = {"operating_points": {

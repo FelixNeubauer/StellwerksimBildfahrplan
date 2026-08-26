@@ -29,6 +29,23 @@ class ScheduleEdge:
     evidence: str = "schedule"
 
 
+@dataclass(frozen=True)
+class ScheduleCaptureProvenance:
+    discovery_source: str
+    discovered_simtime: int | None
+    start_completeness: str
+    end_completeness: str
+    evidence: tuple[str, ...]
+
+    @property
+    def start_trusted(self) -> bool:
+        return self.start_completeness in {"pre_entry_complete", "likely_complete"}
+
+    @property
+    def end_trusted(self) -> bool:
+        return self.end_completeness in {"complete", "likely_complete"}
+
+
 @dataclass
 class SchedulePointGraph:
     nodes: dict[str, SchedulePointNode] = field(default_factory=dict)
@@ -36,6 +53,7 @@ class SchedulePointGraph:
     service_paths: dict[int, tuple[str, ...]] = field(default_factory=dict)
     service_schedules: dict[int, tuple[object, ...]] = field(default_factory=dict)
     service_endpoints: dict[int, tuple[str | None, str | None]] = field(default_factory=dict)
+    service_provenance: dict[int, ScheduleCaptureProvenance] = field(default_factory=dict)
 
     def observe(self, zid: int, raw_names: Iterable[str]) -> None:
         names = tuple(name for name in raw_names if name)
@@ -61,6 +79,12 @@ class SchedulePointGraph:
             graph.service_schedules[zid] = tuple(schedule)
             graph.service_endpoints[zid] = (
                 getattr(service, "origin", None), getattr(service, "destination", None))
+            discovery = getattr(service, "discovery_source", "unknown")
+            graph.service_provenance[zid] = ScheduleCaptureProvenance(
+                discovery, getattr(service, "discovered_simtime", None),
+                getattr(service, "schedule_start_completeness", "likely_complete"),
+                getattr(service, "schedule_end_completeness", "likely_complete"),
+                tuple(getattr(service, "provenance_evidence", ())))
         return graph
 
 
