@@ -6,7 +6,10 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from infrastructure import OperatingPointResolver, SchedulePointGraph, parse_bahnsteigliste, parse_wege, station_key
+from infrastructure import (
+    CorridorGraphBuilder, OperatingPointResolver, SchedulePointGraph,
+    parse_bahnsteigliste, parse_wege, station_key,
+)
 
 
 def service(zid, *names, kind="train"):
@@ -43,6 +46,11 @@ class ScheduleGraphTests(unittest.TestCase):
                           ("MIMS 1", "MIMS Wende West", "MIMS 4")}, {"MIMS"})
         self.assertIn("same_station_key", graph.nodes["MIMS"].evidence)
         self.assertIn("schedule_sandwich", graph.nodes["MIMS"].evidence)
+
+    def test_heidenheim_station_keys_without_spaces(self):
+        self.assertEqual({name: station_key(name) for name in ("TGB1", "THD1", "THDM1", "TNS1")}, {
+            "TGB1": "TGB", "THD1": "THD", "THDM1": "THDM", "TNS1": "TNS",
+        })
 
     def test_single_unrelated_sandwich_does_not_blindly_merge(self):
         schedule = SchedulePointGraph.from_services([service(1, "MIMS 1", "Foreign", "MIMS 2")])
@@ -156,6 +164,64 @@ class ScheduleGraphTests(unittest.TestCase):
         })
         self.assertEqual(axis.branch_nodes, {"MIMS"})
         self.assertNotIn("MSF AUSZ", {node.display_name for node in axis.nodes.values()})
+        corridor = CorridorGraphBuilder(SchedulePointGraph.from_services(schedules), graph).build()
+        self.assertIn("MIMS", corridor.branch_nodes)
+
+    def test_laupheim_skip_reversal_branch_and_local_component(self):
+        names = ("EAF", "TAU", "TBSC", "TBIB", "TBI", "TWVH", "TSX", "TLW", "TER", "TEIN", "TUDT",
+                 "TAT", "TLM", "U1", "U4", "U5")
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]}
+            for name in names if name not in {"TLM"}
+        }}
+        manual["operating_points"]["TLM"] = {
+            "display_name": "TLM", "raw_names": ["TLM 401", "TLM 402"],
+        }
+        main = ("TAU", "TBSC", "TBIB", "TBI", "TWVH", "TSX", "TLW", "TER", "TEIN", "TUDT")
+        services = [
+            service(1, *main), service(2, *main), service(3, *reversed(main)), service(4, *reversed(main)),
+            service(13, "EAF", "TAU", "TBSC"), service(14, "TBSC", "TAU", "EAF"),
+            service(5, "TBI", "TBSC"), service(6, "TER", "TUDT"),
+            service(7, "TAU", "TAT"), service(8, "TAT", "TAU"),
+            service(9, "TLW", "TLM 401", "TLW"), service(10, "TLW", "TLM 402", "TLW"),
+            service(11, "TLW", "TLM 401", "TSX"),
+            service(12, "U1", "U4", "U5"),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        operating = OperatingPointResolver((), manual, 1728).resolve(schedule)
+        self.assertEqual({operating.raw_to_operating_point[name] for name in ("TLM 401", "TLM 402")}, {"TLM"})
+        corridor = CorridorGraphBuilder(schedule, operating).build()
+        skips = {(edge.source, edge.target): edge for edge in corridor.edges.values()
+                 if edge.classification == "skip"}
+        self.assertEqual(skips[("TBI", "TBSC")].covered_path, ("TBI", "TBIB", "TBSC"))
+        self.assertEqual(skips[("TER", "TUDT")].covered_path, ("TER", "TEIN", "TUDT"))
+        self.assertEqual(corridor.node_roles["TLM"], "branch_terminal")
+        self.assertEqual(corridor.edges[("TLW", "TLM")].classification, "branch")
+        self.assertEqual(corridor.edges[("TLM", "TSX")].classification, "skip")
+        self.assertEqual(corridor.edges[("TLM", "TSX")].covered_path, ("TLM", "TLW", "TSX"))
+        self.assertNotIn(("TBI", "TBSC"), {(e.source, e.target) for e in corridor.visible_edges})
+        self.assertEqual(corridor.edges[("TAU", "TAT")].classification, "branch")
+        self.assertTrue(all(corridor.node_roles[name] == "local_industrial" for name in ("U1", "U4", "U5")))
+
+    def test_recursive_skip_and_strong_triangle_is_not_blindly_reduced(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B", "C", "D")}}
+        services = [
+            service(1, "A", "B", "C", "D"), service(2, "A", "B", "C", "D"),
+            service(3, "D", "C", "B", "A"), service(4, "D", "C", "B", "A"),
+            service(5, "A", "D"),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        operating = OperatingPointResolver((), manual).resolve(schedule)
+        corridor = CorridorGraphBuilder(schedule, operating).build()
+        self.assertEqual(corridor.edges[("A", "D")].classification, "skip")
+        self.assertEqual(corridor.edges[("A", "D")].covered_path, ("A", "B", "C", "D"))
+
+        strong = SchedulePointGraph.from_services(services + [
+            service(6, "A", "D"), service(7, "A", "D"), service(8, "A", "D"),
+        ])
+        alternative = CorridorGraphBuilder(strong, OperatingPointResolver((), manual).resolve(strong)).build()
+        self.assertEqual(alternative.edges[("A", "D")].classification, "alternative_route")
 
 
 if __name__ == "__main__":

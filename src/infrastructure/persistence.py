@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .model import OperationalRouteGraph, PlatformEvidence, RawInfrastructureGraph, RouteAnchor
 from .schedule_graph import OperatingPointGraph, SchedulePointGraph
+from .corridor import CorridorGraph
 
 
 def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructureGraph,
@@ -15,12 +16,13 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                          platforms: tuple[PlatformEvidence, ...] = (),
                          schedule: SchedulePointGraph | None = None,
                          operating: OperatingPointGraph | None = None,
+                         corridor: CorridorGraph | None = None,
                          **facility: str | None) -> Path:
     """Schreibt nur unter ``generated`` und beruehrt keine manuelle Config."""
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 3, "aid": aid, "facility": facility,
+        "schema_version": 4, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -39,6 +41,12 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
             "edges": [asdict(item) for item in operating.to_route_axis_graph().edges.values()],
             "operating_to_axis": operating.to_route_axis_graph().operating_to_axis,
         } if operating else {"nodes": [], "edges": [], "operating_to_axis": {}}),
+        "corridor": ({
+            "edges": [asdict(item) for item in corridor.edges.values()],
+            "node_roles": corridor.node_roles,
+            "direction_changes": [asdict(item) for item in corridor.direction_changes],
+            "component_roles": corridor.component_roles,
+        } if corridor else {"edges": [], "node_roles": {}, "direction_changes": [], "component_roles": {}}),
         "derived": {"anchors": [asdict(item) for item in anchors.values()],
                     "operational_nodes": [asdict(item) for item in operational.nodes.values()],
                     "operational_edges": [asdict(item) for item in operational.edges]},

@@ -6,7 +6,7 @@ import json
 from PySide6 import QtWidgets
 
 from infrastructure import (
-    InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
+    CorridorGraphBuilder, InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
     SchedulePointGraph, parse_bahnsteigliste, parse_wege, save_generated_graph,
 )
 
@@ -37,6 +37,11 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("route_axis_nodes", "RouteAxisNodes"),
             ("axis_branches", "Verzweigungen nach Axis-Kollaps"),
             ("conflicting_candidates", "konfliktbehaftete Kandidaten"),
+            ("neighbour_edges", "Neighbour-Edges"), ("skip_edges", "Skip-Edges"),
+            ("branch_edges", "Branch-Edges"), ("alternative_route_edges", "Alternative Routes"),
+            ("local_internal_edges", "Local-Internal-Edges"), ("unresolved_edges", "Unresolved-Edges"),
+            ("branch_junctions", "Branch Junctions"), ("branch_terminals", "Branch Terminals"),
+            ("direction_changes", "Direction Changes"), ("secondary_components", "Secondary Components"),
             ("raw_nodes", "Raw-Infrastruktur: Nodes"), ("raw_edges", "Raw-Infrastruktur: Edges"),
             ("raw_types", "Raw-Infrastruktur: Elementtypen"),
             ("anchors", "Raw-Infrastruktur: Anchor-Zuordnungen"),
@@ -76,7 +81,8 @@ class InfrastructureTab(QtWidgets.QWidget):
                     manual = json.loads(manual_path.read_text(encoding="utf-8"))
             operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
             axis = operating.to_route_axis_graph()
-            operational = operating.to_operational_graph()
+            corridor = CorridorGraphBuilder(schedule, operating, raw_graph).build()
+            operational = corridor.to_operational_graph()
             counts = {
                 "schedule_nodes": len(schedule.nodes), "schedule_edges": len(schedule.edges),
                 "operating_points": len(operating.nodes),
@@ -97,6 +103,12 @@ class InfrastructureTab(QtWidgets.QWidget):
                 "branches": len(operating.branch_nodes),
                 "route_axis_nodes": len(axis.nodes), "axis_branches": len(axis.branch_nodes),
                 **operating.diagnostics,
+                **{f"{kind}_edges": sum(edge.classification == kind for edge in corridor.edges.values())
+                   for kind in ("neighbour", "skip", "branch", "alternative_route", "local_internal", "unresolved")},
+                "branch_junctions": sum(role == "branch_junction" for role in corridor.node_roles.values()),
+                "branch_terminals": sum(role == "branch_terminal" for role in corridor.node_roles.values()),
+                "direction_changes": len(corridor.direction_changes),
+                "secondary_components": sum(role == "secondary_component" for role in corridor.component_roles.values()),
             }
             for key, count in counts.items():
                 self.values[key].setText(str(count))
@@ -104,11 +116,17 @@ class InfrastructureTab(QtWidgets.QWidget):
             self.clusters.setPlainText("\n\n".join(
                 f"OperatingPoint {point.display_name}\n    " + "\n    ".join(point.raw_names)
                 for point in sorted(operating.nodes.values(), key=lambda item: item.display_name)
+            ) + "\n\n" + "\n".join(
+                f"Skip: {edge.source} → {edge.target}\n  covered by: {' → '.join(edge.covered_path)}"
+                for edge in corridor.edges.values() if edge.classification == "skip"
+            ) + "\n\n" + "\n".join(
+                f"Branch terminal: {item.terminal}\n  approach: {item.approach}\n  observations: {item.observations}"
+                for item in corridor.direction_changes
             ))
             if snapshot.aid is not None:
                 save_generated_graph(
                     self.generated_directory, snapshot.aid, raw_graph, builder.anchors, operational, platforms,
-                    schedule=schedule, operating=operating, name=snapshot.facility_name,
+                    schedule=schedule, operating=operating, corridor=corridor, name=snapshot.facility_name,
                 )
         except (ValueError, StopIteration) as exc:
             self.status.setText(f"Graphdaten konnten nicht ausgewertet werden: {exc}")

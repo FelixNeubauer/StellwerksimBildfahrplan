@@ -9,7 +9,7 @@ from typing import Any, Iterable
 
 from .model import OperationalRouteEdge, OperationalRouteGraph, OperationalRouteNode, PlatformEvidence
 
-_STATION_KEY = re.compile(r"^([A-ZÄÖÜ]{2,8})\s+\S")
+_STATION_KEY = re.compile(r"^(?:([A-ZÄÖÜ]{2,8})\s+\S|([A-ZÄÖÜ]{2,8}?)(?=\d))")
 
 
 @dataclass
@@ -204,7 +204,7 @@ class OperatingPointGraph:
 def station_key(raw_name: str) -> str | None:
     """Liefert nur syntaktisch plausible Grossbuchstaben-Kuerzel als Kandidat."""
     match = _STATION_KEY.match(raw_name)
-    return match.group(1) if match else None
+    return (match.group(1) or match.group(2)) if match else None
 
 
 class OperatingPointResolver:
