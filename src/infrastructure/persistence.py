@@ -22,7 +22,7 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 11, "aid": aid, "facility": facility,
+        "schema_version": 12, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -63,6 +63,14 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                 {"nodes": list(nodes), "evidence": asdict(item)}
                 for nodes, item in corridor.intermediate_stop_or_skip_evidence.items()
             ],
+            "ordered_schedule_sequence_evidence": [
+                asdict(item) for item in corridor.ordered_schedule_sequences
+            ],
+            "same_service_triple_evidence": [
+                {"nodes": list(nodes), "evidence": asdict(item)}
+                for nodes, item in corridor.same_service_triple_evidence.items()
+            ],
+            "triangle_hypotheses": [asdict(item) for item in corridor.triangle_hypotheses],
             "between_evidence": [
                 {"nodes": list(nodes), "evidence": evidence}
                 for nodes, evidence in corridor.between_evidence.items()
@@ -114,6 +122,8 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                             "node_roles": {}, "direction_changes": [], "terminal_evidence": [],
                             "travel_time_stats": [], "halt_aware_travel_time_comparisons": [],
                             "intermediate_stop_or_skipped_point_evidence": [],
+                            "ordered_schedule_sequence_evidence": [],
+                            "same_service_triple_evidence": [], "triangle_hypotheses": [],
                             "between_evidence": [], "triangle_resolutions": [],
                             "raw_adjacency_evidence": [], "backbone_scores": [], "synthetic_junctions": [],
                             "branch_attachments": [], "junction_position_estimates": [],

@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.5.4
+# StellwerkSim Bildfahrplan V0.3.5.5
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3.5.4
+## Umfang V0.3.5.5
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -135,3 +135,13 @@ Fahrplancaptures. Unsichere Starts aus der initialen Zugliste liefern keine
 Incoming-Boundary-Evidenz und keine vorschnellen Nutzerfragen, während das
 vertrauenswürdige Fahrplanende weiterhin ausgewertet wird. Schema 11 persistiert
 diese Vergleiche, Provenienz und zurückgestellte Beobachtungsfragen.
+
+V0.3.5.5 trennt echte konsekutive Dreierfolgen desselben `original_schedule`
+von lediglich serviceübergreifend kombinierbaren Kanten. Same-Service-Order
+wird nach OperatingPoint-Kollaps als primäre lokale Reihenfolgeevidenz
+aggregiert; startup-trunkierte Fahrpläne behalten dabei verlässliche interne
+Reihenfolge, obwohl ihr erster Endpoint unsicher bleibt. Alle drei
+Dreieckshypothesen werden einzeln diagnostiziert. Widersprüchliche echte
+Sequenzen erzeugen eine TopologyQuestion, während Pairwise-only-Support ohne
+weitere starke Raw-/Fahrzeitevidenz kein High-Between erzwingt. Schema 12
+persistiert die geordneten Sequenzen, Triple-Aggregate und Hypothesen.

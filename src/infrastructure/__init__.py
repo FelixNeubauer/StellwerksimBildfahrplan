@@ -23,7 +23,9 @@ from .corridor import (
     BackboneEdge, BackboneScore, BetweenConstraint, BranchAttachment, CorridorGraph, CorridorGraphBuilder,
     DerivedRouteEdge, DirectionChangeEvidence, HiddenExternalBoundaryEvidence,
     ExternalTargetResolution, HaltAwareTravelTimeComparison,
-    IntermediateStopOrSkippedPointEvidence, JunctionPositionEstimate, PathTimeStats, RawAdjacencyEvidence,
+    IntermediateStopOrSkippedPointEvidence, JunctionPositionEstimate,
+    OrderedScheduleSequenceEvidence, PathTimeStats, RawAdjacencyEvidence,
+    SameServiceTripleEvidence, TriangleHypothesisEvidence,
     SyntheticExternalBoundaryNode, SyntheticJunctionNode, TerminalEvidence,
     TopologyQuestion, TravelTimeStats, TriangleResolutionEvidence,
 )
@@ -42,5 +44,6 @@ __all__ = [
     "JunctionPositionEstimate", "SyntheticJunctionNode",
     "ExternalTargetResolution", "HaltAwareTravelTimeComparison",
     "IntermediateStopOrSkippedPointEvidence", "HiddenExternalBoundaryEvidence",
-    "SyntheticExternalBoundaryNode", "TopologyQuestion",
+    "OrderedScheduleSequenceEvidence", "SameServiceTripleEvidence",
+    "TriangleHypothesisEvidence", "SyntheticExternalBoundaryNode", "TopologyQuestion",
 ]

@@ -36,6 +36,7 @@ class ScheduleCaptureProvenance:
     start_completeness: str
     end_completeness: str
     evidence: tuple[str, ...]
+    internal_order_trust: str = "reliable"
 
     @property
     def start_trusted(self) -> bool:

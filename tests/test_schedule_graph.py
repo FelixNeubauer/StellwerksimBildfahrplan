@@ -429,6 +429,79 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertEqual(corridor.edges[("TUE", "TTL")].classification, "skip")
         self.assertNotEqual(corridor.node_roles["TUE"], "branch_junction")
         self.assertNotEqual(corridor.node_roles["TTL"], "branch_junction")
+        self.assertEqual(corridor.node_roles["TOLC"], "mainline")
+        selected = next(item for item in corridor.triangle_hypotheses if item.selected)
+        self.assertEqual(selected.middle, "TOLC")
+        self.assertGreater(selected.same_service_forward_count + selected.same_service_reverse_count, 0)
+        rejected = [item for item in corridor.triangle_hypotheses
+                    if frozenset(item.path) == frozenset(("TUE", "TOLC", "TTL"))
+                    and item.middle != "TOLC"]
+        self.assertTrue(all(item.same_service_forward_count == item.same_service_reverse_count == 0
+                            for item in rejected))
+
+    def test_pairwise_edges_do_not_invent_same_service_triple(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B", "C")}}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "A", "B"), service(2, "B", "C"), service(3, "A", "C")])
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertTrue(all(not item.total_services
+                            for item in corridor.same_service_triple_evidence.values()))
+        self.assertFalse(corridor.applied_between_resolutions)
+        self.assertTrue(all(item.confidence != "high" for item in corridor.triangle_resolutions))
+
+    def test_pairwise_plus_unambiguous_raw_corridor_can_resolve_between(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B", "C")}}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "A", "B"), service(2, "B", "A"), service(3, "B", "C"),
+            service(4, "C", "B"), service(5, "A", "C"), service(6, "C", "A")])
+        raw = parse_wege("""<wege>
+          <e enr='1' name='A'/><e enr='2'/><e enr='3' name='B'/><e enr='4'/><e enr='5' name='C'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/>
+          <connector enr1='3' enr2='4'/><connector enr1='4' enr2='5'/>
+        </wege>""")
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
+        self.assertEqual(next(iter(corridor.triangle_resolutions)).between_candidate, "B")
+        self.assertIn(frozenset(("A", "C")), corridor.applied_between_resolutions)
+
+    def test_startup_truncation_preserves_internal_same_service_order(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("TUE", "TOLC", "TTL", "TUO")}}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "TUE", "TOLC", "TTL", discovery_source="initial_train_list",
+                    schedule_start_completeness="possibly_truncated_at_startup",
+                    schedule_end_completeness="likely_complete"),
+            service(2, "TUE", "TTL"),
+            service(3, "TOLC", "TTL", "TUO", discovery_source="initial_train_list",
+                    schedule_start_completeness="possibly_truncated_at_startup"),
+        ])
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        provenance = schedule.service_provenance[1]
+        self.assertFalse(provenance.start_trusted)
+        self.assertEqual(provenance.internal_order_trust, "reliable")
+        triple = next(item for item in corridor.same_service_triple_evidence.values()
+                      if item.middle == "TOLC")
+        self.assertEqual(triple.truncated_start_services, (1,))
+        self.assertIn(1, triple.total_services)
+        self.assertTrue(any(item.nodes == ("TOLC", "TTL", "TUO")
+                            and item.internal_order_trust == "reliable"
+                            for item in corridor.ordered_schedule_sequences))
+        self.assertEqual(next(iter(corridor.triangle_resolutions)).between_candidate, "TOLC")
+
+    def test_conflicting_ordered_sequences_create_topology_question(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B", "C")}}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "A", "B", "C"), service(2, "A", "C", "B")])
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertIsNone(next(iter(corridor.triangle_resolutions)).between_candidate)
+        self.assertTrue(any(item.question_type == "conflicting_ordered_schedule_sequences"
+                            for item in corridor.topology_questions.values()))
 
     def test_between_constraints_are_order_independent_and_conflicts_become_questions(self):
         schedule = SchedulePointGraph.from_services([service(1, "A", "B", "C")])

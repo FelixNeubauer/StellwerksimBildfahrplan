@@ -64,6 +64,9 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("uncertain_schedule_starts", "Schedules With Uncertain Start"),
             ("ignored_endpoints", "Endpoint Observations Ignored"),
             ("deferred_questions", "Questions Deferred For History"),
+            ("same_service_triples", "Observed Same-Service Triples"),
+            ("bidirectional_triples", "Bidirectional Same-Service Triples"),
+            ("ordered_triangle_conflicts", "Conflicting Ordered Triples"),
             ("external_boundaries", "External Boundaries"),
             ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
             ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
@@ -167,6 +170,13 @@ class InfrastructureTab(QtWidgets.QWidget):
                                                   for item in schedule.service_provenance.values()),
                 "ignored_endpoints": len(corridor.ignored_endpoint_observations),
                 "deferred_questions": len(corridor.deferred_questions),
+                "same_service_triples": sum(bool(item.total_services)
+                                             for item in corridor.same_service_triple_evidence.values()),
+                "bidirectional_triples": sum(bool(item.forward_count and item.reverse_count)
+                                              for item in corridor.same_service_triple_evidence.values()),
+                "ordered_triangle_conflicts": sum(
+                    item.question_type == "conflicting_ordered_schedule_sequences"
+                    for item in corridor.topology_questions.values()),
                 "terminal_candidates": sum(item.classification == "terminal"
                                            for item in corridor.terminal_evidence.values()),
                 "external_boundaries": sum(item.classification == "external_boundary"
@@ -207,6 +217,16 @@ class InfrastructureTab(QtWidgets.QWidget):
             ) + "\n\n" + "\n".join(
                 triangle_diagnostic(item)
                 for item in corridor.triangle_resolutions
+            ) + "\n\n" + "\n".join(
+                f"Triangle hypothesis: {' → '.join(item.path)}\n  middle: {item.middle}"
+                f"\n  same-service forward: {item.same_service_forward_count}"
+                f"\n  same-service reverse: {item.same_service_reverse_count}"
+                f"\n  pairwise support: {item.pairwise_support}"
+                f"\n  pairwise only: {item.pairwise_only_support}"
+                f"\n  travel time: {item.travel_time_interpretation}"
+                f"\n  raw support: {item.raw_between_support}"
+                f"\n  final score: {item.final_score:g}\n  selected: {item.selected}"
+                for item in corridor.triangle_hypotheses
             ) + "\n\n" + "\n".join(
                 f"Terminal rejected: {item.node}\n  classification: {item.classification}"
                 f"\n  contradictions: {item.contradicting_terminal_evidence}"

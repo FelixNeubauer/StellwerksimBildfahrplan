@@ -65,6 +65,50 @@ class IntermediateStopOrSkippedPointEvidence:
 
 
 @dataclass(frozen=True)
+class OrderedScheduleSequenceEvidence:
+    nodes: tuple[str, str, str]
+    service_zid: int
+    direction: str
+    is_consecutive: bool
+    capture_start_completeness: str
+    capture_end_completeness: str
+    internal_order_trust: str
+    source: str = "original_schedule"
+
+
+@dataclass(frozen=True)
+class SameServiceTripleEvidence:
+    outer_a: str
+    middle: str
+    outer_c: str
+    forward_services: tuple[int, ...]
+    reverse_services: tuple[int, ...]
+    forward_count: int
+    reverse_count: int
+    total_services: tuple[int, ...]
+    consecutive_forward_count: int
+    consecutive_reverse_count: int
+    truncated_start_services: tuple[int, ...]
+    evidence_strength: str
+
+
+@dataclass(frozen=True)
+class TriangleHypothesisEvidence:
+    path: tuple[str, str, str]
+    middle: str
+    same_service_forward_count: int
+    same_service_reverse_count: int
+    pairwise_support: int
+    pairwise_only_support: bool
+    travel_time_interpretation: str
+    raw_between_support: str
+    branch_terminal_contradiction: bool
+    reversal_contradiction: bool
+    final_score: float
+    selected: bool = False
+
+
+@dataclass(frozen=True)
 class DirectionChangeEvidence:
     terminal: str
     approach: str
@@ -280,6 +324,9 @@ class CorridorGraph:
     travel_time_stats: dict[tuple[str, ...], PathTimeStats] = field(default_factory=dict)
     halt_aware_time_comparisons: dict[tuple[str, str, str], HaltAwareTravelTimeComparison] = field(default_factory=dict)
     intermediate_stop_or_skip_evidence: dict[tuple[str, str, str], IntermediateStopOrSkippedPointEvidence] = field(default_factory=dict)
+    ordered_schedule_sequences: list[OrderedScheduleSequenceEvidence] = field(default_factory=list)
+    same_service_triple_evidence: dict[tuple[str, str, str], SameServiceTripleEvidence] = field(default_factory=dict)
+    triangle_hypotheses: list[TriangleHypothesisEvidence] = field(default_factory=list)
     between_evidence: dict[tuple[str, str, str], dict[str, Any]] = field(default_factory=dict)
     triangle_resolutions: list[TriangleResolutionEvidence] = field(default_factory=list)
     raw_adjacency_evidence: dict[frozenset[str], RawAdjacencyEvidence] = field(default_factory=dict)
@@ -799,6 +846,39 @@ class CorridorGraphBuilder:
                     stops += 1
         return stops, observed
 
+    def _ordered_schedule_sequences(self) -> list[OrderedScheduleSequenceEvidence]:
+        sequences: list[OrderedScheduleSequenceEvidence] = []
+        for zid, path in sorted(self._axis_paths().items()):
+            provenance = self.schedule.service_provenance.get(zid)
+            seen: set[tuple[str, str, str]] = set()
+            for nodes in zip(path, path[1:], path[2:]):
+                if len(set(nodes)) != 3 or nodes in seen:
+                    continue
+                seen.add(nodes)
+                sequences.append(OrderedScheduleSequenceEvidence(
+                    nodes, zid, "observed", True,
+                    provenance.start_completeness if provenance else "unknown",
+                    provenance.end_completeness if provenance else "unknown",
+                    provenance.internal_order_trust if provenance else "reliable"))
+        return sequences
+
+    @staticmethod
+    def _same_service_triple(
+            outer: tuple[str, str], middle: str,
+            sequences: list[OrderedScheduleSequenceEvidence],
+    ) -> SameServiceTripleEvidence:
+        forward = {item.service_zid for item in sequences if item.nodes == (outer[0], middle, outer[1])}
+        reverse = {item.service_zid for item in sequences if item.nodes == (outer[1], middle, outer[0])}
+        relevant = [item for item in sequences if item.service_zid in forward | reverse]
+        truncated = tuple(sorted({item.service_zid for item in relevant
+                                  if item.capture_start_completeness == "possibly_truncated_at_startup"}))
+        strength = ("bidirectional" if forward and reverse else "observed_one_way"
+                    if forward or reverse else "none")
+        return SameServiceTripleEvidence(
+            outer[0], middle, outer[1], tuple(sorted(forward)), tuple(sorted(reverse)),
+            len(forward), len(reverse), tuple(sorted(forward | reverse)), len(forward), len(reverse),
+            truncated, strength)
+
     def _raw_between_support(self, a: str, middle: str, c: str) -> str:
         anchors = self._raw_anchors()
         if self.raw_graph is None or any(len(anchors.get(node, ())) != 1 for node in (a, middle, c)):
@@ -811,13 +891,12 @@ class CorridorGraphBuilder:
 
     def _stop_or_skip_evidence(
             self, middle: str, outer: tuple[str, str], undirected: dict[frozenset[str], dict[str, Any]],
+            triple: SameServiceTripleEvidence,
     ) -> IntermediateStopOrSkippedPointEvidence:
         a, c = outer
-        forward = all((edge in self.axis.edges) for edge in ((a, middle), (middle, c)))
-        reverse = all((edge in self.axis.edges) for edge in ((c, middle), (middle, a)))
-        chain_edges = (self.axis.edges.get((a, middle)), self.axis.edges.get((middle, c)),
-                       self.axis.edges.get((c, middle)), self.axis.edges.get((middle, a)))
-        chain_services = tuple(sorted({zid for edge in chain_edges if edge for zid in edge.services}))
+        forward = bool(triple.forward_services)
+        reverse = bool(triple.reverse_services)
+        chain_services = triple.total_services
         direct_edges = (self.axis.edges.get((a, c)), self.axis.edges.get((c, a)))
         direct_services = tuple(sorted({zid for edge in direct_edges if edge for zid in edge.services}))
         chain_observations = min(undirected[frozenset((a, middle))]["direct"],
@@ -864,6 +943,8 @@ class CorridorGraphBuilder:
             None, movement_excess, interpretation)
 
     def _triangles(self, result: CorridorGraph, undirected: dict[frozenset[str], dict[str, Any]]) -> None:
+        sequences = self._ordered_schedule_sequences()
+        result.ordered_schedule_sequences = sequences
         adjacency: dict[str, set[str]] = defaultdict(set)
         for key in undirected:
             a, b = tuple(key); adjacency[a].add(b); adjacency[b].add(a)
@@ -890,12 +971,22 @@ class CorridorGraphBuilder:
                         chain = tuple(tuple(sorted((middle, endpoint))) for endpoint in outer)
                         chain_support = min(undirected[frozenset(edge)]["direct"] for edge in chain)
                         direct_support = undirected[frozenset(outer)]["direct"]
-                        pattern = self._stop_or_skip_evidence(middle, outer, undirected)
+                        triple = self._same_service_triple(outer, middle, sequences)
+                        result.same_service_triple_evidence[(outer[0], middle, outer[1])] = triple
+                        pattern = self._stop_or_skip_evidence(middle, outer, undirected, triple)
                         result.intermediate_stop_or_skip_evidence[(outer[0], middle, outer[1])] = pattern
                         strong_chain = pattern.forward_chain_complete and pattern.reverse_chain_complete
-                        if strong_chain:
-                            score += 3.0; support.append("bidirectional_schedule_chain")
-                        if len(pattern.chain_services) >= 2 and pattern.direct_observations:
+                        pairwise_forward = all(edge in self.axis.edges for edge in ((outer[0], middle),
+                                                                                  (middle, outer[1])))
+                        pairwise_reverse = all(edge in self.axis.edges for edge in ((outer[1], middle),
+                                                                                  (middle, outer[0])))
+                        if triple.total_services:
+                            score += 6.0; support.append("same_service_consecutive_triple")
+                        if triple.forward_count and triple.reverse_count:
+                            score += 4.0; support.append("bidirectional_same_service_triples")
+                        if not triple.total_services and pairwise_forward and pairwise_reverse:
+                            score += 1.0; support.append("pairwise_bidirectional_chain_only")
+                        if triple.total_services and pattern.direct_observations:
                             score += 1.0; support.append("intermediate_stop_or_skipped_point")
                         comparison = self._halt_aware_comparison(outer, middle, direct, via, strong_chain)
                         result.halt_aware_time_comparisons[(outer[0], middle, outer[1])] = comparison
@@ -916,9 +1007,38 @@ class CorridorGraphBuilder:
                             score += 3.0; support.append("raw_between_positive")
                         elif raw_between == "branch_like":
                             score -= 2.0; contradict.append("raw_between_branch_like")
+                        branch_contradiction = result.terminal_evidence.get(middle).classification == "terminal"
+                        reversal_contradiction = any(item.terminal == middle for item in result.direction_changes)
+                        if branch_contradiction:
+                            score -= 6.0; contradict.append("terminal_middle_contradiction")
+                        if reversal_contradiction:
+                            score -= 8.0; contradict.append("reversal_middle_contradiction")
+                        result.triangle_hypotheses.append(TriangleHypothesisEvidence(
+                            (outer[0], middle, outer[1]), middle, triple.forward_count,
+                            triple.reverse_count, chain_support, not bool(triple.total_services),
+                            comparison.comparison_interpretation, raw_between,
+                            branch_contradiction, reversal_contradiction, score))
                         interpretations.append((score, middle, tuple(support), tuple(contradict), outer, chain))
-                    best = max(interpretations, key=lambda item: item[0])
-                    positive = best[0] >= 3.0
+                    interpretations.sort(key=lambda item: (-item[0], item[1]))
+                    best = interpretations[0]
+                    triple_scores = [item for item in interpretations
+                                     if result.same_service_triple_evidence[
+                                         (item[4][0], item[1], item[4][1])].total_services]
+                    ordered_conflict = (len(triple_scores) > 1 and
+                                        triple_scores[0][0] - triple_scores[1][0] < 3.0)
+                    positive = best[0] >= 3.0 and not ordered_conflict
+                    for index, hypothesis in enumerate(result.triangle_hypotheses):
+                        if frozenset(hypothesis.path) == nodes_key and hypothesis.middle == best[1]:
+                            result.triangle_hypotheses[index] = replace(hypothesis, selected=positive)
+                    if ordered_conflict:
+                        question_id = "question:ordered_sequence:" + ":".join(nodes)
+                        result.topology_questions[question_id] = TopologyQuestion(
+                            question_id, best[1], "conflicting_ordered_schedule_sequences",
+                            f"Widersprüchliche geordnete Fahrplansequenzen betreffen {' / '.join(nodes)}.",
+                            tuple(" → ".join(item[4][:1] + (item[1],) + item[4][1:])
+                                  for item in triple_scores),
+                            tuple(f"{item[1]}:{item[0]:g}" for item in triple_scores),
+                            "low", None, uncertainty_source="topology_conflict")
                     resolution = TriangleResolutionEvidence(
                         nodes, best[1] if positive else None, "high" if abs(best[0]) >= 3 else "low",
                         best[2], best[3], tuple(sorted(best[4])), best[5],
