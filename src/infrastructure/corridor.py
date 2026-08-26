@@ -14,6 +14,7 @@ from .schedule_graph import (
 )
 
 DAY_SECONDS = 86400
+MINIMUM_DISPLAY_OFFSET_FRACTION = 0.12
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,7 @@ class BackboneScore:
 
 @dataclass(frozen=True)
 class JunctionPositionEstimate:
-    edge_fraction: float | None
+    topological_fraction: float | None
     observations: int
     median_fraction: float | None
     spread: float | None
@@ -104,6 +105,11 @@ class JunctionPositionEstimate:
     confidence: str
     source: str
     position_unit: str = "relative"
+
+    @property
+    def edge_fraction(self) -> float | None:
+        """Schema-7 compatibility alias; new data uses topological_fraction."""
+        return self.topological_fraction
 
 
 @dataclass(frozen=True)
@@ -113,11 +119,26 @@ class SyntheticJunctionNode:
     branch_node: str
     parent_operating_point: str | None
     host_edge: tuple[str, str]
-    edge_fraction: float | None
-    position_source: str
+    topological_fraction: float | None
+    topological_position_source: str
+    topological_confidence: str
+    display_fraction: float | None
+    display_position_source: str
     evidence: tuple[str, ...]
-    confidence: str
     raw_junction_node: str | None = None
+
+    @property
+    def edge_fraction(self) -> float | None:
+        """Schema-7 compatibility alias; never use this value as layout state."""
+        return self.topological_fraction
+
+    @property
+    def position_source(self) -> str:
+        return self.topological_position_source
+
+    @property
+    def confidence(self) -> str:
+        return self.topological_confidence
 
 
 @dataclass(frozen=True)
@@ -168,6 +189,8 @@ class CorridorGraph:
     synthetic_junctions: dict[str, SyntheticJunctionNode] = field(default_factory=dict)
     branch_attachments: dict[str, BranchAttachment] = field(default_factory=dict)
     junction_position_estimates: dict[str, JunctionPositionEstimate] = field(default_factory=dict)
+    pre_split_node_roles: dict[str, str] = field(default_factory=dict)
+    role_changes: dict[str, dict[str, str]] = field(default_factory=dict)
     component_roles: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -211,7 +234,7 @@ class CorridorGraph:
         for junctions in host_groups.values():
             a, b = junctions[0].host_edge
             ordered = sorted(junctions, key=lambda item: (
-                item.edge_fraction if item.edge_fraction is not None else .5, item.id))
+                item.topological_fraction if item.topological_fraction is not None else .5, item.id))
             chain = (a, *(item.id for item in ordered), b)
             chain_confidence = ("exact" if all(item.confidence == "exact" for item in ordered)
                                 else "unresolved" if any(item.confidence == "unresolved" for item in ordered)
@@ -235,9 +258,10 @@ class CorridorGraph:
             hosted = sorted(
                 (item for item in self.synthetic_junctions.values()
                  if frozenset(item.host_edge) == frozenset((source, target))),
-                key=lambda item: ((item.edge_fraction if item.edge_fraction is not None else .5)
+                key=lambda item: ((item.topological_fraction if item.topological_fraction is not None else .5)
                                   if item.host_edge[0] == source else
-                                  1 - (item.edge_fraction if item.edge_fraction is not None else .5)),
+                                  1 - (item.topological_fraction
+                                       if item.topological_fraction is not None else .5)),
             )
             if hosted:
                 result.extend(item.id for item in hosted)
@@ -252,6 +276,11 @@ class CorridorGraph:
         if source_path:
             result.append(source_path[-1])
         return tuple(result)
+
+    def junction_fraction(self, node_id: str, *, for_display: bool = False) -> float | None:
+        """Returns layout or topology state without changing the path sequence."""
+        junction = self.synthetic_junctions[node_id]
+        return junction.display_fraction if for_display else junction.topological_fraction
 
 
 def _clock(value: str | None) -> int | None:
@@ -430,31 +459,41 @@ class CorridorGraphBuilder:
         return anchors
 
     def _raw_continuations(self, node: str) -> tuple[int, tuple[str, ...]]:
-        """Conservative first-anchor projection; raw elements never become visible nodes."""
+        """Compresses the local anchor area into stable line-side corridor components."""
         if self.raw_graph is None:
             return 0, ()
         anchors = self._raw_anchors()
         reverse = {raw: axis for axis, values in anchors.items() for raw in values}
-        found: set[str] = set(); exits = 0
-        for start in anchors.get(node, ()):
-            for first in self.raw_graph.neighbours(start):
-                queue = deque([(first, start)]); visited = {start}
-                reached = False
-                while queue:
-                    current, previous = queue.popleft()
-                    if current in visited:
-                        continue
-                    visited.add(current)
-                    if current in reverse and reverse[current] != node:
-                        found.add(reverse[current]); reached = True; break
-                    following = self.raw_graph.neighbours(current) - {previous}
-                    if not following:
-                        exits += 1; reached = True; break
-                    queue.extend((item, current) for item in following)
-                if not reached:
-                    exits += 1
-        labels = tuple(sorted(found | ({"raw_graph_boundary"} if exits else set())))
-        return len(found) + (1 if exits else 0), labels
+        local = anchors.get(node, set())
+        boundary_starts = {neighbour for anchor in local
+                           for neighbour in self.raw_graph.neighbours(anchor) if neighbour not in local}
+        visited: set[str] = set(); corridors: list[set[str]] = []
+        for start in sorted(boundary_starts):
+            if start in visited:
+                continue
+            queue = deque([start]); component: set[str] = set(); reached: set[str] = set()
+            has_unmapped_end = False
+            while queue:
+                current = queue.popleft()
+                if current in visited or current in local:
+                    continue
+                visited.add(current); component.add(current)
+                foreign = reverse.get(current)
+                if foreign and foreign != node:
+                    reached.add(foreign)
+                    continue
+                following = self.raw_graph.neighbours(current) - local
+                if not following:
+                    has_unmapped_end = True
+                queue.extend(sorted(following - visited))
+            if not component:
+                continue
+            labels = set(reached)
+            if has_unmapped_end or not reached:
+                labels.add("raw_graph_boundary")
+            corridors.append(labels)
+        evidence = tuple(sorted({label for corridor in corridors for label in corridor}))
+        return len(corridors), evidence
 
     def _raw_adjacencies(self) -> dict[frozenset[str], RawAdjacencyEvidence]:
         result: dict[frozenset[str], RawAdjacencyEvidence] = {}
@@ -752,6 +791,14 @@ class CorridorGraphBuilder:
         slug = re.sub(r"[^a-z0-9]+", "_", branch.casefold()).strip("_") or "branch"
         return f"synthetic:abzw_{slug}"
 
+    @staticmethod
+    def _display_position(topological_fraction: float) -> tuple[float, str]:
+        if topological_fraction < MINIMUM_DISPLAY_OFFSET_FRACTION:
+            return MINIMUM_DISPLAY_OFFSET_FRACTION, "layout_offset"
+        if topological_fraction > 1.0 - MINIMUM_DISPLAY_OFFSET_FRACTION:
+            return 1.0 - MINIMUM_DISPLAY_OFFSET_FRACTION, "layout_offset"
+        return topological_fraction, "topology"
+
     def _derive_branch_attachments(self, result: CorridorGraph,
                                    terminal_approach: dict[str, DirectionChangeEvidence]) -> None:
         schedule_neighbours: dict[str, set[str]] = defaultdict(set)
@@ -794,9 +841,11 @@ class CorridorGraphBuilder:
             approach = terminal_approach.get(terminal).approach if terminal in terminal_approach else None
             parent_candidates = self.axis.nodes[approach].operating_points if approach else ()
             parent = parent_candidates[0] if len(parent_candidates) == 1 else None
+            display_fraction, display_source = self._display_position(fraction)
             junction = SyntheticJunctionNode(
                 junction_id, f"Abzw {self.axis.nodes[terminal].display_name}", terminal, parent,
-                (a, b), fraction, source, evidence, confidence, raw_node)
+                (a, b), fraction, source, confidence, display_fraction, display_source,
+                evidence, raw_node)
             result.synthetic_junctions[junction_id] = junction
             result.junction_position_estimates[junction_id] = time_estimate
             result.branch_attachments[terminal] = BranchAttachment(
@@ -805,6 +854,44 @@ class CorridorGraphBuilder:
             self.axis.nodes[junction_id] = RouteAxisNode(
                 junction_id, junction.display_name, (), (), None,
                 {"synthetic_junction": 1}, "synthetic_junction_node")
+
+    def _finalize_node_roles(self, result: CorridorGraph) -> None:
+        """Recomputes roles from the projected graph while retaining semantic evidence."""
+        result.pre_split_node_roles = dict(result.node_roles)
+        graph = result.to_operational_graph()
+        adjacency: dict[str, set[str]] = defaultdict(set)
+        for edge in graph.edges:
+            adjacency[edge.source].add(edge.target); adjacency[edge.target].add(edge.source)
+        final: dict[str, str] = {
+            node: role for node, role in result.pre_split_node_roles.items()
+            if node not in graph.nodes and role == "local_industrial"
+        }
+        for node in graph.nodes:
+            degree = len(adjacency[node]); previous = result.pre_split_node_roles.get(node)
+            terminal = result.terminal_evidence.get(node)
+            if node in result.synthetic_junctions:
+                role = "branch_junction" if degree > 2 else "unresolved"
+            elif previous == "branch_terminal":
+                role = "branch_terminal"
+            elif terminal and terminal.classification in {
+                    "terminal", "external_boundary", "observed_schedule_boundary"}:
+                role = terminal.classification
+            elif previous == "local_industrial":
+                role = previous
+            elif degree > 2:
+                role = "branch_junction"
+            elif degree == 2:
+                role = "mainline"
+            else:
+                role = "unresolved"
+            final[node] = role
+            if previous and previous != role:
+                result.role_changes[node] = {
+                    "pre_split_node_role": previous,
+                    "final_node_role": role,
+                    "role_change_reason": "final_operational_topology",
+                }
+        result.node_roles = final
 
     def build(self) -> CorridorGraph:
         result = CorridorGraph(self.axis)
@@ -912,6 +999,7 @@ class CorridorGraphBuilder:
             if edge.classification == "neighbour" and result.node_roles.get(edge.source) == "branch_junction":
                 edge.classification = "branch"; edge.evidence["stable_branch_junction"] = True
         self._derive_branch_attachments(result, terminal_approach)
+        self._finalize_node_roles(result)
         return result
 
     @staticmethod

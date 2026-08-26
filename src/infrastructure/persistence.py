@@ -22,7 +22,7 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 7, "aid": aid, "facility": facility,
+        "schema_version": 8, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -68,12 +68,17 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                 {"junction": junction, "estimate": asdict(estimate)}
                 for junction, estimate in corridor.junction_position_estimates.items()
             ],
+            "final_node_roles": corridor.node_roles,
+            "pre_split_node_roles": corridor.pre_split_node_roles,
+            "role_changes": corridor.role_changes,
             "component_roles": corridor.component_roles,
         } if corridor else {"edges": [], "backbone_edges": [], "backbone_candidates": [],
                             "node_roles": {}, "direction_changes": [], "terminal_evidence": [],
                             "travel_time_stats": [], "between_evidence": [], "triangle_resolutions": [],
                             "raw_adjacency_evidence": [], "backbone_scores": [], "synthetic_junctions": [],
-                            "branch_attachments": [], "junction_position_estimates": [], "component_roles": {}}),
+                            "branch_attachments": [], "junction_position_estimates": [],
+                            "final_node_roles": {}, "pre_split_node_roles": {}, "role_changes": {},
+                            "component_roles": {}}),
         "derived": {"anchors": [asdict(item) for item in anchors.values()],
                     "operational_nodes": [asdict(item) for item in operational.nodes.values()],
                     "operational_edges": [asdict(item) for item in operational.edges]},

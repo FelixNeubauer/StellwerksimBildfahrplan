@@ -1,5 +1,6 @@
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -243,7 +244,8 @@ class ScheduleGraphTests(unittest.TestCase):
 
     def test_travel_times_separate_movement_dwell_and_protect_direct_backbone(self):
         manual = {"operating_points": {
-            name: {"display_name": name, "raw_names": [name]} for name in ("TSX", "TLW", "TLM")}}
+            name: {"display_name": name, "raw_names": [name]}
+            for name in ("TWVH", "TSX", "TLW", "TER", "TLM")}}
         services = [
             timed_service(1, ("TSX", "08:00:00", "08:00:00"), ("TLW", "08:02:30", "08:02:30")),
             timed_service(2, ("TSX", "08:10:00", "08:10:00"), ("TLW", "08:12:30", "08:12:30")),
@@ -251,6 +253,8 @@ class ScheduleGraphTests(unittest.TestCase):
                           ("TLW", "09:15:00", "09:15:00")),
             timed_service(4, ("TLW", "10:00:00", "10:00:00"), ("TLM", "10:03:30", "10:09:30"),
                           ("TLW", "10:13:00", "10:13:00")),
+            service(5, "TWVH", "TSX"), service(6, "TSX", "TWVH"),
+            service(7, "TLW", "TER"), service(8, "TER", "TLW"),
         ]
         schedule = SchedulePointGraph.from_services(services)
         operating = OperatingPointResolver((), manual).resolve(schedule)
@@ -272,6 +276,8 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertEqual(junction.host_edge, ("TLW", "TSX"))
         self.assertAlmostEqual(junction.edge_fraction, .3)
         self.assertEqual(junction.position_source, "travel_time_triangulation")
+        self.assertEqual(junction.display_fraction, junction.topological_fraction)
+        self.assertEqual(junction.display_position_source, "topology")
         self.assertEqual(corridor.branch_attachments["TLM"].attachment_type, "edge")
         self.assertEqual(corridor.axis.nodes[junction.id].node_type, "synthetic_junction_node")
         self.assertEqual(corridor.expand_axis_path(("TSX", "TLW")),
@@ -287,6 +293,49 @@ class ScheduleGraphTests(unittest.TestCase):
                          frozenset((junction.id, "TLM"))} <= links)
         degree = sum(junction.id in (edge.source, edge.target) for edge in operational.edges)
         self.assertEqual(degree, 3)
+        self.assertEqual(corridor.node_roles[junction.id], "branch_junction")
+        self.assertEqual(corridor.node_roles["TLM"], "branch_terminal")
+        self.assertEqual(corridor.node_roles["TSX"], "mainline")
+        self.assertEqual(corridor.node_roles["TLW"], "mainline")
+
+    def test_edge_endpoint_position_keeps_topology_and_offsets_only_layout(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B", "T")}}
+        services = [
+            timed_service(1, ("A", "08:00:00", "08:00:00"), ("B", "08:01:40", "08:01:40")),
+            timed_service(2, ("A", "09:00:00", "09:00:00"), ("T", "09:00:50", "09:00:50"),
+                          ("B", "09:03:20", "09:03:20")),
+            timed_service(3, ("B", "10:00:00", "10:00:00"), ("T", "10:02:30", "10:02:30"),
+                          ("B", "10:05:00", "10:05:00")),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        junction = next(iter(corridor.synthetic_junctions.values()))
+        self.assertEqual(junction.topological_fraction, 0.0)
+        self.assertGreater(junction.display_fraction, 0.0)
+        self.assertEqual(junction.display_position_source, "layout_offset")
+        self.assertEqual(corridor.junction_fraction(junction.id), 0.0)
+        self.assertEqual(corridor.junction_fraction(junction.id, for_display=True),
+                         junction.display_fraction)
+        self.assertEqual(corridor.branch_attachments["T"].attachment_type, "edge")
+        opposite = SchedulePointGraph.from_services([
+            timed_service(4, ("A", "11:00:00", "11:00:00"), ("B", "11:01:40", "11:01:40")),
+            timed_service(5, ("A", "12:00:00", "12:00:00"), ("T", "12:02:30", "12:02:30"),
+                          ("B", "12:03:20", "12:03:20")),
+            timed_service(6, ("B", "13:00:00", "13:00:00"), ("T", "13:00:50", "13:00:50"),
+                          ("B", "13:01:40", "13:01:40")),
+        ])
+        opposite_corridor = CorridorGraphBuilder(
+            opposite, OperatingPointResolver((), manual).resolve(opposite)).build()
+        opposite_junction = next(iter(opposite_corridor.synthetic_junctions.values()))
+        self.assertEqual(opposite_junction.topological_fraction, 1.0)
+        self.assertLess(opposite_junction.display_fraction, 1.0)
+        self.assertEqual(opposite_junction.display_position_source, "layout_offset")
+        manual_layout = replace(junction, display_fraction=.2,
+                                display_position_source="manual_layout")
+        self.assertEqual(manual_layout.topological_fraction, 0.0)
+        self.assertEqual(manual_layout.display_fraction, .2)
 
     def test_laupheim_timed_chain_wins_before_forest_and_direct_becomes_skip(self):
         manual = {"operating_points": {
@@ -308,20 +357,25 @@ class ScheduleGraphTests(unittest.TestCase):
 
     def test_raw_continuation_rejects_observed_terminal_but_mof_remains_terminal(self):
         manual = {"operating_points": {
-            name: {"display_name": name, "raw_names": [name]} for name in ("TAU", "TAT")}}
+            "TAU": {"display_name": "TAU", "raw_names": ["TAU"]},
+            "TAT": {"display_name": "TAT", "raw_names": ["TAT 1", "TAT 2"]},
+        }}
         schedule = SchedulePointGraph.from_services([
-            service(1, "TAU", "TAT"), service(2, "TAU", "TAT"),
-            service(3, "TAT", "TAU"), service(4, "TAT", "TAU"),
+            service(1, "TAU", "TAT 1"), service(2, "TAU", "TAT 2"),
+            service(3, "TAT 1", "TAU"), service(4, "TAT 2", "TAU"),
         ])
         raw = parse_wege("""<wege>
-          <e enr='1' name='TAU'/><e enr='2'/><e enr='3' name='TAT'/><e enr='4'/>
-          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/><connector enr1='3' enr2='4'/>
+          <e enr='1' name='TAU'/><e enr='2'/><e enr='3' name='TAT 1'/>
+          <e enr='4' name='TAT 2'/><e enr='5'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/>
+          <connector enr1='3' enr2='4'/><connector enr1='4' enr2='5'/>
         </wege>""")
         corridor = CorridorGraphBuilder(
             schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
         self.assertEqual(corridor.node_roles["TAT"], "observed_schedule_boundary")
         self.assertIn("raw_external_continuation",
                       corridor.terminal_evidence["TAT"].contradicting_terminal_evidence)
+        self.assertEqual(corridor.terminal_evidence["TAT"].raw_outgoing_corridors, 2)
 
     def test_raw_junction_projection_precedes_travel_time_position(self):
         manual = {"operating_points": {

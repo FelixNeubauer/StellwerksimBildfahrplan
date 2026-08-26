@@ -40,7 +40,8 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("neighbour_edges", "Neighbour-Edges"), ("skip_edges", "Skip-Edges"),
             ("branch_edges", "Branch-Edges"), ("alternative_route_edges", "Alternative Routes"),
             ("local_internal_edges", "Local-Internal-Edges"), ("unresolved_edges", "Unresolved-Edges"),
-            ("branch_junctions", "Branch Junctions"), ("branch_terminals", "Branch Terminals"),
+            ("branch_junctions", "Final Branch Junctions"),
+            ("branch_terminals", "Final Branch Terminals"),
             ("direction_changes", "Direction Changes"), ("secondary_components", "Secondary Components"),
             ("backbone_edges", "BackboneEdges"), ("backbone_candidates", "Backbone Candidates"),
             ("travel_time_comparisons", "TravelTime Comparisons"),
@@ -53,6 +54,7 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("unresolved_attachments", "Unresolved Branch Attachments"),
             ("travel_time_junctions", "TravelTime Junction Estimates"),
             ("raw_junctions", "Raw Junction Estimates"),
+            ("role_changes", "Role Changes After Finalization"),
             ("external_boundaries", "External Boundaries"),
             ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
             ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
@@ -141,6 +143,7 @@ class InfrastructureTab(QtWidgets.QWidget):
                                              for item in corridor.junction_position_estimates.values()),
                 "raw_junctions": sum(item.raw_junction_node is not None
                                      for item in corridor.synthetic_junctions.values()),
+                "role_changes": len(corridor.role_changes),
                 "terminal_candidates": sum(item.classification == "terminal"
                                            for item in corridor.terminal_evidence.values()),
                 "external_boundaries": sum(item.classification == "external_boundary"
@@ -170,10 +173,26 @@ class InfrastructureTab(QtWidgets.QWidget):
             ) + "\n\n" + "\n".join(
                 f"Synthetic junction: {item.display_name}\n  host edge: {' – '.join(item.host_edge)}"
                 f"\n  branch: {item.branch_node}\n  attachment: edge"
-                f"\n  relative position: {item.edge_fraction if item.edge_fraction is not None else 'unresolved'}"
-                f"\n  position source: {item.position_source}\n  evidence: {item.evidence}"
-                f"\n  confidence: {item.confidence}\n  raw support: {item.raw_junction_node or 'not confirmed'}"
+                f"\n  topological fraction: {item.topological_fraction if item.topological_fraction is not None else 'unresolved'}"
+                f"\n  topological source: {item.topological_position_source}"
+                f"\n  display fraction: {item.display_fraction}"
+                f"\n  display source: {item.display_position_source}\n  evidence: {item.evidence}"
+                f"\n  topological confidence: {item.topological_confidence}"
+                f"\n  raw support: {item.raw_junction_node or 'not confirmed'}"
                 for item in corridor.synthetic_junctions.values()
+            ) + "\n\n" + "\n".join(
+                f"Role finalized: {node}\n  {change['pre_split_node_role']} → {change['final_node_role']}"
+                f"\n  reason: {change['role_change_reason']}"
+                for node, change in corridor.role_changes.items()
+            ) + "\n\n" + "\n".join(
+                f"Boundary evidence: {item.node}\n  starts: {item.schedule_start_count}"
+                f"\n  ends: {item.schedule_end_count}\n  through: {item.through_count}"
+                f"\n  raw outgoing corridors: {item.raw_outgoing_corridors}"
+                f"\n  supporting: {item.evidence}"
+                f"\n  contradictions: {item.contradicting_terminal_evidence}"
+                f"\n  final role: {corridor.node_roles.get(item.node, 'not visible')}"
+                for item in corridor.terminal_evidence.values()
+                if item.classification != "candidate" or item.contradicting_terminal_evidence
             ) + "\n\n" + "\n".join(
                 f"Skip: {edge.source} → {edge.target}\n  covered by: {' → '.join(edge.covered_path)}"
                 for edge in corridor.edges.values() if edge.classification == "skip"

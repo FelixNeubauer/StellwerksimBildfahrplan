@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.5
+# StellwerkSim Bildfahrplan V0.3.5.1
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3.5
+## Umfang V0.3.5.1
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -63,7 +63,7 @@ liest diese Datei nur und überschreibt sie nicht.
 Die relative X-Position stammt weiterhin aus einem expliziten linearen
 RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
 Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische
-Gleisrekonstruktion sind nicht Teil von V0.3.5. Die Streckenachse liegt oben und
+Gleisrekonstruktion sind nicht Teil von V0.3.5.1. Die Streckenachse liegt oben und
 ist fest; ausschließlich der auf 05:00–21:00 begrenzte Zeitbereich ist vertikal
 zoom- und scrollbar. Zwischen den fünfsekündlichen STS-Abfragen interpoliert die
 UI die Simulationszeit monoton und friert bei Verbindungsverlust konservativ ein.
@@ -94,4 +94,7 @@ splittet die Host-Kante, ohne `original_schedule` um künstliche Fahrplanpunkte 
 erweitern. Die relative Position stammt bevorzugt aus einer eindeutigen
 Raw-Infrastrukturprojektion, andernfalls aus einer ausdrücklich nicht-metrischen
 Fahrzeittriangulation. Herkunft, relative Auflösung und Konfidenz bleiben in der
-Diagnose und im generierten Schema 7 sichtbar.
+Diagnose und im generierten Schema 8 sichtbar. V0.3.5.1 bewahrt dabei die
+fachliche `topological_fraction` getrennt von einer ausschließlich grafischen
+`display_fraction`, finalisiert Knotenrollen nach allen synthetischen Splits und
+stabilisiert Raw-Fortsetzungsevidenz über komprimierte Anchorbereiche.
