@@ -76,7 +76,7 @@ class CollectorAdapter:
                 with self._lock:
                     self.status = "Collector aktiv"
                 self._send('<register name="StellwerkSim Bildfahrplan" autor="StellwerkSimBildfahrplan" '
-                           'version="0.3.3" protokoll="1" text="Live-Bildfahrplan" />')
+                           'version="0.3.5" protokoll="1" text="Live-Bildfahrplan" />')
                 for command in self.collector.startup_commands("bildfahrplan"):
                     self._send(command)
                 self._poller = threading.Thread(target=self._poll_simtime, name="STS-Simzeit", daemon=True)

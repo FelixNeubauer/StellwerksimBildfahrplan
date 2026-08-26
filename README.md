@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.4
+# StellwerkSim Bildfahrplan V0.3.5
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3.4
+## Umfang V0.3.5
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -63,7 +63,7 @@ liest diese Datei nur und überschreibt sie nicht.
 Die relative X-Position stammt weiterhin aus einem expliziten linearen
 RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
 Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische
-Gleisrekonstruktion sind nicht Teil von V0.3.3. Die Streckenachse liegt oben und
+Gleisrekonstruktion sind nicht Teil von V0.3.5. Die Streckenachse liegt oben und
 ist fest; ausschließlich der auf 05:00–21:00 begrenzte Zeitbereich ist vertikal
 zoom- und scrollbar. Zwischen den fünfsekündlichen STS-Abfragen interpoliert die
 UI die Simulationszeit monoton und friert bei Verbindungsverlust konservativ ein.
@@ -87,3 +87,11 @@ scheinbares Fahrplanende als `observed_schedule_boundary` statt als echten
 Terminal kennzeichnen; Raw-Elemente werden dabei weiterhin niemals zu sichtbaren
 Betriebsstellen. Transitive Direktfolgen werden erst gegen den so festgelegten
 Backbone als Skip klassifiziert.
+
+V0.3.5 kann einen ausreichend belegten Stichstreckenast an einem synthetischen
+Abzweig auf einer bestehenden Backbone-Kante befestigen. Der OperationalRouteGraph
+splittet die Host-Kante, ohne `original_schedule` um künstliche Fahrplanpunkte zu
+erweitern. Die relative Position stammt bevorzugt aus einer eindeutigen
+Raw-Infrastrukturprojektion, andernfalls aus einer ausdrücklich nicht-metrischen
+Fahrzeittriangulation. Herkunft, relative Auflösung und Konfidenz bleiben in der
+Diagnose und im generierten Schema 7 sichtbar.

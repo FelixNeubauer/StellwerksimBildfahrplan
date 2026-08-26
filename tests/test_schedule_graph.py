@@ -180,6 +180,7 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertNotIn("MSF AUSZ", {node.display_name for node in axis.nodes.values()})
         corridor = CorridorGraphBuilder(SchedulePointGraph.from_services(schedules), graph).build()
         self.assertIn("MIMS", corridor.branch_nodes)
+        self.assertFalse(corridor.synthetic_junctions)
 
     def test_laupheim_skip_reversal_branch_and_local_component(self):
         names = ("EAF", "TAU", "TBSC", "TBIB", "TBI", "TWVH", "TSX", "TLW", "TER", "TEIN", "TUDT",
@@ -248,8 +249,8 @@ class ScheduleGraphTests(unittest.TestCase):
             timed_service(2, ("TSX", "08:10:00", "08:10:00"), ("TLW", "08:12:30", "08:12:30")),
             timed_service(3, ("TSX", "09:00:00", "09:00:00"), ("TLM", "09:04:30", "09:10:30"),
                           ("TLW", "09:15:00", "09:15:00")),
-            timed_service(4, ("TLW", "10:00", "10:00"), ("TLM", "10:08", "10:18"),
-                          ("TLW", "10:26", "10:26")),
+            timed_service(4, ("TLW", "10:00:00", "10:00:00"), ("TLM", "10:03:30", "10:09:30"),
+                          ("TLW", "10:13:00", "10:13:00")),
         ]
         schedule = SchedulePointGraph.from_services(services)
         operating = OperatingPointResolver((), manual).resolve(schedule)
@@ -266,6 +267,26 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertEqual(rejected["confidence"], "rejected")
         self.assertGreater(
             corridor.backbone_scores[frozenset(("TSX", "TLW"))].travel_time_support, 0)
+        junction = corridor.synthetic_junctions["synthetic:abzw_tlm"]
+        self.assertEqual(junction.display_name, "Abzw TLM")
+        self.assertEqual(junction.host_edge, ("TLW", "TSX"))
+        self.assertAlmostEqual(junction.edge_fraction, .3)
+        self.assertEqual(junction.position_source, "travel_time_triangulation")
+        self.assertEqual(corridor.branch_attachments["TLM"].attachment_type, "edge")
+        self.assertEqual(corridor.axis.nodes[junction.id].node_type, "synthetic_junction_node")
+        self.assertEqual(corridor.expand_axis_path(("TSX", "TLW")),
+                         ("TSX", junction.id, "TLW"))
+        self.assertEqual(corridor.expand_axis_path(("TSX", "TLM")),
+                         ("TSX", junction.id, "TLM"))
+        self.assertEqual(tuple(point.planned_name for point in services[0].original_schedule),
+                         ("TSX", "TLW"))
+        operational = corridor.to_operational_graph()
+        links = {frozenset((edge.source, edge.target)) for edge in operational.edges}
+        self.assertNotIn(frozenset(("TSX", "TLW")), links)
+        self.assertTrue({frozenset(("TSX", junction.id)), frozenset((junction.id, "TLW")),
+                         frozenset((junction.id, "TLM"))} <= links)
+        degree = sum(junction.id in (edge.source, edge.target) for edge in operational.edges)
+        self.assertEqual(degree, 3)
 
     def test_laupheim_timed_chain_wins_before_forest_and_direct_becomes_skip(self):
         manual = {"operating_points": {
@@ -301,6 +322,48 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertEqual(corridor.node_roles["TAT"], "observed_schedule_boundary")
         self.assertIn("raw_external_continuation",
                       corridor.terminal_evidence["TAT"].contradicting_terminal_evidence)
+
+    def test_raw_junction_projection_precedes_travel_time_position(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B", "T")}}
+        services = [
+            timed_service(1, ("A", "08:00", "08:00"), ("B", "08:03", "08:03")),
+            timed_service(2, ("A", "09:00", "09:00"), ("T", "09:04", "09:04"),
+                          ("B", "09:08", "09:08")),
+            timed_service(3, ("B", "10:00", "10:00"), ("T", "10:04", "10:04"),
+                          ("B", "10:08", "10:08")),
+        ]
+        raw = parse_wege("""<wege>
+          <e enr='1' name='A'/><e enr='2'/><e enr='3' name='B'/><e enr='4' name='T'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/>
+          <connector enr1='2' enr2='4'/>
+        </wege>""")
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
+        junction = next(iter(corridor.synthetic_junctions.values()))
+        self.assertEqual(junction.position_source, "raw_and_travel_time")
+        self.assertEqual(junction.raw_junction_node, "enr:2")
+        self.assertEqual(junction.edge_fraction, .5)
+
+    def test_implausible_time_triangulation_stays_unresolved_without_clamping(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B", "T")}}
+        services = [
+            timed_service(1, ("A", "08:00:00", "08:00:00"), ("B", "08:02:30", "08:02:30")),
+            timed_service(2, ("A", "09:00", "09:00"), ("T", "09:01", "09:01"),
+                          ("B", "09:06", "09:06")),
+            timed_service(3, ("B", "10:00", "10:00"), ("T", "10:05", "10:05"),
+                          ("B", "10:10", "10:10")),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertFalse(corridor.synthetic_junctions)
+        self.assertEqual(corridor.branch_attachments["T"].attachment_type, "unresolved")
+        estimate = corridor.junction_position_estimates["T"]
+        self.assertIsNone(estimate.edge_fraction)
+        self.assertEqual(estimate.confidence, "unresolved")
 
     def test_travel_time_normalizes_midnight(self):
         manual = {"operating_points": {

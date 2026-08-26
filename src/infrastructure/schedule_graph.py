@@ -123,6 +123,7 @@ class RouteAxisNode:
     raw_names: tuple[str, ...]
     x_position: float | None
     evidence: dict[str, int]
+    node_type: str = "schedule_axis_node"
 
 
 @dataclass

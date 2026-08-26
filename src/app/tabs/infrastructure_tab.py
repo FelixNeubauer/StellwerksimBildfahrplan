@@ -47,6 +47,12 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("between_evidence", "Between-Evidence"), ("terminal_candidates", "Terminal Candidates"),
             ("triangle_resolutions", "Triangle Resolutions"),
             ("terminal_contradictions", "Terminal Contradictions"),
+            ("synthetic_junctions", "Synthetic Junctions"),
+            ("edge_attachments", "Edge Attachments"),
+            ("node_attachments", "Node Attachments"),
+            ("unresolved_attachments", "Unresolved Branch Attachments"),
+            ("travel_time_junctions", "TravelTime Junction Estimates"),
+            ("raw_junctions", "Raw Junction Estimates"),
             ("external_boundaries", "External Boundaries"),
             ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
             ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
@@ -124,6 +130,17 @@ class InfrastructureTab(QtWidgets.QWidget):
                 "triangle_resolutions": len(corridor.triangle_resolutions),
                 "terminal_contradictions": sum(bool(item.contradicting_terminal_evidence)
                                                 for item in corridor.terminal_evidence.values()),
+                "synthetic_junctions": len(corridor.synthetic_junctions),
+                "edge_attachments": sum(item.attachment_type == "edge"
+                                        for item in corridor.branch_attachments.values()),
+                "node_attachments": sum(item.attachment_type == "node"
+                                        for item in corridor.branch_attachments.values()),
+                "unresolved_attachments": sum(item.attachment_type == "unresolved"
+                                              for item in corridor.branch_attachments.values()),
+                "travel_time_junctions": sum(item.edge_fraction is not None
+                                             for item in corridor.junction_position_estimates.values()),
+                "raw_junctions": sum(item.raw_junction_node is not None
+                                     for item in corridor.synthetic_junctions.values()),
                 "terminal_candidates": sum(item.classification == "terminal"
                                            for item in corridor.terminal_evidence.values()),
                 "external_boundaries": sum(item.classification == "external_boundary"
@@ -150,6 +167,13 @@ class InfrastructureTab(QtWidgets.QWidget):
                 f"Terminal rejected: {item.node}\n  classification: {item.classification}"
                 f"\n  contradictions: {item.contradicting_terminal_evidence}"
                 for item in corridor.terminal_evidence.values() if item.contradicting_terminal_evidence
+            ) + "\n\n" + "\n".join(
+                f"Synthetic junction: {item.display_name}\n  host edge: {' – '.join(item.host_edge)}"
+                f"\n  branch: {item.branch_node}\n  attachment: edge"
+                f"\n  relative position: {item.edge_fraction if item.edge_fraction is not None else 'unresolved'}"
+                f"\n  position source: {item.position_source}\n  evidence: {item.evidence}"
+                f"\n  confidence: {item.confidence}\n  raw support: {item.raw_junction_node or 'not confirmed'}"
+                for item in corridor.synthetic_junctions.values()
             ) + "\n\n" + "\n".join(
                 f"Skip: {edge.source} → {edge.target}\n  covered by: {' → '.join(edge.covered_path)}"
                 for edge in corridor.edges.values() if edge.classification == "skip"

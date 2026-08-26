@@ -94,10 +94,13 @@ class InfrastructureTests(unittest.TestCase):
             path = save_generated_graph(directory, 1778, raw, builder.anchors, builder.build_operational_graph())
             data = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(path.name, "1778_graph.json")
-            self.assertEqual(data["schema_version"], 6)
+            self.assertEqual(data["schema_version"], 7)
             self.assertIn("raw", data); self.assertIn("derived", data)
             self.assertIn("schedule", data); self.assertIn("operating_point_clustering", data)
             self.assertIn("route_axis", data)
+            self.assertIn("synthetic_junctions", data["corridor"])
+            self.assertIn("branch_attachments", data["corridor"])
+            self.assertIn("junction_position_estimates", data["corridor"])
             self.assertIn("corridor", data)
 
 

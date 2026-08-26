@@ -5,10 +5,13 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from statistics import median
+import re
 from typing import Any, Iterable
 
 from .model import OperationalRouteEdge, OperationalRouteGraph, OperationalRouteNode, RawInfrastructureGraph
-from .schedule_graph import OperatingPointGraph, RouteAxisGraph, ScheduleEdge, SchedulePointGraph
+from .schedule_graph import (
+    OperatingPointGraph, RouteAxisGraph, RouteAxisNode, ScheduleEdge, SchedulePointGraph,
+)
 
 DAY_SECONDS = 86400
 
@@ -92,6 +95,43 @@ class BackboneScore:
 
 
 @dataclass(frozen=True)
+class JunctionPositionEstimate:
+    edge_fraction: float | None
+    observations: int
+    median_fraction: float | None
+    spread: float | None
+    residual: float | None
+    confidence: str
+    source: str
+    position_unit: str = "relative"
+
+
+@dataclass(frozen=True)
+class SyntheticJunctionNode:
+    id: str
+    display_name: str
+    branch_node: str
+    parent_operating_point: str | None
+    host_edge: tuple[str, str]
+    edge_fraction: float | None
+    position_source: str
+    evidence: tuple[str, ...]
+    confidence: str
+    raw_junction_node: str | None = None
+
+
+@dataclass(frozen=True)
+class BranchAttachment:
+    branch_node: str
+    attachment_type: str
+    host_edge: tuple[str, str] | None
+    junction: str | None
+    attached_node: str | None
+    evidence: tuple[str, ...]
+    confidence: str
+
+
+@dataclass(frozen=True)
 class BackboneEdge:
     source: str
     target: str
@@ -125,6 +165,9 @@ class CorridorGraph:
     triangle_resolutions: list[TriangleResolutionEvidence] = field(default_factory=list)
     raw_adjacency_evidence: dict[frozenset[str], RawAdjacencyEvidence] = field(default_factory=dict)
     backbone_scores: dict[frozenset[str], BackboneScore] = field(default_factory=dict)
+    synthetic_junctions: dict[str, SyntheticJunctionNode] = field(default_factory=dict)
+    branch_attachments: dict[str, BranchAttachment] = field(default_factory=dict)
+    junction_position_estimates: dict[str, JunctionPositionEstimate] = field(default_factory=dict)
     component_roles: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -137,19 +180,78 @@ class CorridorGraph:
 
     def to_operational_graph(self) -> OperationalRouteGraph:
         graph = OperationalRouteGraph()
-        visible_nodes = {node for edge in self.visible_edges for node in (edge.source, edge.target)}
+        split_hosts = {frozenset(item.host_edge) for item in self.synthetic_junctions.values()}
+        edge_branches = {item.branch_node for item in self.branch_attachments.values()
+                         if item.attachment_type == "edge"}
+        projected_edges = [edge for edge in self.visible_edges
+                           if frozenset((edge.source, edge.target)) not in split_hosts
+                           and not ({edge.source, edge.target} & edge_branches)]
+        visible_nodes = {node for edge in projected_edges for node in (edge.source, edge.target)}
+        visible_nodes.update(edge_branches)
+        visible_nodes.update(node for item in self.synthetic_junctions.values() for node in item.host_edge)
         for node_id in visible_nodes:
             node = self.axis.nodes[node_id]
             graph.nodes[node_id] = OperationalRouteNode(
                 node_id, node.display_name, node.raw_names, node.operating_points,
                 "inferred" if self.node_roles.get(node_id) != "unresolved" else "unresolved",
+                node.node_type,
             )
-        for edge in self.visible_edges:
+        for junction in self.synthetic_junctions.values():
+            graph.nodes[junction.id] = OperationalRouteNode(
+                junction.id, junction.display_name, (), (), junction.confidence,
+                "synthetic_junction_node")
+        for edge in projected_edges:
             graph.edges.append(OperationalRouteEdge(
                 edge.source, edge.target, 1.0, {edge.classification: edge.observations},
                 edge.confidence, edge.covered_path,
             ))
+        host_groups: dict[frozenset[str], list[SyntheticJunctionNode]] = defaultdict(list)
+        for junction in self.synthetic_junctions.values():
+            host_groups[frozenset(junction.host_edge)].append(junction)
+        for junctions in host_groups.values():
+            a, b = junctions[0].host_edge
+            ordered = sorted(junctions, key=lambda item: (
+                item.edge_fraction if item.edge_fraction is not None else .5, item.id))
+            chain = (a, *(item.id for item in ordered), b)
+            chain_confidence = ("exact" if all(item.confidence == "exact" for item in ordered)
+                                else "unresolved" if any(item.confidence == "unresolved" for item in ordered)
+                                else "inferred")
+            for source, target in zip(chain, chain[1:]):
+                graph.edges.append(OperationalRouteEdge(
+                    source, target, 1.0, {"backbone_split": 1},
+                    chain_confidence, (source, target)))
+            for junction in ordered:
+                graph.edges.append(OperationalRouteEdge(
+                    junction.id, junction.branch_node, 1.0, {"branch": 1},
+                    junction.confidence, (junction.id, junction.branch_node)))
         return graph
+
+    def expand_axis_path(self, path: Iterable[str]) -> tuple[str, ...]:
+        """Projects schedule-axis paths through derived junctions without mutating schedules."""
+        source_path = tuple(path)
+        result: list[str] = []
+        for source, target in zip(source_path, source_path[1:]):
+            result.append(source)
+            hosted = sorted(
+                (item for item in self.synthetic_junctions.values()
+                 if frozenset(item.host_edge) == frozenset((source, target))),
+                key=lambda item: ((item.edge_fraction if item.edge_fraction is not None else .5)
+                                  if item.host_edge[0] == source else
+                                  1 - (item.edge_fraction if item.edge_fraction is not None else .5)),
+            )
+            if hosted:
+                result.extend(item.id for item in hosted)
+                continue
+            attachment = self.branch_attachments.get(target)
+            if attachment and attachment.attachment_type == "edge" and attachment.junction:
+                result.append(attachment.junction)
+            elif source in self.branch_attachments:
+                attachment = self.branch_attachments[source]
+                if attachment.attachment_type == "edge" and attachment.junction:
+                    result.append(attachment.junction)
+        if source_path:
+            result.append(source_path[-1])
+        return tuple(result)
 
 
 def _clock(value: str | None) -> int | None:
@@ -193,6 +295,7 @@ class CorridorGraphBuilder:
         self.operating = operating
         self.axis = operating.to_route_axis_graph()
         self.raw_graph = raw_graph
+        self._current_travel_stats: dict[tuple[str, ...], PathTimeStats] = {}
 
     def _axis_paths(self) -> dict[int, tuple[str, ...]]:
         result: dict[int, tuple[str, ...]] = {}
@@ -575,9 +678,138 @@ class CorridorGraphBuilder:
                 queue.append((neighbour, candidate))
         return None
 
+    def _junction_time_estimate(self, a: str, b: str, terminal: str) -> JunctionPositionEstimate:
+        """Triangulates a relative operating position; it is explicitly not a distance."""
+        fractions: list[tuple[float, int, float]] = []
+        for left, right in ((a, b), (b, a)):
+            # A directional estimate is only formed from observations in that
+            # direction; a missing reverse run must not duplicate the forward data.
+            ab = self._current_travel_stats.get((left, right))
+            at = self._current_travel_stats.get((left, terminal))
+            bt = self._current_travel_stats.get((right, terminal))
+            if not (ab and at and bt) or ab.movement.median <= 0:
+                continue
+            t_ab = ab.movement.median; t_at = at.movement.median; t_bt = bt.movement.median
+            distance_to_junction = (t_ab + t_at - t_bt) / 2.0
+            branch_time = (t_at + t_bt - t_ab) / 2.0
+            fraction = distance_to_junction / t_ab
+            if not 0 <= fraction <= 1 or branch_time < 0:
+                continue
+            canonical_fraction = fraction if left == a else 1.0 - fraction
+            observations = min(ab.movement.observations, at.movement.observations,
+                               bt.movement.observations)
+            residual = abs((distance_to_junction + branch_time) - t_at)
+            fractions.append((canonical_fraction, observations, residual))
+        if not fractions:
+            return JunctionPositionEstimate(None, 0, None, None, None, "unresolved",
+                                            "travel_time_triangulation")
+        values = sorted(value for value, _, _ in fractions)
+        estimate = float(median(values)); spread = values[-1] - values[0]
+        observations = sum(count for _, count, _ in fractions)
+        residual = float(median([value for _, _, value in fractions]))
+        confidence = "exact" if observations >= 2 and spread <= .15 else "inferred"
+        return JunctionPositionEstimate(estimate, observations, estimate, spread, residual,
+                                        confidence, "travel_time_triangulation")
+
+    def _raw_shortest_path(self, starts: set[str], ends: set[str]) -> tuple[str, ...] | None:
+        if self.raw_graph is None or not starts or not ends:
+            return None
+        queue = deque((node, (node,)) for node in sorted(starts)); shortest: list[tuple[str, ...]] = []
+        best_depth: dict[str, int] = {node: 0 for node in starts}; length: int | None = None
+        while queue:
+            node, path = queue.popleft(); depth = len(path) - 1
+            if length is not None and depth > length:
+                break
+            if node in ends:
+                length = depth; shortest.append(path); continue
+            for neighbour in sorted(self.raw_graph.neighbours(node)):
+                next_depth = depth + 1
+                if neighbour in path or next_depth > best_depth.get(neighbour, next_depth):
+                    continue
+                best_depth[neighbour] = next_depth
+                queue.append((neighbour, (*path, neighbour)))
+        return shortest[0] if len(shortest) == 1 else None
+
+    def _raw_junction_estimate(self, a: str, b: str, terminal: str) -> tuple[float, str] | None:
+        anchors = self._raw_anchors()
+        if any(len(anchors.get(node, set())) != 1 for node in (a, b, terminal)):
+            return None
+        ab = self._raw_shortest_path(anchors.get(a, set()), anchors.get(b, set()))
+        at = self._raw_shortest_path(anchors.get(a, set()), anchors.get(terminal, set()))
+        bt = self._raw_shortest_path(anchors.get(b, set()), anchors.get(terminal, set()))
+        if not (ab and at and bt) or len(ab) < 2:
+            return None
+        candidates = set(ab) & set(at) & set(bt)
+        candidates -= anchors.get(a, set()) | anchors.get(b, set()) | anchors.get(terminal, set())
+        candidates = {node for node in candidates if len(self.raw_graph.neighbours(node)) >= 3}
+        if len(candidates) != 1:
+            return None
+        raw_junction = candidates.pop()
+        return ab.index(raw_junction) / (len(ab) - 1), raw_junction
+
+    @staticmethod
+    def _synthetic_id(branch: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "_", branch.casefold()).strip("_") or "branch"
+        return f"synthetic:abzw_{slug}"
+
+    def _derive_branch_attachments(self, result: CorridorGraph,
+                                   terminal_approach: dict[str, DirectionChangeEvidence]) -> None:
+        schedule_neighbours: dict[str, set[str]] = defaultdict(set)
+        for source, target in self.axis.edges:
+            schedule_neighbours[source].add(target); schedule_neighbours[target].add(source)
+        for terminal, role in tuple(result.node_roles.items()):
+            if role != "branch_terminal":
+                continue
+            neighbours = schedule_neighbours[terminal]
+            host_candidates = [key for key in result.backbone_edges
+                               if terminal not in key and key <= neighbours]
+            if len(host_candidates) != 1:
+                attached = next(iter(neighbours), None) if len(neighbours) == 1 else None
+                result.branch_attachments[terminal] = BranchAttachment(
+                    terminal, "node" if attached else "unresolved", None, None, attached,
+                    ("single_schedule_neighbour",) if attached else ("ambiguous_attachment",),
+                    "inferred" if attached else "unresolved")
+                continue
+            host_key = host_candidates[0]
+            a, b = sorted(host_key)
+            time_estimate = self._junction_time_estimate(a, b, terminal)
+            raw_estimate = self._raw_junction_estimate(a, b, terminal)
+            if raw_estimate:
+                fraction, raw_node = raw_estimate
+                source = "raw_infrastructure" if time_estimate.edge_fraction is None else "raw_and_travel_time"
+                confidence = "exact"; evidence = ("backbone_host_edge", "two_sided_schedule_branch",
+                                                   "raw_junction_projection")
+            elif time_estimate.edge_fraction is not None:
+                fraction = time_estimate.edge_fraction; raw_node = None
+                source = time_estimate.source; confidence = time_estimate.confidence
+                evidence = ("backbone_host_edge", "two_sided_schedule_branch",
+                            "travel_time_triangulation")
+            else:
+                result.branch_attachments[terminal] = BranchAttachment(
+                    terminal, "unresolved", (a, b), None, None,
+                    ("host_edge_candidate", "position_unresolved"), "unresolved")
+                result.junction_position_estimates[terminal] = time_estimate
+                continue
+            junction_id = self._synthetic_id(terminal)
+            approach = terminal_approach.get(terminal).approach if terminal in terminal_approach else None
+            parent_candidates = self.axis.nodes[approach].operating_points if approach else ()
+            parent = parent_candidates[0] if len(parent_candidates) == 1 else None
+            junction = SyntheticJunctionNode(
+                junction_id, f"Abzw {self.axis.nodes[terminal].display_name}", terminal, parent,
+                (a, b), fraction, source, evidence, confidence, raw_node)
+            result.synthetic_junctions[junction_id] = junction
+            result.junction_position_estimates[junction_id] = time_estimate
+            result.branch_attachments[terminal] = BranchAttachment(
+                terminal, "edge", (a, b), junction_id, None, evidence, confidence)
+            result.node_roles[junction_id] = "branch_junction"
+            self.axis.nodes[junction_id] = RouteAxisNode(
+                junction_id, junction.display_name, (), (), None,
+                {"synthetic_junction": 1}, "synthetic_junction_node")
+
     def build(self) -> CorridorGraph:
         result = CorridorGraph(self.axis)
         result.travel_time_stats = self._timings()
+        self._current_travel_stats = result.travel_time_stats
         result.direction_changes = self._reversals()
         result.terminal_evidence = self._terminal_stats(result.direction_changes)
         terminal_approach: dict[str, DirectionChangeEvidence] = {}
@@ -679,6 +911,7 @@ class CorridorGraphBuilder:
         for edge in result.edges.values():
             if edge.classification == "neighbour" and result.node_roles.get(edge.source) == "branch_junction":
                 edge.classification = "branch"; edge.evidence["stable_branch_junction"] = True
+        self._derive_branch_attachments(result, terminal_approach)
         return result
 
     @staticmethod
