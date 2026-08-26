@@ -555,6 +555,8 @@ class ScheduleGraphTests(unittest.TestCase):
         corridor = CorridorGraphBuilder(
             schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
         self.assertEqual(corridor.node_roles["TUO"], "boundary_adjacent")
+        self.assertEqual(corridor.topology_roles["TUO"], "mainline")
+        self.assertEqual(corridor.boundary_roles["TUO"], "boundary_adjacent")
         self.assertNotEqual(corridor.node_roles["TUO"], "terminal")
         self.assertEqual({item.external_name for item in corridor.synthetic_external_boundaries.values()},
                          {"Ulm Hbf", "Ulm Rbf"})
@@ -620,6 +622,88 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertTrue(any("External Unknown" in question.question_text
                             for question in corridor.topology_questions.values()))
 
+    def test_topology_and_boundary_roles_are_independent(self):
+        names = ("TRI", "THT", "THTO", "Mengen")
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in names}}
+        services = [
+            service(1, "TRI", "THT", "THTO"), service(2, "THTO", "THT", "TRI"),
+            service(3, "THT", "Mengen"), service(4, "Mengen", "THT"),
+            service(5, "TRI", "THT", destination="External Route"),
+            service(6, "TRI", "THT", destination="External Route"),
+        ]
+        raw = parse_wege("""<wege>
+          <e enr='1' name='TRI'/><e enr='2' name='THT'/><e enr='3' name='THTO'/>
+          <e enr='4' name='Mengen'/><e enr='5' name='External Route'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/>
+          <connector enr1='2' enr2='4'/><connector enr1='2' enr2='5'/>
+        </wege>""")
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
+        self.assertEqual(corridor.topology_roles["THT"], "branch_junction")
+        self.assertEqual(corridor.boundary_roles["THT"], "boundary_adjacent")
+        self.assertIn("THT", corridor.branch_nodes)
+
+    def test_explicit_schedule_boundary_deduplicates_synthetic_boundary(self):
+        manual = {"operating_points": {
+            "TSL": {"display_name": "TSL", "raw_names": ["TSL"]},
+            "AUL": {"display_name": "Ef Aulendorf", "raw_names": ["Ef Aulendorf"]},
+        }}
+        services = [
+            service(1, "TSL", "Ef Aulendorf", destination="Aulendorf"),
+            service(2, "TSL", "Ef Aulendorf", destination="Aulendorf"),
+            service(3, "Ef Aulendorf", "TSL", origin="Aulendorf"),
+        ]
+        raw = parse_wege("""<wege>
+          <e enr='1' name='TSL'/><e enr='2' name='Ef Aulendorf'/><e enr='3' name='Aulendorf'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/>
+        </wege>""")
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
+        explicit = next(iter(corridor.explicit_external_boundaries.values()))
+        self.assertEqual(explicit.external_name, "Aulendorf")
+        self.assertFalse(corridor.synthetic_external_boundaries)
+        self.assertEqual(corridor.boundary_roles[explicit.route_axis_node], "external_boundary")
+        self.assertNotEqual(corridor.topology_roles[explicit.route_axis_node], "terminal")
+        self.assertTrue(corridor.boundary_dedup_mapping)
+
+    def test_deferred_external_boundary_is_retained_and_later_confirmed(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("TSK", "A")}}
+        raw = parse_wege("""<wege>
+          <e enr='1' name='Münsingen'/><e enr='2' name='TSK'/><e enr='3' name='A'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/>
+        </wege>""")
+        startup = [
+            service(1, "TSK", "A", origin="Münsingen", discovery_source="initial_train_list",
+                    schedule_start_completeness="possibly_truncated_at_startup"),
+            service(2, "TSK", "A", origin="Münsingen", discovery_source="initial_train_list",
+                    schedule_start_completeness="possibly_truncated_at_startup"),
+        ]
+        schedule = SchedulePointGraph.from_services(startup)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
+        candidate = corridor.deferred_external_boundary_candidates["münsingen"]
+        self.assertEqual(candidate.possible_source_nodes, ("TSK",))
+        self.assertEqual(candidate.untrusted_incoming_count, 2)
+        self.assertEqual(candidate.status, "awaiting_trusted_observation")
+        self.assertIsNotNone(candidate.raw_connector)
+        self.assertFalse(corridor.synthetic_external_boundaries)
+        self.assertFalse(corridor.topology_questions)
+
+        confirmed_schedule = SchedulePointGraph.from_services(startup + [
+            service(3, "TSK", "A", origin="Münsingen", discovery_source="periodic_train_list",
+                    schedule_start_completeness="likely_complete")])
+        confirmed = CorridorGraphBuilder(
+            confirmed_schedule, OperatingPointResolver((), manual).resolve(confirmed_schedule), raw).build()
+        candidate = confirmed.deferred_external_boundary_candidates["münsingen"]
+        self.assertEqual(candidate.status, "confirmed_automatically")
+        self.assertEqual(candidate.confirmation_source, "TSK")
+        self.assertEqual({item.external_name for item in confirmed.synthetic_external_boundaries.values()},
+                         {"Münsingen"})
+
     def test_raw_continuation_rejects_observed_terminal_but_mof_remains_terminal(self):
         manual = {"operating_points": {
             "TAU": {"display_name": "TAU", "raw_names": ["TAU"]},
@@ -638,6 +722,8 @@ class ScheduleGraphTests(unittest.TestCase):
         corridor = CorridorGraphBuilder(
             schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
         self.assertEqual(corridor.node_roles["TAT"], "observed_schedule_boundary")
+        self.assertEqual(corridor.topology_roles["TAT"], "mainline")
+        self.assertEqual(corridor.boundary_roles["TAT"], "observed_schedule_boundary")
         self.assertIn("raw_external_continuation",
                       corridor.terminal_evidence["TAT"].contradicting_terminal_evidence)
         self.assertEqual(corridor.terminal_evidence["TAT"].raw_outgoing_corridors, 2)
@@ -702,6 +788,8 @@ class ScheduleGraphTests(unittest.TestCase):
         schedule = SchedulePointGraph.from_services(services)
         corridor = CorridorGraphBuilder(schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
         self.assertEqual(corridor.node_roles["MOF"], "terminal")
+        self.assertEqual(corridor.topology_roles["MOF"], "terminal")
+        self.assertEqual(corridor.boundary_roles["MOF"], "none")
         self.assertEqual(corridor.node_roles["EA Kempten"], "external_boundary")
         self.assertEqual(corridor.terminal_evidence["MOF"].schedule_end_count, 2)
         self.assertEqual(corridor.terminal_evidence["MOF"].schedule_start_count, 2)

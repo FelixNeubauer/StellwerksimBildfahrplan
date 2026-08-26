@@ -266,6 +266,34 @@ class SyntheticExternalBoundaryNode:
 
 
 @dataclass(frozen=True)
+class ExplicitExternalBoundaryEvidence:
+    route_axis_node: str
+    raw_schedule_name: str
+    external_name: str
+    raw_connector: str | None
+    incoming_observations: int
+    outgoing_observations: int
+    evidence: tuple[str, ...]
+    confidence: str
+
+
+@dataclass(frozen=True)
+class DeferredExternalBoundaryCandidate:
+    external_name: str
+    possible_source_nodes: tuple[str, ...]
+    trusted_incoming_count: int
+    trusted_outgoing_count: int
+    untrusted_incoming_count: int
+    untrusted_outgoing_count: int
+    raw_connector: str | None
+    supporting_services: tuple[int, ...]
+    confidence: str
+    status: str
+    reason: str
+    confirmation_source: str | None = None
+
+
+@dataclass(frozen=True)
 class ExternalTargetResolution:
     source_node: str
     original_target: str
@@ -319,6 +347,8 @@ class CorridorGraph:
     backbone_edges: dict[frozenset[str], BackboneEdge] = field(default_factory=dict)
     backbone_candidates: dict[frozenset[str], dict[str, Any]] = field(default_factory=dict)
     node_roles: dict[str, str] = field(default_factory=dict)
+    topology_roles: dict[str, str] = field(default_factory=dict)
+    boundary_roles: dict[str, str] = field(default_factory=dict)
     direction_changes: list[DirectionChangeEvidence] = field(default_factory=list)
     terminal_evidence: dict[str, TerminalEvidence] = field(default_factory=dict)
     travel_time_stats: dict[tuple[str, ...], PathTimeStats] = field(default_factory=dict)
@@ -340,6 +370,9 @@ class CorridorGraph:
     between_constraints: dict[str, BetweenConstraint] = field(default_factory=dict)
     hidden_boundary_evidence: dict[tuple[str, str], HiddenExternalBoundaryEvidence] = field(default_factory=dict)
     synthetic_external_boundaries: dict[str, SyntheticExternalBoundaryNode] = field(default_factory=dict)
+    explicit_external_boundaries: dict[str, ExplicitExternalBoundaryEvidence] = field(default_factory=dict)
+    boundary_dedup_mapping: dict[str, str] = field(default_factory=dict)
+    deferred_external_boundary_candidates: dict[str, DeferredExternalBoundaryCandidate] = field(default_factory=dict)
     topology_questions: dict[str, TopologyQuestion] = field(default_factory=dict)
     external_target_resolutions: dict[tuple[str, str], ExternalTargetResolution] = field(default_factory=dict)
     ignored_endpoint_observations: list[dict[str, Any]] = field(default_factory=list)
@@ -352,7 +385,8 @@ class CorridorGraph:
 
     @property
     def branch_nodes(self) -> set[str]:
-        return {node for node, role in self.node_roles.items() if role == "branch_junction"}
+        roles = self.topology_roles or self.node_roles
+        return {node for node, role in roles.items() if role == "branch_junction"}
 
     def to_operational_graph(self) -> OperationalRouteGraph:
         graph = OperationalRouteGraph()
@@ -724,8 +758,11 @@ class CorridorGraphBuilder:
             ("unmatched_zugdetails_endpoint",))
 
     def _hidden_external_boundaries(self, result: CorridorGraph) -> None:
-        observed: dict[tuple[str, str], dict[str, Any]] = defaultdict(
-            lambda: {"incoming": 0, "outgoing": 0, "services": set(), "name": "", "resolution": None})
+        observed: dict[tuple[str, str], dict[str, Any]] = defaultdict(lambda: {
+            "trusted_incoming": 0, "trusted_outgoing": 0,
+            "untrusted_incoming": 0, "untrusted_outgoing": 0,
+            "services": set(), "name": "", "resolution": None,
+        })
         for zid, path in self._axis_paths().items():
             if not path:
                 continue
@@ -738,6 +775,14 @@ class CorridorGraphBuilder:
                 provenance = self.schedule.service_provenance.get(zid)
                 trusted = (provenance.start_trusted if direction == "incoming" else
                            provenance.end_trusted) if provenance else True
+                resolution = self._external_target_resolution(source, external.strip())
+                result.external_target_resolutions[(source, external.strip())] = resolution
+                if resolution.classification in {
+                        "same_operating_point_internal", "known_visible_operating_point", "non_topological_label"}:
+                    continue
+                item = observed[(source, key)]
+                item[f"{'trusted' if trusted else 'untrusted'}_{direction}"] += 1
+                item["services"].add(zid); item["name"] = external.strip(); item["resolution"] = resolution
                 if not trusted:
                     ignored = {
                         "zid": zid, "source_node": source, "external_name": external.strip(),
@@ -750,26 +795,51 @@ class CorridorGraphBuilder:
                     result.ignored_endpoint_observations.append(ignored)
                     result.deferred_questions.append(ignored)
                     continue
-                resolution = self._external_target_resolution(source, external.strip())
-                result.external_target_resolutions[(source, external.strip())] = resolution
-                if resolution.classification in {
-                        "same_operating_point_internal", "known_visible_operating_point", "non_topological_label"}:
-                    continue
-                item = observed[(source, key)]
-                item[direction] += 1; item["services"].add(zid); item["name"] = external.strip()
-                item["resolution"] = resolution
+
+        grouped: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+        for (source, key), item in observed.items():
+            grouped[key].append((source, item))
+        for key, entries in grouped.items():
+            untrusted_total = sum(item["untrusted_incoming"] + item["untrusted_outgoing"]
+                                  for _, item in entries)
+            trusted_total = sum(item["trusted_incoming"] + item["trusted_outgoing"]
+                                for _, item in entries)
+            connectors = {item["resolution"].raw_connector for _, item in entries
+                          if item["resolution"].raw_connector}
+            if untrusted_total < 2 or not connectors:
+                continue
+            trusted_sources = {source for source, item in entries
+                               if item["trusted_incoming"] + item["trusted_outgoing"]}
+            possible_sources = tuple(sorted({source for source, _ in entries}))
+            confirmed_source = next(iter(trusted_sources)) if len(trusted_sources) == 1 else None
+            result.deferred_external_boundary_candidates[key] = DeferredExternalBoundaryCandidate(
+                entries[0][1]["name"], possible_sources,
+                sum(item["trusted_incoming"] for _, item in entries),
+                sum(item["trusted_outgoing"] for _, item in entries),
+                sum(item["untrusted_incoming"] for _, item in entries),
+                sum(item["untrusted_outgoing"] for _, item in entries),
+                sorted(connectors)[0],
+                tuple(sorted({zid for _, item in entries for zid in item["services"]})),
+                "exact" if confirmed_source else "inferred",
+                "confirmed_automatically" if confirmed_source else "awaiting_trusted_observation",
+                "trusted_endpoint_observation" if confirmed_source else "startup_truncated_endpoint_history",
+                confirmed_source)
+
         for (source, _), item in observed.items():
             external_name = item["name"]
             resolution = item["resolution"]
             raw_connector = resolution.raw_connector
-            incoming, outgoing = item["incoming"], item["outgoing"]
+            incoming, outgoing = item["trusted_incoming"], item["trusted_outgoing"]
             total = incoming + outgoing
+            candidate = result.deferred_external_boundary_candidates.get(self._external_key(external_name))
             bidirectional = bool(incoming and outgoing)
             # Names from ``von``/``nach`` alone can also denote the terminal
             # itself under a different spelling. Automatic topology therefore
             # requires repeated endpoint evidence plus a matching raw connector;
             # bidirectional details without raw confirmation become a question.
-            resolved = total >= 2 and raw_connector is not None
+            resolved = raw_connector is not None and (
+                total >= 2 or bool(candidate and candidate.status == "confirmed_automatically"
+                                   and candidate.confirmation_source == source))
             directionality = ("bidirectional" if bidirectional else
                               "observed_incoming" if incoming else "observed_outgoing")
             evidence = ("schedule_endpoint", "zugdetails_von_nach") + (
@@ -783,9 +853,26 @@ class CorridorGraphBuilder:
             slug = re.sub(r"[^a-z0-9]+", "_", self._external_key(external_name)).strip("_")
             boundary_id = f"synthetic:external:{source.casefold()}:{slug or 'unknown'}"
             if resolved:
+                source_names = self.axis.nodes[source].raw_names
+                explicit_names = tuple(name for name in source_names
+                                       if self._contains_known_name(self._external_key(name),
+                                                                    self._external_key(external_name))
+                                       and self._external_key(name) != self._external_key(external_name))
+                schedule_neighbours = {target for left, target in self.axis.edges if left == source} | {
+                    left for left, target in self.axis.edges if target == source}
+                if explicit_names and len(schedule_neighbours) <= 1:
+                    result.explicit_external_boundaries[source] = ExplicitExternalBoundaryEvidence(
+                        source, explicit_names[0], external_name, raw_connector, incoming, outgoing,
+                        (*evidence, "explicit_schedule_boundary", "endpoint_name_match"), confidence)
+                    result.boundary_dedup_mapping[boundary_id] = source
+                    continue
                 result.synthetic_external_boundaries[boundary_id] = SyntheticExternalBoundaryNode(
                     boundary_id, external_name, source, external_name, evidence, confidence,
                     raw_connector, directionality)
+                continue
+            if candidate:
+                continue
+            if total == 0:
                 continue
             question_id = f"question:terminal_or_external:{source}:{slug or 'unknown'}"
             result.topology_questions[question_id] = TopologyQuestion(
@@ -1404,47 +1491,72 @@ class CorridorGraphBuilder:
                 {"synthetic_junction": 1}, "synthetic_junction_node")
 
     def _finalize_node_roles(self, result: CorridorGraph) -> None:
-        """Recomputes roles from the projected graph while retaining semantic evidence."""
+        """Recompute independent topology and boundary role dimensions."""
         result.pre_split_node_roles = dict(result.node_roles)
         graph = result.to_operational_graph()
         adjacency: dict[str, set[str]] = defaultdict(set)
         for edge in graph.edges:
+            if (graph.nodes[edge.source].node_type == "synthetic_external_boundary"
+                    or graph.nodes[edge.target].node_type == "synthetic_external_boundary"):
+                continue
             adjacency[edge.source].add(edge.target); adjacency[edge.target].add(edge.source)
-        final: dict[str, str] = {
-            node: role for node, role in result.pre_split_node_roles.items()
-            if node not in graph.nodes and role == "local_industrial"
-        }
+        topology: dict[str, str] = {}
+        boundary: dict[str, str] = {}
+        hidden_sources = {item.source_node for item in result.synthetic_external_boundaries.values()}
         for node in graph.nodes:
             degree = len(adjacency[node]); previous = result.pre_split_node_roles.get(node)
             terminal = result.terminal_evidence.get(node)
-            hidden_sources = {item.source_node for item in result.synthetic_external_boundaries.values()}
             if node in result.synthetic_external_boundaries:
-                role = "external_boundary"
-            elif node in hidden_sources:
-                role = "boundary_adjacent"
+                topology_role = "unresolved"
             elif node in result.synthetic_junctions:
-                role = "branch_junction" if degree > 2 else "unresolved"
+                topology_role = "branch_junction" if degree > 2 else "unresolved"
             elif previous == "branch_terminal":
-                role = "branch_terminal"
-            elif terminal and terminal.classification in {
-                    "terminal", "external_boundary", "observed_schedule_boundary"}:
-                role = terminal.classification
+                topology_role = "branch_terminal"
+            elif terminal and terminal.classification == "terminal":
+                topology_role = "terminal"
             elif previous == "local_industrial":
-                role = previous
+                topology_role = previous
             elif degree > 2:
-                role = "branch_junction"
-            elif degree == 2:
-                role = "mainline"
+                topology_role = "branch_junction"
+            elif degree >= 1:
+                topology_role = "mainline"
             else:
-                role = "unresolved"
-            final[node] = role
-            if previous and previous != role:
+                topology_role = "unresolved"
+
+            if node in result.synthetic_external_boundaries:
+                boundary_role = "external_boundary"
+            elif node in result.explicit_external_boundaries:
+                boundary_role = "external_boundary"
+            elif node in hidden_sources:
+                boundary_role = "boundary_adjacent"
+            elif terminal and terminal.classification == "observed_schedule_boundary":
+                boundary_role = "observed_schedule_boundary"
+            elif terminal and terminal.classification == "external_boundary":
+                boundary_role = "external_boundary"
+            else:
+                boundary_role = "none"
+            topology[node] = topology_role; boundary[node] = boundary_role
+            compatibility_role = (topology_role if topology_role in {
+                "branch_junction", "branch_terminal", "terminal", "local_industrial"}
+                else boundary_role if boundary_role != "none" else topology_role)
+            if previous and previous != compatibility_role:
                 result.role_changes[node] = {
                     "pre_split_node_role": previous,
-                    "final_node_role": role,
+                    "final_node_role": compatibility_role,
+                    "topology_role": topology_role,
+                    "boundary_role": boundary_role,
                     "role_change_reason": "final_operational_topology",
                 }
-        result.node_roles = final
+        for node, previous in result.pre_split_node_roles.items():
+            if node not in graph.nodes and previous == "local_industrial":
+                topology[node] = "local_industrial"; boundary[node] = "none"
+        result.topology_roles = topology
+        result.boundary_roles = boundary
+        result.node_roles = {
+            node: (role if role in {"branch_junction", "branch_terminal", "terminal", "local_industrial"}
+                   else boundary[node] if boundary[node] != "none" else role)
+            for node, role in topology.items()
+        }
 
     def build(self) -> CorridorGraph:
         result = CorridorGraph(self.axis)
@@ -1452,7 +1564,8 @@ class CorridorGraphBuilder:
         self._current_travel_stats = result.travel_time_stats
         result.direction_changes = self._reversals()
         self._hidden_external_boundaries(result)
-        hidden_sources = {item.source_node for item in result.synthetic_external_boundaries.values()}
+        hidden_sources = ({item.source_node for item in result.synthetic_external_boundaries.values()}
+                          | set(result.explicit_external_boundaries))
         result.terminal_evidence = self._terminal_stats(result.direction_changes, hidden_sources)
         terminal_approach: dict[str, DirectionChangeEvidence] = {}
         for item in result.direction_changes:

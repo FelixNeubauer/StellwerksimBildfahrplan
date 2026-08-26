@@ -42,6 +42,7 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("local_internal_edges", "Local-Internal-Edges"), ("unresolved_edges", "Unresolved-Edges"),
             ("branch_junctions", "Final Branch Junctions"),
             ("branch_terminals", "Final Branch Terminals"),
+            ("final_terminals", "Final Terminals"),
             ("direction_changes", "Direction Changes"), ("secondary_components", "Secondary Components"),
             ("backbone_edges", "BackboneEdges"), ("backbone_candidates", "Backbone Candidates"),
             ("travel_time_comparisons", "TravelTime Comparisons"),
@@ -59,6 +60,10 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("between_constraints", "Between Constraints Detected"),
             ("between_conflicts", "Between Constraints Conflicting"),
             ("hidden_boundaries", "Hidden External Boundaries"),
+            ("boundary_adjacent", "Boundary Adjacent Nodes"),
+            ("explicit_boundaries", "Explicit External Boundaries"),
+            ("deferred_boundaries", "Deferred External Boundary Candidates"),
+            ("confirmed_deferred", "Confirmed Deferred Boundaries"),
             ("external_targets", "External Target Resolutions"),
             ("topology_questions", "Topology Questions Pending"),
             ("uncertain_schedule_starts", "Schedules With Uncertain Start"),
@@ -135,8 +140,9 @@ class InfrastructureTab(QtWidgets.QWidget):
                 **operating.diagnostics,
                 **{f"{kind}_edges": sum(edge.classification == kind for edge in corridor.edges.values())
                    for kind in ("neighbour", "skip", "branch", "alternative_route", "local_internal", "unresolved")},
-                "branch_junctions": sum(role == "branch_junction" for role in corridor.node_roles.values()),
-                "branch_terminals": sum(role == "branch_terminal" for role in corridor.node_roles.values()),
+                "branch_junctions": sum(role == "branch_junction" for role in corridor.topology_roles.values()),
+                "branch_terminals": sum(role == "branch_terminal" for role in corridor.topology_roles.values()),
+                "final_terminals": sum(role == "terminal" for role in corridor.topology_roles.values()),
                 "direction_changes": len(corridor.direction_changes),
                 "secondary_components": sum(role == "secondary_component" for role in corridor.component_roles.values()),
                 "backbone_edges": len(corridor.backbone_edges),
@@ -163,6 +169,12 @@ class InfrastructureTab(QtWidgets.QWidget):
                 "between_conflicts": sum(item.status == "conflicting"
                                            for item in corridor.between_constraints.values()),
                 "hidden_boundaries": len(corridor.synthetic_external_boundaries),
+                "boundary_adjacent": sum(role == "boundary_adjacent"
+                                         for role in corridor.boundary_roles.values()),
+                "explicit_boundaries": len(corridor.explicit_external_boundaries),
+                "deferred_boundaries": len(corridor.deferred_external_boundary_candidates),
+                "confirmed_deferred": sum(item.status == "confirmed_automatically"
+                                          for item in corridor.deferred_external_boundary_candidates.values()),
                 "external_targets": len(corridor.external_target_resolutions),
                 "topology_questions": sum(item.status == "needs_user_confirmation"
                                           for item in corridor.topology_questions.values()),
@@ -247,6 +259,23 @@ class InfrastructureTab(QtWidgets.QWidget):
                 f"\n  matched raw names: {item.matched_raw_names or 'none'}"
                 f"\n  raw connector: {item.raw_connector or 'none'}"
                 for item in corridor.external_target_resolutions.values()
+            ) + "\n\n" + "\n".join(
+                f"Node roles: {node}\n  topology role: {corridor.topology_roles[node]}"
+                f"\n  boundary role: {corridor.boundary_roles.get(node, 'none')}"
+                for node in sorted(corridor.topology_roles)
+            ) + "\n\n" + "\n".join(
+                f"Explicit external boundary: {item.route_axis_node} → {item.external_name}"
+                f"\n  raw schedule name: {item.raw_schedule_name}"
+                f"\n  raw connector: {item.raw_connector or 'none'}\n  confidence: {item.confidence}"
+                for item in corridor.explicit_external_boundaries.values()
+            ) + "\n\n" + "\n".join(
+                f"Deferred external boundary: {item.external_name}"
+                f"\n  possible sources: {item.possible_source_nodes}"
+                f"\n  trusted incoming/outgoing: {item.trusted_incoming_count}/{item.trusted_outgoing_count}"
+                f"\n  untrusted incoming/outgoing: {item.untrusted_incoming_count}/{item.untrusted_outgoing_count}"
+                f"\n  raw connector: {item.raw_connector or 'none'}\n  status: {item.status}"
+                f"\n  reason: {item.reason}"
+                for item in corridor.deferred_external_boundary_candidates.values()
             ) + "\n\n" + "\n".join(
                 f"Hidden external boundary: {item.source_node} → {item.external_name}"
                 f"\n  outgoing: {item.outgoing_observations}\n  incoming: {item.incoming_observations}"

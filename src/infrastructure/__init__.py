@@ -21,7 +21,8 @@ from .schedule_graph import (
 )
 from .corridor import (
     BackboneEdge, BackboneScore, BetweenConstraint, BranchAttachment, CorridorGraph, CorridorGraphBuilder,
-    DerivedRouteEdge, DirectionChangeEvidence, HiddenExternalBoundaryEvidence,
+    DeferredExternalBoundaryCandidate, DerivedRouteEdge, DirectionChangeEvidence,
+    ExplicitExternalBoundaryEvidence, HiddenExternalBoundaryEvidence,
     ExternalTargetResolution, HaltAwareTravelTimeComparison,
     IntermediateStopOrSkippedPointEvidence, JunctionPositionEstimate,
     OrderedScheduleSequenceEvidence, PathTimeStats, RawAdjacencyEvidence,
@@ -42,6 +43,7 @@ __all__ = [
     "BackboneEdge", "BackboneScore", "BetweenConstraint", "PathTimeStats", "RawAdjacencyEvidence", "TerminalEvidence",
     "TravelTimeStats", "TriangleResolutionEvidence", "BranchAttachment",
     "JunctionPositionEstimate", "SyntheticJunctionNode",
+    "DeferredExternalBoundaryCandidate", "ExplicitExternalBoundaryEvidence",
     "ExternalTargetResolution", "HaltAwareTravelTimeComparison",
     "IntermediateStopOrSkippedPointEvidence", "HiddenExternalBoundaryEvidence",
     "OrderedScheduleSequenceEvidence", "SameServiceTripleEvidence",

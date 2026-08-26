@@ -22,7 +22,7 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 12, "aid": aid, "facility": facility,
+        "schema_version": 13, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -52,6 +52,8 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                 for nodes, evidence in corridor.backbone_candidates.items()
             ],
             "node_roles": corridor.node_roles,
+            "topology_roles": corridor.topology_roles,
+            "boundary_roles": corridor.boundary_roles,
             "direction_changes": [asdict(item) for item in corridor.direction_changes],
             "terminal_evidence": [asdict(item) for item in corridor.terminal_evidence.values()],
             "travel_time_stats": [asdict(item) for item in corridor.travel_time_stats.values()],
@@ -107,6 +109,13 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
             "synthetic_external_boundaries": [
                 asdict(item) for item in corridor.synthetic_external_boundaries.values()
             ],
+            "explicit_external_boundaries": [
+                asdict(item) for item in corridor.explicit_external_boundaries.values()
+            ],
+            "boundary_dedup_mapping": corridor.boundary_dedup_mapping,
+            "deferred_external_boundary_candidates": [
+                asdict(item) for item in corridor.deferred_external_boundary_candidates.values()
+            ],
             "topology_questions": [asdict(item) for item in corridor.topology_questions.values()],
             "external_target_resolutions": [
                 asdict(item) for item in corridor.external_target_resolutions.values()
@@ -119,7 +128,8 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
             "deferred_questions": corridor.deferred_questions,
             "component_roles": corridor.component_roles,
         } if corridor else {"edges": [], "backbone_edges": [], "backbone_candidates": [],
-                            "node_roles": {}, "direction_changes": [], "terminal_evidence": [],
+                            "node_roles": {}, "topology_roles": {}, "boundary_roles": {},
+                            "direction_changes": [], "terminal_evidence": [],
                             "travel_time_stats": [], "halt_aware_travel_time_comparisons": [],
                             "intermediate_stop_or_skipped_point_evidence": [],
                             "ordered_schedule_sequence_evidence": [],
@@ -131,7 +141,9 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                             "applied_between_resolutions": [], "between_constraints": [],
                             "required_edges": [], "forbidden_transitive_edges": [],
                             "between_constraint_conflicts": [], "hidden_boundary_evidence": [],
-                            "synthetic_external_boundaries": [], "topology_questions": [],
+                            "synthetic_external_boundaries": [], "explicit_external_boundaries": [],
+                            "boundary_dedup_mapping": {}, "deferred_external_boundary_candidates": [],
+                            "topology_questions": [],
                             "external_target_resolutions": [], "internal_target_matches": [],
                             "ignored_endpoint_observations": [], "deferred_questions": [],
                             "component_roles": {}}),

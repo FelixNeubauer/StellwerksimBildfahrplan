@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.5.5
+# StellwerkSim Bildfahrplan V0.3.5.6
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3.5.5
+## Umfang V0.3.5.6
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -145,3 +145,15 @@ Dreieckshypothesen werden einzeln diagnostiziert. Widersprüchliche echte
 Sequenzen erzeugen eine TopologyQuestion, während Pairwise-only-Support ohne
 weitere starke Raw-/Fahrzeitevidenz kein High-Between erzwingt. Schema 12
 persistiert die geordneten Sequenzen, Triple-Aggregate und Hypothesen.
+
+V0.3.5.6 schließt die automatische Topologiehärtung vor dem manuellen Editor
+ab. Finale Knoten besitzen getrennte `topology_role`- und `boundary_role`-
+Dimensionen, sodass etwa ein Verzweigungsknoten zugleich boundary-adjacent sein
+kann. Ein durch Endpoint-, Raw- und Randlage belegter expliziter Schedule-
+BoundaryNode verdrängt eine gleichbedeutende synthetische Dublette. Wiederholte,
+aber wegen Startup-Trunkierung noch unzuverlässige externe Endpoints mit
+Raw-Connector bleiben als `DeferredExternalBoundaryCandidate` erhalten und
+können durch eine spätere vertrauenswürdige Beobachtung automatisch bestätigt
+werden. Verbleibende Sonderfälle werden bewusst für den späteren Topology Editor
+persistiert statt mit weiteren Heuristiken überbaut; Schema 13 enthält diese
+Rollen, Deduplizierungen und Kandidaten.
