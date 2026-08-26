@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.2
+# StellwerkSim Bildfahrplan V0.3.3
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,7 +36,7 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.3.2
+## Umfang V0.3.3
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
 Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
@@ -63,7 +63,7 @@ liest diese Datei nur und überschreibt sie nicht.
 Die relative X-Position stammt weiterhin aus einem expliziten linearen
 RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
 Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische
-Gleisrekonstruktion sind nicht Teil von V0.3.2. Die Streckenachse liegt oben und
+Gleisrekonstruktion sind nicht Teil von V0.3.3. Die Streckenachse liegt oben und
 ist fest; ausschließlich der auf 05:00–21:00 begrenzte Zeitbereich ist vertikal
 zoom- und scrollbar. Zwischen den fünfsekündlichen STS-Abfragen interpoliert die
 UI die Simulationszeit monoton und friert bei Verbindungsverlust konservativ ein.
@@ -73,3 +73,8 @@ Korridorrekonstruktion klassifiziert daraus `neighbour`, `skip`, `branch`,
 `alternative_route`, `local_internal` oder `unresolved`. Stabil belegte
 Zwischenpfade können seltenere Direktfolgen als Skip erklären; strukturelle
 Hin-und-zurück-Muster liefern DirectionChange-Evidenz für Stichstreckenenden.
+Seit V0.3.3 wird zuerst ein unveränderlicher Backbone aus aggregierter
+Richtungs-, Fahrzeit-, Terminal- und optionaler Raw-Infrastrukturevidenz
+gewählt. Erst danach dürfen übrige ScheduleEdges über ausschließlich bestätigte
+Backbone-Kanten als Skip erklärt werden; zirkuläre Skip-Beweise sind damit
+ausgeschlossen.

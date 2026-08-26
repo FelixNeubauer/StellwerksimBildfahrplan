@@ -42,6 +42,12 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("local_internal_edges", "Local-Internal-Edges"), ("unresolved_edges", "Unresolved-Edges"),
             ("branch_junctions", "Branch Junctions"), ("branch_terminals", "Branch Terminals"),
             ("direction_changes", "Direction Changes"), ("secondary_components", "Secondary Components"),
+            ("backbone_edges", "BackboneEdges"), ("backbone_candidates", "Backbone Candidates"),
+            ("travel_time_comparisons", "TravelTime Comparisons"),
+            ("between_evidence", "Between-Evidence"), ("terminal_candidates", "Terminal Candidates"),
+            ("external_boundaries", "External Boundaries"),
+            ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
+            ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
             ("raw_nodes", "Raw-Infrastruktur: Nodes"), ("raw_edges", "Raw-Infrastruktur: Edges"),
             ("raw_types", "Raw-Infrastruktur: Elementtypen"),
             ("anchors", "Raw-Infrastruktur: Anchor-Zuordnungen"),
@@ -109,6 +115,18 @@ class InfrastructureTab(QtWidgets.QWidget):
                 "branch_terminals": sum(role == "branch_terminal" for role in corridor.node_roles.values()),
                 "direction_changes": len(corridor.direction_changes),
                 "secondary_components": sum(role == "secondary_component" for role in corridor.component_roles.values()),
+                "backbone_edges": len(corridor.backbone_edges),
+                "backbone_candidates": len(corridor.backbone_candidates),
+                "travel_time_comparisons": len(corridor.travel_time_stats),
+                "between_evidence": len(corridor.between_evidence),
+                "terminal_candidates": sum(item.classification == "terminal"
+                                           for item in corridor.terminal_evidence.values()),
+                "external_boundaries": sum(item.classification == "external_boundary"
+                                           for item in corridor.terminal_evidence.values()),
+                "schedule_start_count": sum(item.schedule_start_count for item in corridor.terminal_evidence.values()),
+                "schedule_end_count": sum(item.schedule_end_count for item in corridor.terminal_evidence.values()),
+                "through_count": sum(item.through_count for item in corridor.terminal_evidence.values()),
+                "reversal_count": sum(item.reversal_count for item in corridor.terminal_evidence.values()),
             }
             for key, count in counts.items():
                 self.values[key].setText(str(count))
@@ -116,6 +134,9 @@ class InfrastructureTab(QtWidgets.QWidget):
             self.clusters.setPlainText("\n\n".join(
                 f"OperatingPoint {point.display_name}\n    " + "\n    ".join(point.raw_names)
                 for point in sorted(operating.nodes.values(), key=lambda item: item.display_name)
+            ) + "\n\n" + "\n".join(
+                f"Backbone: {edge.source} ↔ {edge.target}\n  evidence: {edge.evidence}"
+                for edge in corridor.backbone_edges.values()
             ) + "\n\n" + "\n".join(
                 f"Skip: {edge.source} → {edge.target}\n  covered by: {' → '.join(edge.covered_path)}"
                 for edge in corridor.edges.values() if edge.classification == "skip"

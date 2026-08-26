@@ -34,6 +34,7 @@ class SchedulePointGraph:
     nodes: dict[str, SchedulePointNode] = field(default_factory=dict)
     edges: dict[tuple[str, str], ScheduleEdge] = field(default_factory=dict)
     service_paths: dict[int, tuple[str, ...]] = field(default_factory=dict)
+    service_schedules: dict[int, tuple[object, ...]] = field(default_factory=dict)
 
     def observe(self, zid: int, raw_names: Iterable[str]) -> None:
         names = tuple(name for name in raw_names if name)
@@ -54,7 +55,9 @@ class SchedulePointGraph:
             if getattr(service, "service_kind", "unknown") != "train":
                 continue
             schedule = getattr(service, "original_schedule", ())
-            graph.observe(getattr(service, "zid"), (p.planned_name or p.raw_name for p in schedule))
+            zid = getattr(service, "zid")
+            graph.observe(zid, (p.planned_name or p.raw_name for p in schedule))
+            graph.service_schedules[zid] = tuple(schedule)
         return graph
 
 
@@ -237,11 +240,21 @@ class OperatingPointResolver:
 
         # Key-Merge nur mit zusaetzlicher Evidenz: Plattformbezug oder interne Fahrplanfolge.
         internal_pairs = {(a, b) for a, b in schedule.edges if station_key(a) == station_key(b) and station_key(a)}
+        schedule_neighbours: dict[str, set[str]] = defaultdict(set)
+        for left, right in schedule.edges:
+            schedule_neighbours[left].add(right); schedule_neighbours[right].add(left)
+        shared_neighbour_keys = {
+            key for key, names in key_names.items() if len(names) > 1 and any(
+                schedule_neighbours[left] & schedule_neighbours[right]
+                for index, left in enumerate(sorted(names)) for right in sorted(names)[index + 1:]
+            )
+        }
         reliable_keys = {
             key for key, names in key_names.items() if key in platform_graph.station_key_support or (
                 len(names) > 1 and (
                     any(len(component & names) > 1 for component in components)
                     or any(a in names and b in names for a, b in internal_pairs)
+                    or key in shared_neighbour_keys
                 )
             )
         }
@@ -255,6 +268,8 @@ class OperatingPointResolver:
                     assigned.update(names)
                     continue
                 evidence = {"same_station_key": len(names)}
+                if key in shared_neighbour_keys:
+                    evidence["shared_external_neighbors"] = 1
                 if any(len(component & names) > 1 for component in components):
                     evidence["platform_relation"] = sum(len(component & names) for component in components)
                 groups.append((names, key, evidence, False)); assigned.update(names)

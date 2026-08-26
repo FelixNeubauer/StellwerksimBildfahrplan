@@ -22,7 +22,7 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 4, "aid": aid, "facility": facility,
+        "schema_version": 5, "aid": aid, "facility": facility,
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -43,10 +43,23 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
         } if operating else {"nodes": [], "edges": [], "operating_to_axis": {}}),
         "corridor": ({
             "edges": [asdict(item) for item in corridor.edges.values()],
+            "backbone_edges": [asdict(item) for item in corridor.backbone_edges.values()],
+            "backbone_candidates": [
+                {"nodes": sorted(nodes), "evidence": evidence}
+                for nodes, evidence in corridor.backbone_candidates.items()
+            ],
             "node_roles": corridor.node_roles,
             "direction_changes": [asdict(item) for item in corridor.direction_changes],
+            "terminal_evidence": [asdict(item) for item in corridor.terminal_evidence.values()],
+            "travel_time_stats": [asdict(item) for item in corridor.travel_time_stats.values()],
+            "between_evidence": [
+                {"nodes": list(nodes), "evidence": evidence}
+                for nodes, evidence in corridor.between_evidence.items()
+            ],
             "component_roles": corridor.component_roles,
-        } if corridor else {"edges": [], "node_roles": {}, "direction_changes": [], "component_roles": {}}),
+        } if corridor else {"edges": [], "backbone_edges": [], "backbone_candidates": [],
+                            "node_roles": {}, "direction_changes": [], "terminal_evidence": [],
+                            "travel_time_stats": [], "between_evidence": [], "component_roles": {}}),
         "derived": {"anchors": [asdict(item) for item in anchors.values()],
                     "operational_nodes": [asdict(item) for item in operational.nodes.values()],
                     "operational_edges": [asdict(item) for item in operational.edges]},

@@ -17,6 +17,13 @@ def service(zid, *names, kind="train"):
     return SimpleNamespace(zid=zid, service_kind=kind, original_schedule=points, current_schedule=[])
 
 
+def timed_service(zid, *points):
+    schedule = [SimpleNamespace(
+        planned_name=name, raw_name=name, planned_arrival=arrival, planned_departure=departure,
+    ) for name, arrival, departure in points]
+    return SimpleNamespace(zid=zid, service_kind="train", original_schedule=schedule, current_schedule=[])
+
+
 class ScheduleGraphTests(unittest.TestCase):
     def test_original_train_schedules_are_primary_and_edges_are_directed(self):
         graph = SchedulePointGraph.from_services([
@@ -51,6 +58,13 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertEqual({name: station_key(name) for name in ("TGB1", "THD1", "THDM1", "TNS1")}, {
             "TGB1": "TGB", "THD1": "THD", "THDM1": "THDM", "TNS1": "TNS",
         })
+
+    def test_same_key_points_with_shared_external_neighbor_cluster(self):
+        schedule = SchedulePointGraph.from_services([
+            service(1, "TLW", "TLM 401"), service(2, "TLW", "TLM 402")])
+        graph = OperatingPointResolver().resolve(schedule)
+        self.assertEqual({graph.raw_to_operating_point[name] for name in ("TLM 401", "TLM 402")}, {"TLM"})
+        self.assertIn("shared_external_neighbors", graph.nodes["TLM"].evidence)
 
     def test_single_unrelated_sandwich_does_not_blindly_merge(self):
         schedule = SchedulePointGraph.from_services([service(1, "MIMS 1", "Foreign", "MIMS 2")])
@@ -222,6 +236,51 @@ class ScheduleGraphTests(unittest.TestCase):
         ])
         alternative = CorridorGraphBuilder(strong, OperatingPointResolver((), manual).resolve(strong)).build()
         self.assertEqual(alternative.edges[("A", "D")].classification, "alternative_route")
+
+    def test_travel_times_separate_movement_dwell_and_protect_direct_backbone(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("TSX", "TLW", "TLM")}}
+        services = [
+            timed_service(1, ("TSX", "08:00", "08:00"), ("TLW", "08:04", "08:04")),
+            timed_service(2, ("TSX", "08:10", "08:10"), ("TLW", "08:14", "08:14")),
+            timed_service(3, ("TSX", "09:00", "09:00"), ("TLM", "09:08", "09:18"),
+                          ("TLW", "09:26", "09:26")),
+            timed_service(4, ("TLW", "10:00", "10:00"), ("TLM", "10:08", "10:18"),
+                          ("TLW", "10:26", "10:26")),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        operating = OperatingPointResolver((), manual).resolve(schedule)
+        corridor = CorridorGraphBuilder(schedule, operating).build()
+        via = corridor.travel_time_stats[("TSX", "TLM", "TLW")]
+        self.assertEqual(via.movement.median, 16 * 60)
+        self.assertEqual(via.dwell.median, 10 * 60)
+        self.assertEqual(via.total_elapsed.median, 26 * 60)
+        direct = corridor.travel_time_stats[("TSX", "TLW")]
+        self.assertEqual(direct.movement.median, 4 * 60)
+        self.assertIn(frozenset(("TSX", "TLW")), corridor.backbone_edges)
+        self.assertEqual(corridor.node_roles["TLM"], "branch_terminal")
+
+    def test_travel_time_normalizes_midnight(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "B")}}
+        schedule = SchedulePointGraph.from_services([
+            timed_service(1, ("A", "23:58", "23:58"), ("B", "00:01", "00:01"))])
+        corridor = CorridorGraphBuilder(schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertEqual(corridor.travel_time_stats[("A", "B")].movement.median, 3 * 60)
+
+    def test_schedule_end_terminal_differs_from_external_boundary(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("EA Kempten", "MIMS", "MOF")}}
+        services = [
+            service(1, "EA Kempten", "MIMS", "MOF"), service(2, "EA Kempten", "MIMS", "MOF"),
+            service(3, "MOF", "MIMS", "EA Kempten"), service(4, "MOF", "MIMS", "EA Kempten"),
+        ]
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertEqual(corridor.node_roles["MOF"], "terminal")
+        self.assertEqual(corridor.node_roles["EA Kempten"], "external_boundary")
+        self.assertEqual(corridor.terminal_evidence["MOF"].schedule_end_count, 2)
+        self.assertEqual(corridor.terminal_evidence["MOF"].schedule_start_count, 2)
 
 
 if __name__ == "__main__":
