@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from statistics import median
 import re
 from typing import Any, Iterable
@@ -79,6 +79,18 @@ class TriangleResolutionEvidence:
     contradicting_evidence: tuple[str, ...]
     direct_edge: tuple[str, str] | None = None
     chain_edges: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class BetweenConstraint:
+    id: str
+    path: tuple[str, str, str]
+    required_edges: tuple[tuple[str, str], ...]
+    forbidden_transitive_edge: tuple[str, str]
+    status: str
+    confidence: str
+    evidence: tuple[str, ...]
+    conflict_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -180,6 +192,18 @@ class SyntheticExternalBoundaryNode:
 
 
 @dataclass(frozen=True)
+class ExternalTargetResolution:
+    source_node: str
+    original_target: str
+    normalized_candidate: str
+    classification: str
+    matched_node: str | None
+    matched_raw_names: tuple[str, ...]
+    raw_connector: str | None
+    evidence: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class TopologyQuestion:
     id: str
     subject_node: str
@@ -233,9 +257,11 @@ class CorridorGraph:
     pre_split_node_roles: dict[str, str] = field(default_factory=dict)
     role_changes: dict[str, dict[str, str]] = field(default_factory=dict)
     applied_between_resolutions: dict[frozenset[str], tuple[str, ...]] = field(default_factory=dict)
+    between_constraints: dict[str, BetweenConstraint] = field(default_factory=dict)
     hidden_boundary_evidence: dict[tuple[str, str], HiddenExternalBoundaryEvidence] = field(default_factory=dict)
     synthetic_external_boundaries: dict[str, SyntheticExternalBoundaryNode] = field(default_factory=dict)
     topology_questions: dict[str, TopologyQuestion] = field(default_factory=dict)
+    external_target_resolutions: dict[tuple[str, str], ExternalTargetResolution] = field(default_factory=dict)
     component_roles: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -572,10 +598,52 @@ class CorridorGraphBuilder:
                 visited.add(neighbour); queue.append(neighbour)
         return None
 
+    @staticmethod
+    def _contains_known_name(value: str, known_name: str) -> bool:
+        """Match a known platform name without rewriting the endpoint text."""
+        if not known_name or len(known_name) < 2:
+            return False
+        return bool(re.search(rf"(?<!\w){re.escape(known_name)}(?!\w)", value))
+
+    def _external_target_resolution(self, source: str, target: str) -> ExternalTargetResolution:
+        normalized = self._external_key(target)
+        source_node = self.axis.nodes[source]
+        source_names = set(source_node.raw_names) | {source_node.id, source_node.display_name}
+        for operating_id in source_node.operating_points:
+            operating = self.operating.nodes.get(operating_id)
+            if operating is not None:
+                source_names.update(operating.raw_names)
+                source_names.update((operating.id, operating.display_name))
+        internal_matches = tuple(sorted({name for name in source_names if self._contains_known_name(
+            normalized, self._external_key(name))}))
+        if internal_matches:
+            return ExternalTargetResolution(
+                source, target, normalized, "same_operating_point_internal", source,
+                internal_matches, None, ("known_member_of_source_operating_point",))
+
+        for node_id, node in sorted(self.axis.nodes.items()):
+            if node_id == source:
+                continue
+            names = set(node.raw_names) | {node.id, node.display_name}
+            matches = tuple(sorted({name for name in names if self._contains_known_name(
+                normalized, self._external_key(name))}))
+            if matches:
+                return ExternalTargetResolution(
+                    source, target, normalized, "known_visible_operating_point", node_id,
+                    matches, None, ("known_visible_operating_point",))
+
+        raw_connector = self._raw_external_connector(source, target)
+        if raw_connector:
+            return ExternalTargetResolution(
+                source, target, normalized, "confirmed_external_connector", None, (),
+                raw_connector, ("raw_external_connector",))
+        return ExternalTargetResolution(
+            source, target, normalized, "unresolved", None, (), None,
+            ("unmatched_zugdetails_endpoint",))
+
     def _hidden_external_boundaries(self, result: CorridorGraph) -> None:
-        visible_names = {self._external_key(name) for name in self.schedule.nodes}
         observed: dict[tuple[str, str], dict[str, Any]] = defaultdict(
-            lambda: {"incoming": 0, "outgoing": 0, "services": set(), "name": ""})
+            lambda: {"incoming": 0, "outgoing": 0, "services": set(), "name": "", "resolution": None})
         for zid, path in self._axis_paths().items():
             if not path:
                 continue
@@ -583,13 +651,20 @@ class CorridorGraphBuilder:
             for source, external, direction in (
                     (path[0], origin, "incoming"), (path[-1], destination, "outgoing")):
                 key = self._external_key(external)
-                if not key or key in visible_names:
+                if not key:
+                    continue
+                resolution = self._external_target_resolution(source, external.strip())
+                result.external_target_resolutions[(source, external.strip())] = resolution
+                if resolution.classification in {
+                        "same_operating_point_internal", "known_visible_operating_point", "non_topological_label"}:
                     continue
                 item = observed[(source, key)]
                 item[direction] += 1; item["services"].add(zid); item["name"] = external.strip()
+                item["resolution"] = resolution
         for (source, _), item in observed.items():
             external_name = item["name"]
-            raw_connector = self._raw_external_connector(source, external_name)
+            resolution = item["resolution"]
+            raw_connector = resolution.raw_connector
             incoming, outgoing = item["incoming"], item["outgoing"]
             total = incoming + outgoing
             bidirectional = bool(incoming and outgoing)
@@ -618,7 +693,12 @@ class CorridorGraphBuilder:
             result.topology_questions[question_id] = TopologyQuestion(
                 question_id, source, "terminal_or_external_boundary",
                 f"Ist {source} ein Streckenende oder der letzte sichtbare Punkt vor {external_name}?",
-                ("terminal", "hidden_external_boundary"), evidence, confidence,
+                ("terminal", "hidden_external_boundary"), (
+                    f"source:{source}", f"external_candidate:{external_name}",
+                    f"schedule_endpoint_observations:{total}",
+                    f"destination_observations:{outgoing}", f"origin_observations:{incoming}",
+                    f"raw_connector:{'confirmed' if raw_connector else 'none'}", "internal_match:none",
+                    *evidence), confidence,
                 "hidden_external_boundary" if raw_connector else None)
 
     def _raw_adjacencies(self) -> dict[frozenset[str], RawAdjacencyEvidence]:
@@ -707,6 +787,63 @@ class CorridorGraphBuilder:
                             "contradicting_evidence": contradict,
                         }
 
+    def _compile_between_constraints(
+            self, result: CorridorGraph,
+    ) -> tuple[set[frozenset[str]], set[frozenset[str]]]:
+        """Compile all high-confidence decisions before touching union-find.
+
+        Required chain edges are local topology constraints, not ordinary
+        forest candidates.  Conflicts are therefore detected set-wise and
+        deterministically rather than being inferred from union-find order.
+        """
+        candidates: dict[str, BetweenConstraint] = {}
+        for triangle in sorted(result.triangle_resolutions, key=lambda item: (
+                item.nodes, item.between_candidate or "", item.direct_edge or ())):
+            if triangle.confidence != "high" or not triangle.between_candidate or not triangle.direct_edge:
+                continue
+            a, c = triangle.direct_edge
+            path = (a, triangle.between_candidate, c)
+            constraint_id = "between:" + ":".join(path)
+            candidates[constraint_id] = BetweenConstraint(
+                constraint_id, path, tuple(tuple(sorted(edge)) for edge in triangle.chain_edges),
+                tuple(sorted(triangle.direct_edge)), "detected", triangle.confidence,
+                (*triangle.supporting_evidence, *triangle.contradicting_evidence))
+
+        conflicts: dict[str, set[str]] = defaultdict(set)
+        items = sorted(candidates.items())
+        for index, (left_id, left) in enumerate(items):
+            left_required = {frozenset(edge) for edge in left.required_edges}
+            left_forbidden = frozenset(left.forbidden_transitive_edge)
+            for right_id, right in items[index + 1:]:
+                right_required = {frozenset(edge) for edge in right.required_edges}
+                right_forbidden = frozenset(right.forbidden_transitive_edge)
+                contradictory = (left_forbidden in right_required or right_forbidden in left_required
+                                 or (left_forbidden == right_forbidden and left.path != right.path))
+                if contradictory:
+                    conflicts[left_id].add(right_id); conflicts[right_id].add(left_id)
+
+        required: set[frozenset[str]] = set()
+        forbidden: set[frozenset[str]] = set()
+        for constraint_id, constraint in items:
+            conflict_ids = tuple(sorted(conflicts.get(constraint_id, ())))
+            if conflict_ids:
+                result.between_constraints[constraint_id] = replace(
+                    constraint, status="conflicting", conflict_ids=conflict_ids)
+                question_id = f"question:between_constraint:{constraint_id.removeprefix('between:')}"
+                result.topology_questions[question_id] = TopologyQuestion(
+                    question_id, constraint.path[1], "conflicting_between_constraints",
+                    f"Widersprüchliche High-Between-Entscheidungen betreffen {' – '.join(constraint.path)}.",
+                    tuple((constraint_id, *conflict_ids)), constraint.evidence,
+                    "low", None)
+                continue
+            applied = replace(constraint, status="applied")
+            result.between_constraints[constraint_id] = applied
+            direct_key = frozenset(applied.forbidden_transitive_edge)
+            required.update(frozenset(edge) for edge in applied.required_edges)
+            forbidden.add(direct_key)
+            result.applied_between_resolutions[direct_key] = applied.path
+        return required, forbidden
+
     def _backbone(self, result: CorridorGraph, terminal_approach: dict[str, DirectionChangeEvidence]) -> None:
         """Score contextual evidence first, then select the maximum-evidence forest."""
         undirected: dict[frozenset[str], dict[str, Any]] = {}
@@ -718,16 +855,7 @@ class CorridorGraphBuilder:
             item["reverse"] = self.axis.edges.get((target, source), ScheduleEdge(target, source)).observation_count
         result.raw_adjacency_evidence = self._raw_adjacencies()
         self._triangles(result, undirected)
-        mandatory_chain_edges: set[frozenset[str]] = set()
-        forbidden_transitive_edges: set[frozenset[str]] = set()
-        for triangle in result.triangle_resolutions:
-            if triangle.confidence != "high" or not triangle.between_candidate or not triangle.direct_edge:
-                continue
-            direct_key = frozenset(triangle.direct_edge)
-            forbidden_transitive_edges.add(direct_key)
-            mandatory_chain_edges.update(frozenset(edge) for edge in triangle.chain_edges)
-            a, c = triangle.direct_edge
-            result.applied_between_resolutions[direct_key] = (a, triangle.between_candidate, c)
+        mandatory_chain_edges, forbidden_transitive_edges = self._compile_between_constraints(result)
         candidate_adjacency: dict[str, set[str]] = defaultdict(set)
         for key in undirected:
             left, right = tuple(key); candidate_adjacency[left].add(right); candidate_adjacency[right].add(left)
@@ -800,25 +928,11 @@ class CorridorGraphBuilder:
         for key in sorted(mandatory_chain_edges, key=lambda item: tuple(sorted(item))):
             source, target = tuple(key)
             evidence = undirected[key]
-            if root(source) == root(target):
-                question_id = "question:between_conflict:" + ":".join(sorted(key))
-                result.topology_questions[question_id] = TopologyQuestion(
-                    question_id, source, "between_or_branch",
-                    f"Widersprüchliche Between-Ketten betreffen {source} und {target}.",
-                    ("between", "branch"), ("conflicting_high_between_constraints",),
-                    "low", "between")
-                continue
-            parent[root(source)] = root(target)
+            if root(source) != root(target):
+                parent[root(source)] = root(target)
             evidence["selection"] = "selected_high_confidence_between_chain"
             confidence = "exact" if evidence["forward"] and evidence["reverse"] else "inferred"
             result.backbone_edges[key] = BackboneEdge(source, target, evidence, confidence)
-
-        for direct_key, path in tuple(result.applied_between_resolutions.items()):
-            chain_keys = {frozenset(edge) for edge in zip(path, path[1:])}
-            if chain_keys <= result.backbone_edges.keys():
-                continue
-            result.applied_between_resolutions.pop(direct_key)
-            forbidden_transitive_edges.discard(direct_key)
 
         for key, evidence in ranked:
             if key in forbidden_transitive_edges or key in result.backbone_edges:

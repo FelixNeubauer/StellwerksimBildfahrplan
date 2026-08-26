@@ -19,9 +19,9 @@ from .schedule_graph import (
     RouteAxisGraph, RouteAxisNode, ScheduleEdge, SchedulePointGraph, SchedulePointNode, station_key,
 )
 from .corridor import (
-    BackboneEdge, BackboneScore, BranchAttachment, CorridorGraph, CorridorGraphBuilder,
+    BackboneEdge, BackboneScore, BetweenConstraint, BranchAttachment, CorridorGraph, CorridorGraphBuilder,
     DerivedRouteEdge, DirectionChangeEvidence, HiddenExternalBoundaryEvidence,
-    JunctionPositionEstimate, PathTimeStats, RawAdjacencyEvidence,
+    ExternalTargetResolution, JunctionPositionEstimate, PathTimeStats, RawAdjacencyEvidence,
     SyntheticExternalBoundaryNode, SyntheticJunctionNode, TerminalEvidence,
     TopologyQuestion, TravelTimeStats, TriangleResolutionEvidence,
 )
@@ -35,8 +35,8 @@ __all__ = [
     "SchedulePointGraph", "SchedulePointNode",
     "PlatformRelationGraph", "RouteAxisGraph", "RouteAxisNode", "station_key",
     "CorridorGraph", "CorridorGraphBuilder", "DerivedRouteEdge", "DirectionChangeEvidence",
-    "BackboneEdge", "BackboneScore", "PathTimeStats", "RawAdjacencyEvidence", "TerminalEvidence",
+    "BackboneEdge", "BackboneScore", "BetweenConstraint", "PathTimeStats", "RawAdjacencyEvidence", "TerminalEvidence",
     "TravelTimeStats", "TriangleResolutionEvidence", "BranchAttachment",
     "JunctionPositionEstimate", "SyntheticJunctionNode",
-    "HiddenExternalBoundaryEvidence", "SyntheticExternalBoundaryNode", "TopologyQuestion",
+    "ExternalTargetResolution", "HiddenExternalBoundaryEvidence", "SyntheticExternalBoundaryNode", "TopologyQuestion",
 ]

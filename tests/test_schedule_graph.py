@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from infrastructure import (
-    CorridorGraphBuilder, OperatingPointResolver, SchedulePointGraph,
+    CorridorGraph, CorridorGraphBuilder, OperatingPointResolver, SchedulePointGraph,
+    TriangleResolutionEvidence,
     parse_bahnsteigliste, parse_wege, station_key,
 )
 
@@ -399,6 +400,36 @@ class ScheduleGraphTests(unittest.TestCase):
             self.assertNotEqual(corridor.node_roles[c], "branch_junction")
         self.assertFalse(corridor.branch_nodes)
 
+    def test_between_constraints_are_order_independent_and_conflicts_become_questions(self):
+        schedule = SchedulePointGraph.from_services([service(1, "A", "B", "C")])
+        operating = OperatingPointResolver().resolve(schedule)
+        builder = CorridorGraphBuilder(schedule, operating)
+        first = TriangleResolutionEvidence(
+            ("A", "B", "C"), "B", "high", ("chain_schedule_support",), (),
+            ("A", "C"), (("A", "B"), ("B", "C")))
+        other = TriangleResolutionEvidence(
+            ("D", "E", "F"), "E", "high", ("chain_schedule_support",), (),
+            ("D", "F"), (("D", "E"), ("E", "F")))
+        outcomes = []
+        for resolutions in ((first, other), (other, first)):
+            graph = CorridorGraph(operating.to_route_axis_graph())
+            graph.triangle_resolutions.extend(resolutions)
+            required, forbidden = builder._compile_between_constraints(graph)
+            outcomes.append((required, forbidden, graph.applied_between_resolutions,
+                             graph.between_constraints))
+        self.assertEqual(outcomes[0], outcomes[1])
+
+        conflict = TriangleResolutionEvidence(
+            ("A", "B", "C"), "C", "high", ("competing_interpretation",), (),
+            ("A", "B"), (("A", "C"), ("B", "C")))
+        graph = CorridorGraph(operating.to_route_axis_graph())
+        graph.triangle_resolutions.extend((first, conflict))
+        required, forbidden = builder._compile_between_constraints(graph)
+        self.assertFalse(required); self.assertFalse(forbidden)
+        self.assertTrue(all(item.status == "conflicting" for item in graph.between_constraints.values()))
+        self.assertTrue(all(question.question_type == "conflicting_between_constraints"
+                            for question in graph.topology_questions.values()))
+
     def test_hidden_external_boundaries_use_service_endpoints_and_raw_connectors(self):
         manual = {"operating_points": {
             name: {"display_name": name, "raw_names": [name]} for name in ("TTL", "TUO")}}
@@ -429,6 +460,28 @@ class ScheduleGraphTests(unittest.TestCase):
         operational = corridor.to_operational_graph()
         self.assertTrue(all(operational.nodes[item.id].node_type == "synthetic_external_boundary"
                             for item in corridor.synthetic_external_boundaries.values()))
+
+    def test_internal_endpoint_targets_are_resolved_before_boundary_questions(self):
+        manual = {"operating_points": {
+            "THD": {"display_name": "THD", "raw_names": ["THD1", "THD2"]},
+            "TNS": {"display_name": "TNS", "raw_names": ["TNS1", "TNS2"]},
+            "A": {"display_name": "A", "raw_names": ["A"]},
+        }}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "A", "THD2", destination="Gleis THD1"),
+            service(2, "A", "TNS2", destination="Gleis TNS1"),
+            service(3, "THD1", "A"), service(4, "TNS1", "A"),
+        ])
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        resolutions = list(corridor.external_target_resolutions.values())
+        self.assertEqual({item.classification for item in resolutions},
+                         {"same_operating_point_internal"})
+        self.assertEqual({item.original_target for item in resolutions},
+                         {"Gleis THD1", "Gleis TNS1"})
+        self.assertFalse(corridor.hidden_boundary_evidence)
+        self.assertFalse(corridor.synthetic_external_boundaries)
+        self.assertFalse(corridor.topology_questions)
 
     def test_ambiguous_single_external_endpoint_prepares_topology_question(self):
         manual = {"operating_points": {

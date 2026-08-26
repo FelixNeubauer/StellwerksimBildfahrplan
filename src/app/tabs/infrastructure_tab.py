@@ -56,7 +56,10 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("raw_junctions", "Raw Junction Estimates"),
             ("role_changes", "Role Changes After Finalization"),
             ("applied_between", "Applied High-Confidence Between"),
+            ("between_constraints", "Between Constraints Detected"),
+            ("between_conflicts", "Between Constraints Conflicting"),
             ("hidden_boundaries", "Hidden External Boundaries"),
+            ("external_targets", "External Target Resolutions"),
             ("topology_questions", "Topology Questions Pending"),
             ("external_boundaries", "External Boundaries"),
             ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
@@ -150,7 +153,11 @@ class InfrastructureTab(QtWidgets.QWidget):
                                      for item in corridor.synthetic_junctions.values()),
                 "role_changes": len(corridor.role_changes),
                 "applied_between": len(corridor.applied_between_resolutions),
+                "between_constraints": len(corridor.between_constraints),
+                "between_conflicts": sum(item.status == "conflicting"
+                                           for item in corridor.between_constraints.values()),
                 "hidden_boundaries": len(corridor.synthetic_external_boundaries),
+                "external_targets": len(corridor.external_target_resolutions),
                 "topology_questions": sum(item.status == "needs_user_confirmation"
                                           for item in corridor.topology_questions.values()),
                 "terminal_candidates": sum(item.classification == "terminal"
@@ -183,6 +190,18 @@ class InfrastructureTab(QtWidgets.QWidget):
                 f"Applied Between: {' → '.join(path)}\n  between: {path[1]}"
                 f"\n  final action: {path[0]}–{path[2]} skip; chain edges retained"
                 for path in corridor.applied_between_resolutions.values()
+            ) + "\n\n" + "\n".join(
+                f"Between constraint: {' → '.join(item.path)}\n  status: {item.status}"
+                f"\n  required: {item.required_edges}\n  forbidden direct: {item.forbidden_transitive_edge}"
+                f"\n  conflicts: {item.conflict_ids or 'none'}"
+                for item in corridor.between_constraints.values()
+            ) + "\n\n" + "\n".join(
+                f"External target: {item.source_node} / {item.original_target!r}"
+                f"\n  normalized candidate: {item.normalized_candidate}"
+                f"\n  resolution: {item.classification}\n  matched node: {item.matched_node or 'none'}"
+                f"\n  matched raw names: {item.matched_raw_names or 'none'}"
+                f"\n  raw connector: {item.raw_connector or 'none'}"
+                for item in corridor.external_target_resolutions.values()
             ) + "\n\n" + "\n".join(
                 f"Hidden external boundary: {item.source_node} → {item.external_name}"
                 f"\n  outgoing: {item.outgoing_observations}\n  incoming: {item.incoming_observations}"
