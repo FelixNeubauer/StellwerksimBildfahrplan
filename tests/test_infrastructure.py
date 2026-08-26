@@ -91,10 +91,12 @@ class InfrastructureTests(unittest.TestCase):
         builder = InfrastructureGraphBuilder(raw)
         builder.observe_schedule(("A", "B"))
         with tempfile.TemporaryDirectory() as directory:
-            path = save_generated_graph(directory, 1778, raw, builder.anchors, builder.build_operational_graph())
+            path = save_generated_graph(directory, 1778, "Teststellwerk", raw, builder.anchors,
+                                        builder.build_operational_graph())
             data = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(path.name, "1778_graph.json")
-            self.assertEqual(data["schema_version"], 13)
+            self.assertEqual(data["schema_version"], 14)
+            self.assertEqual(data["aid"], 1778); self.assertEqual(data["stellwerk_name"], "Teststellwerk")
             self.assertIn("raw", data); self.assertIn("derived", data)
             self.assertIn("schedule", data); self.assertIn("operating_point_clustering", data)
             self.assertIn("route_axis", data)

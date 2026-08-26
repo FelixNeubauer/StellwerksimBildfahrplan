@@ -8,6 +8,7 @@ from PySide6 import QtWidgets
 from infrastructure import (
     CorridorGraphBuilder, InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
     SchedulePointGraph, parse_bahnsteigliste, parse_wege, save_generated_graph,
+    SavedStellwerkIdentity, validate_saved_stellwerk_identity,
 )
 
 
@@ -113,7 +114,12 @@ class InfrastructureTab(QtWidgets.QWidget):
             if snapshot.aid is not None:
                 manual_path = self.generated_directory / "operating_points" / f"{snapshot.aid}.json"
                 if manual_path.exists():
-                    manual = json.loads(manual_path.read_text(encoding="utf-8"))
+                    candidate = json.loads(manual_path.read_text(encoding="utf-8"))
+                    identity = validate_saved_stellwerk_identity(
+                        candidate, SavedStellwerkIdentity(snapshot.aid, snapshot.facility_name or "unbekannt"),
+                        manual_path)
+                    if identity.status == "match":
+                        manual = candidate
             operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
             axis = operating.to_route_axis_graph()
             corridor = CorridorGraphBuilder(schedule, operating, raw_graph).build()
@@ -326,8 +332,9 @@ class InfrastructureTab(QtWidgets.QWidget):
             ))
             if snapshot.aid is not None:
                 save_generated_graph(
-                    self.generated_directory, snapshot.aid, raw_graph, builder.anchors, operational, platforms,
-                    schedule=schedule, operating=operating, corridor=corridor, name=snapshot.facility_name,
+                    self.generated_directory, snapshot.aid, snapshot.facility_name or "unbekannt",
+                    raw_graph, builder.anchors, operational, platforms,
+                    schedule=schedule, operating=operating, corridor=corridor,
                 )
         except (ValueError, StopIteration) as exc:
             self.status.setText(f"Graphdaten konnten nicht ausgewertet werden: {exc}")

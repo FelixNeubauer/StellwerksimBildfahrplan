@@ -69,6 +69,41 @@ Manuelle Betriebsstellen-Cluster können unter
 `config/operating_points/<aid>.json` abgelegt werden. Automatische Persistenz
 liest diese Datei nur und überschreibt sie nicht.
 
+Der Tab **Gleise / Ortszuordnung** bearbeitet diese AID-spezifische Konfiguration
+jetzt direkt. Er trennt Betriebsstellen, zugeordnete und nicht zugeordnete
+Originalnamen, unterstützt Mehrfachauswahl, natürliche Sortierung, Suche sowie
+Station-Key-Auswahlhilfen und erhält manuelle Entscheidungen bei erneuter
+automatischer Zuordnung. Die Automatik bleibt der vorhandene
+`OperatingPointResolver`; der Editor fügt keine zweite Topologieheuristik hinzu.
+„Alle Zuordnungen entfernen“ löst alle editierbaren Zuordnungen, erhält aber
+fachlich durch `haltepunkt="true"` belegte Self-Zuordnungen wie `Martinszell →
+Martinszell`. Manuelle Betriebsstellen, Zuordnungen und bewusst gelöste Namen
+werden autoritativ unter `config/operating_points/<aid>.json` gespeichert;
+generierte Graphdaten bleiben davon getrennt.
+
+Ein expliziter Klick auf **Automatisch zuordnen** baut den automatischen
+Editorzustand stets neu aus den aktuellen Live-Daten auf. Dabei ergänzt der
+Editor mit dem bestehenden `station_key()` eindeutig präfixierte Namen auf
+OperatingPoint-Ebene; dies ist ausdrücklich keine Aussage über physische
+Gleisgleichheit. Positive manuelle Zuordnungen bleiben autoritativ, während
+bewusst gelöste automatische Zuordnungen bei diesem expliziten Neuaufbau wieder
+automatisch zugeordnet werden dürfen. Im normalen Live-Refresh bleiben solche
+Unassignments dagegen erhalten. Rawnamen können per Mehrfachauswahl von rechts
+oder aus der Mitte auf eine Betriebsstelle gezogen sowie aus der Mitte nach
+rechts gelöst werden.
+
+Der Editor hält zusätzlich einen vollständigen, quellengetrennten Snapshot
+seines sichtbaren Zustands. Änderungen werden 30 Sekunden nach der letzten
+Bearbeitung automatisch sowie beim Verlassen des Tabs und beim Beenden sofort
+atomar gespeichert. Automatische Snapshot-Einträge bleiben automatisch; nur
+der getrennte Override-Bereich ist autoritativ manuell.
+
+Stellwerksbezogene JSON-Artefakte tragen gemeinsame Metadaten mit AID,
+Stellwerkname, Artefakttyp und Speicherzeit. Beim Laden werden AID und Name
+gemeinsam geprüft. Namensänderungen, mögliche AID-Wechsel und Legacy-Dateien
+ohne Namen benötigen eine ausdrückliche Nutzerentscheidung; abgewählte oder
+migrierte Altdateien werden unter einem `archive/`-Unterordner bewahrt.
+
 Die relative X-Position stammt weiterhin aus einem expliziten linearen
 RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
 Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische

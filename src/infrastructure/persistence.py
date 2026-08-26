@@ -9,9 +9,10 @@ from pathlib import Path
 from .model import OperationalRouteGraph, PlatformEvidence, RawInfrastructureGraph, RouteAnchor
 from .schedule_graph import OperatingPointGraph, SchedulePointGraph
 from .corridor import CorridorGraph
+from .artifact_identity import SavedStellwerkIdentity, artifact_metadata, atomic_write_json
 
 
-def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructureGraph,
+def save_generated_graph(directory: str | Path, aid: int, stellwerk_name: str, raw: RawInfrastructureGraph,
                          anchors: dict[str, RouteAnchor], operational: OperationalRouteGraph,
                          platforms: tuple[PlatformEvidence, ...] = (),
                          schedule: SchedulePointGraph | None = None,
@@ -22,7 +23,8 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
     target = Path(directory) / "generated" / f"{aid}_graph.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 13, "aid": aid, "facility": facility,
+        **artifact_metadata(SavedStellwerkIdentity(aid, stellwerk_name), "generated_graph", 14),
+        "facility": {"name": stellwerk_name, **facility},
         "raw": {"nodes": [asdict(item) for item in raw.nodes.values()],
                 "edges": [asdict(item) for item in raw.edges],
                 "platform_evidence": [asdict(item) for item in platforms]},
@@ -151,8 +153,4 @@ def save_generated_graph(directory: str | Path, aid: int, raw: RawInfrastructure
                     "operational_nodes": [asdict(item) for item in operational.nodes.values()],
                     "operational_edges": [asdict(item) for item in operational.edges]},
     }
-    target.write_text(json.dumps(
-        payload, ensure_ascii=False, indent=2,
-        default=lambda value: sorted(value) if isinstance(value, set) else str(value),
-    ), encoding="utf-8")
-    return target
+    return atomic_write_json(target, payload)
