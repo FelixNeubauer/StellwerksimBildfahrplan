@@ -64,6 +64,7 @@ class OperationalRouteNode:
     raw_names: tuple[str, ...]
     source_nodes: tuple[str, ...]
     confidence: str
+    node_type: str = "schedule_axis_node"
 
 
 @dataclass

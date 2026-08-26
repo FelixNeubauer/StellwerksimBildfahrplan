@@ -49,6 +49,22 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(service.current_schedule[0].planned_name, "MBLH 1")
         self.assertEqual(len(service.raw_schedules), 2)
 
+    def test_train_list_discovery_records_endpoint_provenance(self):
+        collector = STSLiveCollector()
+        collector.startup_commands()
+        collector.process(xml('<zugliste><zug zid="7" name="RE 7" /></zugliste>'))
+        initial = collector.services[7]
+        self.assertEqual(initial.discovery_source, "initial_train_list")
+        self.assertEqual(initial.schedule_start_completeness,
+                         "possibly_truncated_at_startup")
+        self.assertEqual(initial.schedule_end_completeness, "likely_complete")
+
+        collector.process(xml('<zugliste><zug zid="7" name="RE 7" />'
+                              '<zug zid="8" name="RE 8" /></zugliste>'))
+        periodic = collector.services[8]
+        self.assertEqual(periodic.discovery_source, "periodic_train_list")
+        self.assertEqual(periodic.schedule_start_completeness, "likely_complete")
+
     def test_location_mapping_is_explicit_and_raw_name_survives(self):
         resolver = LocationResolver({"3 N": {"operating_point": "Ulm Hbf", "physical_track": "3",
                                                 "track_section": "N", "track_resolution": "section"}})

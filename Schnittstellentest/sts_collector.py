@@ -130,6 +130,11 @@ class TrainService:
     status: str = "known"
     first_seen_simtime: int | None = None
     last_seen_simtime: int | None = None
+    discovery_source: str = "unknown"
+    discovered_simtime: int | None = None
+    schedule_start_completeness: str = "unknown"
+    schedule_end_completeness: str = "likely_complete"
+    provenance_evidence: tuple[str, ...] = ()
     original_schedule: list[SchedulePoint] = field(default_factory=list)
     current_schedule: list[SchedulePoint] = field(default_factory=list)
     raw_events: list[TrainEvent] = field(default_factory=list)
@@ -288,6 +293,7 @@ class STSLiveCollector:
         return current - previous if current >= previous else current + day - previous
 
     def _process_train_list(self, element: ET.Element) -> list[str]:
+        discovery_source = "initial_train_list" if not self._has_received_train_list else "periodic_train_list"
         active: set[int] = set()
         commands: list[str] = []
         for item in element.iter("zug"):
@@ -302,6 +308,12 @@ class STSLiveCollector:
                 temporary = kind == "locomotive_movement"
                 service = self.services[zid] = TrainService(
                     zid=zid, name=name, first_seen_simtime=self.simtime,
+                    discovery_source=discovery_source, discovered_simtime=self.simtime,
+                    schedule_start_completeness=("possibly_truncated_at_startup"
+                                                 if discovery_source == "initial_train_list"
+                                                 else "likely_complete"),
+                    schedule_end_completeness="likely_complete",
+                    provenance_evidence=(discovery_source,),
                     temporary_locomotive=temporary, status="temporary_locomotive" if temporary else "active",
                     service_kind=kind,
                 )
@@ -341,6 +353,11 @@ class STSLiveCollector:
             name = element.get("name") or "Unbenannter Zug"
             kind = self._classify_service(zid, name)
             self.services[zid] = TrainService(zid=zid, name=name, first_seen_simtime=self.simtime,
+                                              discovery_source="related_service",
+                                              discovered_simtime=self.simtime,
+                                              schedule_start_completeness="unknown",
+                                              schedule_end_completeness="likely_complete",
+                                              provenance_evidence=("related_service",),
                                               temporary_locomotive=kind == "locomotive_movement", service_kind=kind)
         return self.services[zid]
 
