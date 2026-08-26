@@ -81,6 +81,17 @@ Martinszell`. Manuelle Betriebsstellen, Zuordnungen und bewusst gelöste Namen
 werden autoritativ unter `config/operating_points/<aid>.json` gespeichert;
 generierte Graphdaten bleiben davon getrennt.
 
+Ein expliziter Klick auf **Automatisch zuordnen** baut den automatischen
+Editorzustand stets neu aus den aktuellen Live-Daten auf. Dabei ergänzt der
+Editor mit dem bestehenden `station_key()` eindeutig präfixierte Namen auf
+OperatingPoint-Ebene; dies ist ausdrücklich keine Aussage über physische
+Gleisgleichheit. Positive manuelle Zuordnungen bleiben autoritativ, während
+bewusst gelöste automatische Zuordnungen bei diesem expliziten Neuaufbau wieder
+automatisch zugeordnet werden dürfen. Im normalen Live-Refresh bleiben solche
+Unassignments dagegen erhalten. Rawnamen können per Mehrfachauswahl von rechts
+oder aus der Mitte auf eine Betriebsstelle gezogen sowie aus der Mitte nach
+rechts gelöst werden.
+
 Die relative X-Position stammt weiterhin aus einem expliziten linearen
 RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
 Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische

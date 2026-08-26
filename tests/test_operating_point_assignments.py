@@ -68,6 +68,64 @@ class AssignmentLogicTests(unittest.TestCase):
         again = OperatingPointAssignments(); again.rebuild(graph, ("X",), (), rebuilt.to_config())
         self.assertIn("X", again.unassigned)
 
+    def test_existing_config_does_not_replace_live_auto_assignments(self):
+        graph = automatic("TBL 1", "TBL 2", "TBL 3")
+        config = {"schema_version": 1, "manual_point_ids": [], "operating_points": {},
+                  "assignments": {}, "unassigned": []}
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TBL 1", "TBL 2", "TBL 3"), (), config)
+        self.assertEqual({model.assignments[name] for name in model.all_raw_names}, {"TBL"})
+
+    def test_station_key_extends_strong_point_to_platform_only_names(self):
+        graph = automatic("TBL 1", "TBL 2", "MIMS 1")
+        names = ("TBL 1", "TBL 2", "TBL 3", "TBL 9", "MIMS 1")
+        model = OperatingPointAssignments(); model.rebuild(graph, names, ())
+        self.assertEqual({model.assignments[name] for name in names[:4]}, {"TBL"})
+        self.assertNotEqual(model.assignments["MIMS 1"], "TBL")
+        self.assertEqual(model.sources["TBL 9"], "automatic_station_key")
+
+    def test_explicit_auto_clears_tombstone_but_keeps_positive_override(self):
+        graph = automatic("TBL 1", "TBL 2", "TBL 3")
+        model = OperatingPointAssignments(); model.rebuild(graph, ("TBL 1", "TBL 2", "TBL 3"), ())
+        special = model.add_point("Sonderbetriebsstelle")
+        model.assign(("TBL 2",), special)
+        model.remove_assignments(("TBL 3",))
+        config = model.to_config()
+        normal = OperatingPointAssignments()
+        normal.rebuild(graph, ("TBL 1", "TBL 2", "TBL 3"), (), config)
+        self.assertIn("TBL 3", normal.unassigned)
+        explicit = OperatingPointAssignments()
+        explicit.rebuild(graph, ("TBL 1", "TBL 2", "TBL 3"), (), config,
+                         respect_unassigned=False)
+        self.assertEqual(explicit.assignments["TBL 3"], "TBL")
+        self.assertEqual(explicit.assignments["TBL 2"], special)
+
+    def test_auto_after_clear_restores_assignments(self):
+        graph = automatic("TBL 1", "TBL 2", "TBL 3")
+        model = OperatingPointAssignments(); model.rebuild(graph, ("TBL 1", "TBL 2", "TBL 3"), ())
+        model.clear_editable_assignments()
+        config = model.to_config()
+        self.assertEqual(set(config["unassigned"]), {"TBL 1", "TBL 2", "TBL 3"})
+        model.rebuild(graph, ("TBL 1", "TBL 2", "TBL 3"), (), config,
+                      respect_unassigned=False)
+        self.assertEqual({model.assignments[name] for name in model.all_raw_names}, {"TBL"})
+
+    def test_multiselect_assign_and_reassign_use_one_manual_path(self):
+        graph = automatic("X", "Y")
+        model = OperatingPointAssignments(); model.rebuild(graph, ("X", "Y"), ())
+        a = model.add_point("A"); b = model.add_point("B")
+        model.assign(("X", "Y"), a); model.assign(("X", "Y"), b)
+        self.assertEqual({model.assignments[name] for name in ("X", "Y")}, {b})
+        self.assertEqual({model.sources[name] for name in ("X", "Y")}, {"manual"})
+
+    def test_automatic_source_in_legacy_config_is_not_manual_override(self):
+        graph = automatic("TBL 1", "TBL 2")
+        config = {"operating_points": {"old": {
+            "display_name": "old", "raw_names": ["TBL 1"], "assignment_source": "automatic"}}}
+        model = OperatingPointAssignments(); model.rebuild(graph, ("TBL 1", "TBL 2"), (), config)
+        self.assertEqual(model.assignments["TBL 1"], "TBL")
+        self.assertNotIn("old", model.manual_point_ids)
+
     def test_aid_specific_persistence_roundtrip(self):
         with tempfile.TemporaryDirectory() as directory:
             store = OperatingPointConfigStore(directory)

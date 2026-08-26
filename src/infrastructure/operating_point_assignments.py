@@ -52,9 +52,11 @@ class OperatingPointAssignments:
     explicitly_unassigned: set[str] = field(default_factory=set)
     manual_point_ids: set[str] = field(default_factory=set)
     all_raw_names: set[str] = field(default_factory=set)
+    _automatic_members: dict[str, tuple[str, ...]] = field(default_factory=dict, repr=False)
 
     def rebuild(self, automatic: OperatingPointGraph, raw_names: Iterable[str],
-                haltpunkt_names: Iterable[str], config: dict | None = None) -> None:
+                haltpunkt_names: Iterable[str], config: dict | None = None,
+                *, respect_unassigned: bool = True) -> None:
         """Wendet Automatik neu an; persistierte Nutzerentscheidungen gewinnen immer."""
         config = config or {}
         self.all_raw_names = {name for name in raw_names if name}
@@ -63,6 +65,7 @@ class OperatingPointAssignments:
             point.id: EditableOperatingPoint(point.id, point.display_name, station_key(point.display_name), False)
             for point in automatic.nodes.values()
         }
+        self._automatic_members = {point.id: point.raw_names for point in automatic.nodes.values()}
         self.assignments = {}
         self.sources = {}
         for raw_name, point_id in automatic.raw_to_operating_point.items():
@@ -72,31 +75,73 @@ class OperatingPointAssignments:
             self.sources[raw_name] = "self_haltpunkt" if raw_name in haltepunkte and (
                 automatic.nodes[point_id].raw_names == (raw_name,)) else "automatic"
 
+        self._extend_by_station_key(haltepunkte)
+
         point_data = config.get("operating_points", {})
         self.manual_point_ids = set(config.get("manual_point_ids", ()))
+        has_manual_point_ids = "manual_point_ids" in config
         for point_id, values in point_data.items():
-            # Altes Schema: jeder konfigurierte Punkt war manuell bestaetigt.
-            if values.get("removable", True) or not config.get("manual_point_ids"):
+            # Alte, nicht typisierte Cluster bleiben konservativ manuell; als
+            # automatic markierte Snapshot-Daten werden dagegen nur migriert.
+            source = values.get("assignment_source")
+            if values.get("removable", False) or (not has_manual_point_ids and source not in {
+                    "automatic", "automatic_station_key", "self_haltpunkt"}):
                 self.manual_point_ids.add(point_id)
             self.points[point_id] = EditableOperatingPoint(
                 point_id, values.get("display_name", point_id), values.get("station_key"),
                 point_id in self.manual_point_ids,
             )
 
-        persisted = dict(config.get("assignments", {}))
+        assignment_sources = config.get("assignment_sources", {})
+        persisted = {
+            raw_name: point_id for raw_name, point_id in config.get("assignments", {}).items()
+            if assignment_sources.get(raw_name, "manual") in {"manual", "imported", "manual_config"}
+        }
         # Rueckwaertskompatibilitaet mit den bisherigen raw_names-Clustern.
         for point_id, values in point_data.items():
+            source = values.get("assignment_source", "manual")
             for raw_name in values.get("raw_names", values.get("members", ())):
-                persisted.setdefault(raw_name, point_id)
+                raw_source = assignment_sources.get(raw_name, source)
+                if raw_source in {"manual", "imported", "manual_config"}:
+                    persisted.setdefault(raw_name, point_id)
         self.manual_assignments = {
             raw_name: point_id for raw_name, point_id in persisted.items()
             if raw_name in self.all_raw_names and point_id in self.points
         }
-        self.explicitly_unassigned = set(config.get("unassigned", ())) & self.all_raw_names
+        self.explicitly_unassigned = (set(config.get("unassigned", ())) & self.all_raw_names
+                                      if respect_unassigned else set())
         for raw_name in self.explicitly_unassigned:
             self.assignments.pop(raw_name, None); self.sources.pop(raw_name, None)
         for raw_name, point_id in self.manual_assignments.items():
             self.assignments[raw_name] = point_id; self.sources[raw_name] = "manual"
+
+    def _extend_by_station_key(self, haltpunkt_names: set[str]) -> None:
+        """Erweitert nur die Editor-Ortszuordnung, nicht den Topologiegraphen."""
+        names_by_key: dict[str, set[str]] = {}
+        for raw_name in self.all_raw_names:
+            key = station_key(raw_name)
+            if key and raw_name not in haltpunkt_names:
+                names_by_key.setdefault(key, set()).add(raw_name)
+        for key, names in names_by_key.items():
+            candidate_ids = {
+                self.assignments[name] for name in names if name in self.assignments
+                and self.assignments[name] in self.points
+                and (self.assignments[name] == key or
+                     len(self._automatic_members.get(self.assignments[name], ())) > 1)
+            }
+            direct = key if key in self.points else None
+            target = direct or (next(iter(candidate_ids)) if len(candidate_ids) == 1 else None)
+            if target is None and len(names) > 1:
+                target = f"station-key:{key}"
+                self.points[target] = EditableOperatingPoint(target, key, key, False)
+            if target is None:
+                continue
+            for raw_name in names:
+                current = self.assignments.get(raw_name)
+                if current is None or (self.sources.get(raw_name) == "automatic" and
+                                       current.startswith("schedule:")):
+                    self.assignments[raw_name] = target
+                    self.sources[raw_name] = "automatic_station_key"
 
     @property
     def unassigned(self) -> set[str]:
@@ -159,6 +204,7 @@ class OperatingPointAssignments:
             },
             "manual_point_ids": sorted(self.manual_point_ids),
             "assignments": dict(sorted(self.manual_assignments.items(), key=lambda item: natural_sort_key(item[0]))),
+            "assignment_sources": {name: "manual" for name in sorted(self.manual_assignments, key=natural_sort_key)},
             "unassigned": sorted(self.explicitly_unassigned, key=natural_sort_key),
         }
 

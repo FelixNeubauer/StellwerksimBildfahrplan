@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from infrastructure import OperatingPointResolver, SchedulePointGraph, parse_bahnsteigliste
@@ -10,6 +12,79 @@ from infrastructure.operating_point_assignments import (
 )
 
 ID_ROLE = QtCore.Qt.ItemDataRole.UserRole
+RAW_NAMES_MIME = "application/x-stellwerksim-raw-names"
+
+
+class RawNamesList(QtWidgets.QListWidget):
+    """Drag-Quelle, die immer die komplette ExtendedSelection transportiert."""
+
+    def __init__(self, source_name: str, parent=None) -> None:
+        super().__init__(parent)
+        self.source_name = source_name
+        self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
+
+    def startDrag(self, supported_actions) -> None:  # noqa: N802 - Qt API
+        names = [item.data(ID_ROLE) for item in self.selectedItems()]
+        if not names:
+            return
+        mime = QtCore.QMimeData()
+        mime.setData(RAW_NAMES_MIME, json.dumps(
+            {"source": self.source_name, "raw_names": names}, ensure_ascii=False).encode("utf-8"))
+        drag = QtGui.QDrag(self); drag.setMimeData(mime)
+        drag.exec(QtCore.Qt.DropAction.MoveAction)
+
+
+def _drop_payload(event) -> dict | None:
+    if not event.mimeData().hasFormat(RAW_NAMES_MIME):
+        return None
+    try:
+        payload = json.loads(bytes(event.mimeData().data(RAW_NAMES_MIME)).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) and isinstance(payload.get("raw_names"), list) else None
+
+
+class OperatingPointDropList(QtWidgets.QListWidget):
+    def __init__(self, dropped, parent=None) -> None:
+        super().__init__(parent); self.dropped = dropped
+        self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setAcceptDrops(True); self.setDropIndicatorShown(True)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if _drop_payload(event): event.acceptProposedAction()
+        else: event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if _drop_payload(event) and self.itemAt(event.position().toPoint()): event.acceptProposedAction()
+        else: event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 - Qt API
+        payload = _drop_payload(event); item = self.itemAt(event.position().toPoint())
+        if payload and item:
+            self.dropped(payload["raw_names"], item.data(ID_ROLE)); event.acceptProposedAction()
+        else: event.ignore()
+
+
+class UnassignedDropList(RawNamesList):
+    def __init__(self, dropped, parent=None) -> None:
+        super().__init__("unassigned", parent); self.dropped = dropped
+        self.setAcceptDrops(True); self.setDropIndicatorShown(True)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt API
+        payload = _drop_payload(event)
+        if payload and payload.get("source") == "assigned": event.acceptProposedAction()
+        else: event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802 - Qt API
+        payload = _drop_payload(event)
+        if payload and payload.get("source") == "assigned":
+            self.dropped(payload["raw_names"]); event.acceptProposedAction()
+        else: event.ignore()
 
 
 class OperatingPointsTab(QtWidgets.QWidget):
@@ -20,6 +95,9 @@ class OperatingPointsTab(QtWidgets.QWidget):
         self.aid: int | None = None
         self._last_signature = None
         self._automatic = None
+        self._schedule = None
+        self._platforms = ()
+        self._raw_names: set[str] = set()
         self._haltpunkte: set[str] = set()
         self._build_ui()
 
@@ -29,8 +107,7 @@ class OperatingPointsTab(QtWidgets.QWidget):
         self.auto_button = QtWidgets.QPushButton("Automatisch zuordnen")
         self.clear_button = QtWidgets.QPushButton("Alle Zuordnungen entfernen")
         self.group_button = QtWidgets.QPushButton("Gleiches Kürzel auswählen")
-        self.add_button = QtWidgets.QPushButton("Betriebsstelle hinzufügen")
-        for widget in (self.auto_button, self.clear_button, self.group_button, self.add_button):
+        for widget in (self.auto_button, self.clear_button, self.group_button):
             toolbar.addWidget(widget)
         toolbar.addStretch(1)
         self.search = QtWidgets.QLineEdit()
@@ -40,15 +117,20 @@ class OperatingPointsTab(QtWidgets.QWidget):
         root.addLayout(toolbar)
 
         columns = QtWidgets.QHBoxLayout()
-        self.points = self._column(columns, "Betriebsstellen")
+        left = QtWidgets.QVBoxLayout(); left.addWidget(QtWidgets.QLabel("Betriebsstellen"))
+        self.points = OperatingPointDropList(self._assign_names); left.addWidget(self.points, 1)
+        self.add_button = QtWidgets.QPushButton("+ Betriebsstelle hinzufügen")
+        left.addWidget(self.add_button); columns.addLayout(left, 2)
         middle = QtWidgets.QVBoxLayout()
         middle.addWidget(QtWidgets.QLabel("Zugeordnet"))
-        self.assigned = self._list(); middle.addWidget(self.assigned, 1)
+        self.assigned = RawNamesList("assigned"); middle.addWidget(self.assigned, 1)
         self.assign_button = QtWidgets.QPushButton("← Zuordnen")
         self.unassign_button = QtWidgets.QPushButton("→ Zuordnung entfernen")
         actions = QtWidgets.QHBoxLayout(); actions.addWidget(self.assign_button); actions.addWidget(self.unassign_button)
         middle.addLayout(actions); columns.addLayout(middle, 3)
-        self.unassigned = self._column(columns, "Nicht zugeordnet")
+        right = QtWidgets.QVBoxLayout(); right.addWidget(QtWidgets.QLabel("Nicht zugeordnet"))
+        self.unassigned = UnassignedDropList(self._unassign_names); right.addWidget(self.unassigned, 1)
+        columns.addLayout(right, 3)
         columns.setStretch(0, 2); columns.setStretch(1, 3); columns.setStretch(2, 3)
         root.addLayout(columns, 1)
         self.empty = QtWidgets.QLabel("Noch keine Bahnsteig-/Fahrplandaten verfügbar.")
@@ -66,16 +148,6 @@ class OperatingPointsTab(QtWidgets.QWidget):
         self.points.customContextMenuRequested.connect(self._point_menu)
         self.search.returnPressed.connect(self._search_exact_or_first)
 
-    def _list(self) -> QtWidgets.QListWidget:
-        widget = QtWidgets.QListWidget()
-        widget.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
-        return widget
-
-    def _column(self, parent: QtWidgets.QHBoxLayout, title: str) -> QtWidgets.QListWidget:
-        layout = QtWidgets.QVBoxLayout(); layout.addWidget(QtWidgets.QLabel(title))
-        widget = self._list(); layout.addWidget(widget, 1); parent.addLayout(layout)
-        return widget
-
     def refresh(self, snapshot) -> None:
         platform_xml = next((raw for raw in reversed(snapshot.infrastructure_documents)
                              if raw.lstrip().startswith("<bahnsteigliste")), None)
@@ -85,19 +157,26 @@ class OperatingPointsTab(QtWidgets.QWidget):
         if signature == self._last_signature:
             return
         self._last_signature = signature; self.aid = snapshot.aid
-        schedule = SchedulePointGraph.from_services(snapshot.services)
-        platforms = parse_bahnsteigliste(platform_xml) if platform_xml else ()
-        raw_names = set(schedule.nodes)
-        for platform in platforms:
-            raw_names.add(platform.raw_name); raw_names.update(platform.related_names)
-        self._haltpunkte = {item.raw_name for item in platforms
+        self._schedule = SchedulePointGraph.from_services(snapshot.services)
+        self._platforms = parse_bahnsteigliste(platform_xml) if platform_xml else ()
+        self._raw_names = set(self._schedule.nodes)
+        for platform in self._platforms:
+            self._raw_names.add(platform.raw_name); self._raw_names.update(platform.related_names)
+        self._haltpunkte = {item.raw_name for item in self._platforms
                             if item.metadata.get("haltepunkt", "false").lower() == "true"
-                            and item.raw_name in schedule.nodes}
+                            and item.raw_name in self._schedule.nodes}
         config = self.store.load(self.aid)
-        self._automatic = OperatingPointResolver(platforms, config, self.aid).resolve(schedule)
         selected = self._selected_point_id()
-        self.model.rebuild(self._automatic, raw_names, self._haltpunkte, config)
+        self._rebuild_automatic(config, respect_unassigned=True)
         self._refresh_points(selected)
+
+    def _rebuild_automatic(self, config: dict, *, respect_unassigned: bool) -> None:
+        """Live-Automatik bleibt config-frei; Config wird erst als Override aufgelegt."""
+        if self._schedule is None:
+            return
+        self._automatic = OperatingPointResolver(self._platforms, aid=self.aid).resolve(self._schedule)
+        self.model.rebuild(self._automatic, self._raw_names, self._haltpunkte, config,
+                           respect_unassigned=respect_unassigned)
 
     def _selected_point_id(self) -> str | None:
         item = self.points.currentItem()
@@ -105,6 +184,7 @@ class OperatingPointsTab(QtWidgets.QWidget):
 
     def _refresh_points(self, preferred: str | None = None) -> None:
         preferred = preferred or self._selected_point_id()
+        scroll = self.points.verticalScrollBar().value()
         self.points.blockSignals(True); self.points.clear()
         counts = {point_id: sum(owner == point_id for owner in self.model.assignments.values())
                   for point_id in self.model.points}
@@ -118,16 +198,19 @@ class OperatingPointsTab(QtWidgets.QWidget):
         self.points.blockSignals(False)
         if self.points.currentItem() is None and self.points.count():
             self.points.setCurrentRow(0)
+        self.points.verticalScrollBar().setValue(scroll)
         self._refresh_lists(); self._refresh_completer()
 
     def _fill_raw_list(self, widget: QtWidgets.QListWidget, names, selected=()) -> None:
-        selected = set(selected); widget.clear()
+        selected = set(selected); scroll = widget.verticalScrollBar().value(); widget.clear()
         for name in sorted(names, key=natural_sort_key):
             item = QtWidgets.QListWidgetItem(name); item.setData(ID_ROLE, name)
             source = self.model.sources.get(name)
             item.setToolTip({"manual": "Manuell bestätigt", "automatic": "Automatisch zugeordnet",
+                             "automatic_station_key": "Automatisch über Stationskürzel zugeordnet",
                              "self_haltpunkt": "Eigenständiger Haltepunkt"}.get(source, "Nicht zugeordnet"))
             widget.addItem(item); item.setSelected(name in selected)
+        widget.verticalScrollBar().setValue(scroll)
 
     def _refresh_lists(self) -> None:
         point_id = self._selected_point_id()
@@ -153,19 +236,27 @@ class OperatingPointsTab(QtWidgets.QWidget):
     def _assign(self) -> None:
         point_id = self._selected_point_id()
         if point_id:
-            self.model.assign((item.data(ID_ROLE) for item in self.unassigned.selectedItems()), point_id)
-            self._persist(); self._refresh_points(point_id)
+            self._assign_names([item.data(ID_ROLE) for item in self.unassigned.selectedItems()], point_id)
+
+    def _assign_names(self, raw_names, point_id: str) -> None:
+        self.model.assign(raw_names, point_id)
+        self._persist(); self._refresh_points(point_id)
 
     def _unassign(self) -> None:
-        self.model.remove_assignments(item.data(ID_ROLE) for item in self.assigned.selectedItems())
+        self._unassign_names([item.data(ID_ROLE) for item in self.assigned.selectedItems()])
+
+    def _unassign_names(self, raw_names) -> None:
+        self.model.remove_assignments(raw_names)
         self._persist(); self._refresh_points(self._selected_point_id())
 
     def _auto_assign(self) -> None:
-        if self._automatic is None:
+        if self._schedule is None:
             return
         config = self.model.to_config()
-        self.model.rebuild(self._automatic, self.model.all_raw_names, self._haltpunkte, config)
+        self._rebuild_automatic(config, respect_unassigned=False)
         self._persist(); self._refresh_points(self._selected_point_id())
+        self.status.setText(f"Automatische Zuordnung aktualisiert: {len(self.model.assignments)} zugeordnet, "
+                            f"{len(self.model.unassigned)} offen.")
 
     def _clear(self) -> None:
         answer = QtWidgets.QMessageBox.question(
