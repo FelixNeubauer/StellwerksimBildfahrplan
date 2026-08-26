@@ -92,6 +92,18 @@ Unassignments dagegen erhalten. Rawnamen können per Mehrfachauswahl von rechts
 oder aus der Mitte auf eine Betriebsstelle gezogen sowie aus der Mitte nach
 rechts gelöst werden.
 
+Der Editor hält zusätzlich einen vollständigen, quellengetrennten Snapshot
+seines sichtbaren Zustands. Änderungen werden 30 Sekunden nach der letzten
+Bearbeitung automatisch sowie beim Verlassen des Tabs und beim Beenden sofort
+atomar gespeichert. Automatische Snapshot-Einträge bleiben automatisch; nur
+der getrennte Override-Bereich ist autoritativ manuell.
+
+Stellwerksbezogene JSON-Artefakte tragen gemeinsame Metadaten mit AID,
+Stellwerkname, Artefakttyp und Speicherzeit. Beim Laden werden AID und Name
+gemeinsam geprüft. Namensänderungen, mögliche AID-Wechsel und Legacy-Dateien
+ohne Namen benötigen eine ausdrückliche Nutzerentscheidung; abgewählte oder
+migrierte Altdateien werden unter einem `archive/`-Unterordner bewahrt.
+
 Die relative X-Position stammt weiterhin aus einem expliziten linearen
 RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
 Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische

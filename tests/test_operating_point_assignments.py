@@ -131,11 +131,27 @@ class AssignmentLogicTests(unittest.TestCase):
             store = OperatingPointConfigStore(directory)
             graph = automatic("X")
             seven = OperatingPointAssignments(); seven.rebuild(graph, ("X",), ())
-            a = seven.add_point("A"); seven.assign(("X",), a); store.save(7, seven)
+            a = seven.add_point("A"); seven.assign(("X",), a); store.save(7, "Sieben", seven)
             other = OperatingPointAssignments(); other.rebuild(graph, ("X",), ())
-            b = other.add_point("B"); other.assign(("X",), b); store.save(823, other)
+            b = other.add_point("B"); other.assign(("X",), b); store.save(823, "Achthundert", other)
             self.assertNotEqual(store.load(7)["assignments"]["X"], store.load(823)["assignments"]["X"])
-            self.assertEqual(json.loads(store.path_for(7).read_text())["assignments"]["X"], a)
+            saved = json.loads(store.path_for(7).read_text())
+            self.assertEqual(saved["assignments"]["X"], a)
+            self.assertEqual((saved["aid"], saved["stellwerk_name"], saved["artifact_type"]),
+                             (7, "Sieben", "operating_points"))
+
+    def test_full_snapshot_roundtrip_preserves_sources(self):
+        graph = automatic("TBL 1", "TBL 2", "Martinszell")
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TBL 1", "TBL 2", "TBL 9", "Martinszell", "OFFEN"), ("Martinszell",))
+        special = model.add_point("Sonderanschluss"); model.assign(("TBL 9",), special)
+        model.remove_assignments(("OFFEN",))
+        config = model.to_config()
+        restored = OperatingPointAssignments(); restored.rebuild(graph, (), ("Martinszell",), config)
+        self.assertEqual(restored.sources["TBL 1"], model.sources["TBL 1"])
+        self.assertEqual(restored.sources["Martinszell"], "self_haltpunkt")
+        self.assertEqual(restored.sources["TBL 9"], "manual")
+        self.assertIn("OFFEN", restored.unassigned); self.assertIn(special, restored.points)
 
 
 if __name__ == "__main__":

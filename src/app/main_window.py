@@ -23,6 +23,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.operating_points = OperatingPointsTab(REPOSITORY_ROOT / "config")
         self.tabs.addTab(self.operating_points, "Gleise / Ortszuordnung")
         self.tabs.addTab(PlaceholderTab("Allgemeine Einstellungen – folgen in einer späteren Version"), "Einstellungen")
+        self._previous_tab = self.tabs.currentWidget()
+        self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)
         self.connection = QtWidgets.QLabel()
         self.facility = QtWidgets.QLabel()
@@ -44,9 +46,19 @@ class MainWindow(QtWidgets.QMainWindow):
             if snapshot.display_simtime is not None else "Simzeit: –"
         )
         self.diagram.refresh(snapshot)
-        self.infrastructure.refresh(snapshot)
         self.operating_points.refresh(snapshot)
+        self.infrastructure.refresh(snapshot)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        for index in range(self.tabs.count()):
+            flush = getattr(self.tabs.widget(index), "flush_pending_save", None)
+            if flush:
+                flush()
         self.adapter.close()
         super().closeEvent(event)
+
+    def _tab_changed(self, index: int) -> None:
+        flush = getattr(self._previous_tab, "flush_pending_save", None)
+        if flush:
+            flush()
+        self._previous_tab = self.tabs.widget(index)

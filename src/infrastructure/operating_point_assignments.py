@@ -59,7 +59,8 @@ class OperatingPointAssignments:
                 *, respect_unassigned: bool = True) -> None:
         """Wendet Automatik neu an; persistierte Nutzerentscheidungen gewinnen immer."""
         config = config or {}
-        self.all_raw_names = {name for name in raw_names if name}
+        snapshot = config.get("editor_snapshot", {})
+        self.all_raw_names = {name for name in raw_names if name} | set(snapshot.get("raw_names", ()))
         haltepunkte = set(haltpunkt_names)
         self.points = {
             point.id: EditableOperatingPoint(point.id, point.display_name, station_key(point.display_name), False)
@@ -76,6 +77,15 @@ class OperatingPointAssignments:
                 automatic.nodes[point_id].raw_names == (raw_name,)) else "automatic"
 
         self._extend_by_station_key(haltepunkte)
+
+        for point_id, values in snapshot.get("operating_points", {}).items():
+            self.points.setdefault(point_id, EditableOperatingPoint(
+                point_id, values.get("display_name", point_id), values.get("station_key"),
+                values.get("source") == "manual"))
+        for raw_name, values in snapshot.get("assignments", {}).items():
+            if raw_name not in self.assignments and raw_name in self.all_raw_names and values.get("operating_point") in self.points:
+                self.assignments[raw_name] = values["operating_point"]
+                self.sources[raw_name] = values.get("source", "automatic")
 
         point_data = config.get("operating_points", {})
         self.manual_point_ids = set(config.get("manual_point_ids", ()))
@@ -192,8 +202,8 @@ class OperatingPointAssignments:
 
     def to_config(self) -> dict:
         configured_ids = self.manual_point_ids | set(self.manual_assignments.values())
-        return {
-            "schema_version": 1,
+        result = {
+            "schema_version": 2,
             "operating_points": {
                 point_id: {"display_name": self.points[point_id].display_name,
                            "station_key": self.points[point_id].station_key,
@@ -207,6 +217,22 @@ class OperatingPointAssignments:
             "assignment_sources": {name: "manual" for name in sorted(self.manual_assignments, key=natural_sort_key)},
             "unassigned": sorted(self.explicitly_unassigned, key=natural_sort_key),
         }
+        result["editor_snapshot"] = {
+            "raw_names": sorted(self.all_raw_names, key=natural_sort_key),
+            "operating_points": {
+                point_id: {"display_name": point.display_name, "station_key": point.station_key,
+                           "source": "manual" if point_id in self.manual_point_ids else "automatic"}
+                for point_id, point in sorted(self.points.items())
+            },
+            "assignments": {
+                name: {"operating_point": self.assignments.get(name),
+                       "source": self.sources.get(
+                           name, "unassigned_manual_tombstone" if name in self.explicitly_unassigned
+                           else "unassigned")}
+                for name in sorted(self.all_raw_names, key=natural_sort_key)
+            },
+        }
+        return result
 
 
 class OperatingPointConfigStore:
@@ -216,15 +242,17 @@ class OperatingPointConfigStore:
     def path_for(self, aid: int) -> Path:
         return self.directory / f"{aid}.json"
 
+    def load_path(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
+
     def load(self, aid: int | None) -> dict:
         if aid is None or not self.path_for(aid).exists():
             return {}
-        return json.loads(self.path_for(aid).read_text(encoding="utf-8"))
+        return self.load_path(self.path_for(aid))
 
-    def save(self, aid: int, model: OperatingPointAssignments) -> Path:
-        target = self.path_for(aid)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(model.to_config(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(target)
-        return target
+    def save(self, aid: int, stellwerk_name: str, model: OperatingPointAssignments) -> Path:
+        from .artifact_identity import SavedStellwerkIdentity, artifact_metadata, atomic_write_json
+        payload = {**artifact_metadata(SavedStellwerkIdentity(aid, stellwerk_name), "operating_points", 2),
+                   **model.to_config()}
+        payload["schema_version"] = 2
+        return atomic_write_json(self.path_for(aid), payload)

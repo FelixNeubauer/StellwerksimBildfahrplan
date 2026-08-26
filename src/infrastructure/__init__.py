@@ -13,6 +13,10 @@ from .model import (
 )
 from .graph_builder import InfrastructureGraphBuilder
 from .persistence import save_generated_graph
+from .artifact_identity import (
+    IdentityValidation, SavedStellwerkIdentity, archive_artifact, artifact_metadata,
+    atomic_write_json, find_identity_candidate, validate_saved_stellwerk_identity,
+)
 from .operating_point_assignments import (
     EditableOperatingPoint, OperatingPointAssignments, OperatingPointConfigStore,
     is_unprefixed_numeric, natural_sort_key, related_selection,
@@ -40,6 +44,8 @@ __all__ = [
     "OperationalRouteEdge", "OperationalRouteGraph", "OperationalRouteNode",
     "PlatformEvidence", "RawInfrastructureGraph", "RouteAnchor", "RoutePath",
     "parse_bahnsteigliste", "parse_wege", "save_generated_graph",
+    "IdentityValidation", "SavedStellwerkIdentity", "archive_artifact", "artifact_metadata",
+    "atomic_write_json", "find_identity_candidate", "validate_saved_stellwerk_identity",
     "EditableOperatingPoint", "OperatingPointAssignments", "OperatingPointConfigStore",
     "is_unprefixed_numeric", "natural_sort_key", "related_selection",
     "OperatingPoint", "OperatingPointGraph", "OperatingPointResolver", "ScheduleEdge",

@@ -503,7 +503,10 @@ class STSLiveCollector:
         if not self.storage_path:
             return
         data = {
-            "schema_version": 2, "simtime": self.simtime,
+            "schema_version": 2, "artifact_type": "collector_state",
+            "aid": self.session.aid, "stellwerk_name": self.session.name,
+            "stellwerk": {"aid": self.session.aid, "name": self.session.name},
+            "saved_at": self.clock().isoformat(), "simtime": self.simtime,
             "last_train_list_simtime": self._last_train_list_simtime,
             "last_schedule_slot": self._last_schedule_slot, "sim_day": self._sim_day,
             "previous_simtime": self._previous_simtime, "active_zids": sorted(self._active_zids),
