@@ -8,6 +8,9 @@ from typing import Iterable, Protocol
 from .profile import RouteProfile
 
 DAY_SECONDS = 24 * 60 * 60
+DISTANCE_AXIS = "x"
+TIME_AXIS = "y"
+NOW_LINE_ANGLE = 0
 
 
 class ScheduleLike(Protocol):

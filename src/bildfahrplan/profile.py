@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from infrastructure.model import RoutePath
+
 
 @dataclass(frozen=True)
 class OperatingPoint:
@@ -40,3 +42,12 @@ class RouteProfile:
     def ticks(self) -> dict[float, str]:
         return {point.position: point.label for point in self.operating_points}
 
+    @property
+    def route_path(self) -> RoutePath:
+        """Lineare, explizit konfigurierte Auswahl mit relativer Achseneinheit."""
+        return RoutePath(
+            id=self.name, name=self.name,
+            nodes=tuple(point.id for point in self.operating_points),
+            positions=tuple(point.position for point in self.operating_points),
+            axis_unit="relative",
+        )

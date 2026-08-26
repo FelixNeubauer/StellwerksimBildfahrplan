@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.1
+# StellwerkSim Bildfahrplan V0.3.5.6
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -36,11 +36,124 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-## Umfang V0.1
+## Umfang V0.3.5.6
 
 Der Bildfahrplan zeichnet Plantrassen aus `original_schedule` und eine einfache
-Projektion aus Planzeit plus aktueller Verspätung. Lokbewegungen und Wagenparks
-werden nicht gezeichnet. Die übrigen vier Tabs bilden die dauerhafte Navigation,
-sind aber absichtlich Platzhalter. Echte Istzeit-Zuordnung, Mapping-Editor,
-Gleisbelegung, Konfliktmodell und automatische Topologieauswertung sind nicht Teil
-von V0.1.
+Projektion aus Planzeit plus aktueller Verspätung. Klassisch liegt die Strecke auf
+der X-Achse und die nach unten zunehmende Zeit auf der Y-Achse; Halte werden als
+vertikale Abschnitte und die aktuelle Simulationszeit als horizontale Linie
+dargestellt. Lokbewegungen und Wagenparks werden nicht gezeichnet.
+
+Der Tab **Strecke** leitet den sichtbaren betrieblichen Graphen ausschließlich
+aus den unveränderlichen `original_schedule` normaler Züge ab. Exakte manuelle
+Mappings haben Vorrang; anschließend dürfen explizite Beziehungen aus der
+`bahnsteigliste`, mehrfach bestätigte Betriebsstellenkürzel und lokale
+Sandwich-/Closed-Excursion-Fahrplanmuster Rawnamen gruppieren. Eine separate
+RouteAxis-Ebene kann Ein-/Ausfahrt-Aliasse auf dieselbe X-Position abbilden,
+ohne SchedulePoints oder OperatingPoints zu löschen. Ohne solche Evidenz bleibt jeder
+Name als eigener virtueller Fahrplanpunkt erhalten. `<wege>` erzeugt weiterhin
+einen verlustfreien Raw-Graph, bestimmt aber keine sichtbaren Betriebsstellen.
+
+High-confidence-Between-Entscheidungen werden als gemeinsames, deterministisches
+Constraint-Set vor dem Maximum-Evidence-Forest angewandt: Kettenkanten sind
+verbindlich, die transitive Direktkante wird zum Skip. Widersprüchliche
+Constraints werden nicht durch Iterationsreihenfolge entschieden, sondern als
+offene Topologiefrage gespeichert. Zugdetail-Ziele werden vor einer
+Boundary-Frage gegen bekannte Betriebsstellen- und Plattformnamen aufgelöst;
+interne Bezeichnungen wie `Gleis THD1` erzeugen daher keine künstliche
+Außengrenze. Generierte Graphdaten verwenden Persistenzschema 10.
+Automatisch erzeugte Daten werden AID-spezifisch unter `config/generated/`
+gespeichert; manuelle Streckenprofile bleiben davon unberührt.
+
+Manuelle Betriebsstellen-Cluster können unter
+`config/operating_points/<aid>.json` abgelegt werden. Automatische Persistenz
+liest diese Datei nur und überschreibt sie nicht.
+
+Die relative X-Position stammt weiterhin aus einem expliziten linearen
+RouteProfile/RoutePath. Echte Istzeit-Zuordnung, Auswahl-/Mapping-Editor,
+Gleisbelegung, Konfliktmodell, metrische Kilometer und vollständige physische
+Gleisrekonstruktion sind nicht Teil von V0.3.5.3. Die Streckenachse liegt oben und
+ist fest; ausschließlich der auf 05:00–21:00 begrenzte Zeitbereich ist vertikal
+zoom- und scrollbar. Zwischen den fünfsekündlichen STS-Abfragen interpoliert die
+UI die Simulationszeit monoton und friert bei Verbindungsverlust konservativ ein.
+
+ScheduleEdges bleiben rohe Folgenbeobachtungen. Eine nachgelagerte
+Korridorrekonstruktion klassifiziert daraus `neighbour`, `skip`, `branch`,
+`alternative_route`, `local_internal` oder `unresolved`. Stabil belegte
+Zwischenpfade können seltenere Direktfolgen als Skip erklären; strukturelle
+Hin-und-zurück-Muster liefern DirectionChange-Evidenz für Stichstreckenenden.
+Seit V0.3.3 wird zuerst ein unveränderlicher Backbone aus aggregierter
+Richtungs-, Fahrzeit-, Terminal- und optionaler Raw-Infrastrukturevidenz
+gewählt. Erst danach dürfen übrige ScheduleEdges über ausschließlich bestätigte
+Backbone-Kanten als Skip erklärt werden; zirkuläre Skip-Beweise sind damit
+ausgeschlossen.
+
+V0.3.4 bewertet lokale Dreiecks- und Between-Motive bereits vor der
+Forest-Auswahl. Der diagnostizierbare BackboneScore kombiniert Fahrplan- und
+Gegenrichtungssupport, Fahrzeitvergleiche, Raw-Adjazenz sowie positive und
+negative Between-, Branch- und Terminal-Evidenz. Raw-Fortsetzungen können ein
+scheinbares Fahrplanende als `observed_schedule_boundary` statt als echten
+Terminal kennzeichnen; Raw-Elemente werden dabei weiterhin niemals zu sichtbaren
+Betriebsstellen. Transitive Direktfolgen werden erst gegen den so festgelegten
+Backbone als Skip klassifiziert.
+
+V0.3.5 kann einen ausreichend belegten Stichstreckenast an einem synthetischen
+Abzweig auf einer bestehenden Backbone-Kante befestigen. Der OperationalRouteGraph
+splittet die Host-Kante, ohne `original_schedule` um künstliche Fahrplanpunkte zu
+erweitern. Die relative Position stammt bevorzugt aus einer eindeutigen
+Raw-Infrastrukturprojektion, andernfalls aus einer ausdrücklich nicht-metrischen
+Fahrzeittriangulation. Herkunft, relative Auflösung und Konfidenz bleiben in der
+Diagnose und im generierten Schema 8 sichtbar. V0.3.5.1 bewahrt dabei die
+fachliche `topological_fraction` getrennt von einer ausschließlich grafischen
+`display_fraction`, finalisiert Knotenrollen nach allen synthetischen Splits und
+stabilisiert Raw-Fortsetzungsevidenz über komprimierte Anchorbereiche.
+
+V0.3.5.2 wendet hoch-konfidente Between-Entscheidungen als verbindliche
+Topologiebedingung vor Branch- und Synthetic-Junction-Erkennung an. Transitive
+Schedule-Folgen bleiben Rohbeobachtungen, werden im sichtbaren Graph aber als
+Skip über die bestätigte Kette geführt. Bereits gespeicherte Zugdetails `von` und
+`nach` können zusammen mit Gegenrichtung oder Raw-Connectoren nicht sichtbare
+Außengrenzen belegen. Unzureichende Evidenz erzeugt keine zufällige Topologie,
+sondern eine persistierbare `TopologyQuestion`; eine Frage-GUI ist weiterhin
+nicht Bestandteil dieses Schritts. Die generierten Diagnosedaten verwenden
+Schema 9.
+
+V0.3.5.3 kompiliert alle High-Between-Befunde gemeinsam in Required-/Forbidden-
+Constraints, bevor Union-Find normale Backbone-Kandidaten sieht. Konflikte
+bleiben als `conflicting_between_constraints` offen. Ein vorgeschalteter
+`ExternalTargetResolution` gleicht unveränderte `von`-/`nach`-Originaltexte mit
+bekannten Mitgliedern derselben Betriebsstelle und sichtbaren Punkten ab, bevor
+externe Connectoren oder Nutzerfragen abgeleitet werden. Diese zusätzlichen
+Entscheidungsdaten werden in Schema 10 persistiert.
+
+V0.3.5.4 bewertet Fahrzeitvergleiche an Zwischenhalten haltbewusst. Expliziter
+Aufenthalt bleibt vom Movement getrennt; der in den Legs enthaltene Brems-/
+Anfahranteil wird bei starkem bidirektionalem Through-or-Skip-Muster nicht mehr
+als alleiniger Gegenbeweis behandelt. Massive Umwege bleiben negative Evidenz.
+Zusätzlich kennzeichnet der Collector additiv die Herkunft des ersten
+Fahrplancaptures. Unsichere Starts aus der initialen Zugliste liefern keine
+Incoming-Boundary-Evidenz und keine vorschnellen Nutzerfragen, während das
+vertrauenswürdige Fahrplanende weiterhin ausgewertet wird. Schema 11 persistiert
+diese Vergleiche, Provenienz und zurückgestellte Beobachtungsfragen.
+
+V0.3.5.5 trennt echte konsekutive Dreierfolgen desselben `original_schedule`
+von lediglich serviceübergreifend kombinierbaren Kanten. Same-Service-Order
+wird nach OperatingPoint-Kollaps als primäre lokale Reihenfolgeevidenz
+aggregiert; startup-trunkierte Fahrpläne behalten dabei verlässliche interne
+Reihenfolge, obwohl ihr erster Endpoint unsicher bleibt. Alle drei
+Dreieckshypothesen werden einzeln diagnostiziert. Widersprüchliche echte
+Sequenzen erzeugen eine TopologyQuestion, während Pairwise-only-Support ohne
+weitere starke Raw-/Fahrzeitevidenz kein High-Between erzwingt. Schema 12
+persistiert die geordneten Sequenzen, Triple-Aggregate und Hypothesen.
+
+V0.3.5.6 schließt die automatische Topologiehärtung vor dem manuellen Editor
+ab. Finale Knoten besitzen getrennte `topology_role`- und `boundary_role`-
+Dimensionen, sodass etwa ein Verzweigungsknoten zugleich boundary-adjacent sein
+kann. Ein durch Endpoint-, Raw- und Randlage belegter expliziter Schedule-
+BoundaryNode verdrängt eine gleichbedeutende synthetische Dublette. Wiederholte,
+aber wegen Startup-Trunkierung noch unzuverlässige externe Endpoints mit
+Raw-Connector bleiben als `DeferredExternalBoundaryCandidate` erhalten und
+können durch eine spätere vertrauenswürdige Beobachtung automatisch bestätigt
+werden. Verbleibende Sonderfälle werden bewusst für den späteren Topology Editor
+persistiert statt mit weiteren Heuristiken überbaut; Schema 13 enthält diese
+Rollen, Deduplizierungen und Kandidaten.

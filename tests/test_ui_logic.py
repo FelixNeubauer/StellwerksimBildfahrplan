@@ -1,0 +1,45 @@
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from app.simtime import SimTimeInterpolator
+from bildfahrplan.navigation import (
+    ROUTE_AXIS_POSITION, TIME_MAX, TIME_MIN, X_INTERACTION_ENABLED, Y_INTERACTION_ENABLED,
+    centered_time_range, clamp_time_range, time_bounds,
+)
+
+
+class UiLogicTests(unittest.TestCase):
+    def test_axis_contract_and_hard_time_limits(self):
+        self.assertEqual(ROUTE_AXIS_POSITION, "top")
+        self.assertFalse(X_INTERACTION_ENABLED); self.assertTrue(Y_INTERACTION_ENABLED)
+        self.assertEqual((TIME_MIN, TIME_MAX), (5 * 3600, 21 * 3600))
+        self.assertEqual(clamp_time_range(4 * 3600, 6 * 3600), (TIME_MIN, 7 * 3600))
+        self.assertEqual(clamp_time_range(20 * 3600, 22 * 3600), (19 * 3600, TIME_MAX))
+        self.assertEqual(time_bounds(86400 + 12 * 3600), (86400 + TIME_MIN, 86400 + TIME_MAX))
+
+    def test_center_preserves_zoom_span_and_clamps(self):
+        self.assertEqual(centered_time_range(8 * 3600, (8 * 3600, 10 * 3600)),
+                         (7 * 3600, 9 * 3600))
+        self.assertEqual(centered_time_range(5 * 3600, (8 * 3600, 10 * 3600)),
+                         (TIME_MIN, 7 * 3600))
+
+    def test_simtime_interpolates_resynchronizes_and_freezes_disconnected(self):
+        now = [100.0]
+        clock = SimTimeInterpolator(lambda: now[0], max_extrapolation=10)
+        clock.synchronize(8 * 3600 * 1000)
+        now[0] += 3
+        self.assertEqual(clock.value(True), (8 * 3600 + 3, True))
+        clock.synchronize((8 * 3600 + 5.3) * 1000)
+        self.assertAlmostEqual(clock.value(True)[0], 8 * 3600 + 5.3)
+        now[0] += 1
+        self.assertEqual(clock.value(False), (8 * 3600 + 6.3, False))
+        now[0] += 20
+        self.assertEqual(clock.value(True), (8 * 3600 + 15.3, False))
+
+
+if __name__ == "__main__":
+    unittest.main()

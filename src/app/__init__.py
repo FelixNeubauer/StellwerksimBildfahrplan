@@ -1,2 +1,1 @@
-"""PySide6-Anwendung fuer Bildfahrplan V0.1."""
-
+"""PySide6-Anwendung fuer Bildfahrplan V0.3.5."""
