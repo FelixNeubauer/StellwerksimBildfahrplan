@@ -3,6 +3,7 @@ from PySide6 import QtCore, QtWidgets
 from bildfahrplan.timeline import format_axis_time
 from .tabs.bildfahrplan_tab import BildfahrplanTab
 from .tabs.infrastructure_tab import InfrastructureTab
+from .tabs.operating_points_tab import OperatingPointsTab
 from .tabs.placeholders import PlaceholderTab
 from .collector_adapter import REPOSITORY_ROOT
 
@@ -19,7 +20,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(PlaceholderTab("Gleisbelegung – folgt in einer späteren Version"), "Gleisbelegung")
         self.infrastructure = InfrastructureTab(REPOSITORY_ROOT / "config")
         self.tabs.addTab(self.infrastructure, "Strecke")
-        self.tabs.addTab(PlaceholderTab("Explizite Gleis- und Ortszuordnung – Konfiguration folgt"), "Gleise / Ortszuordnung")
+        self.operating_points = OperatingPointsTab(REPOSITORY_ROOT / "config")
+        self.tabs.addTab(self.operating_points, "Gleise / Ortszuordnung")
         self.tabs.addTab(PlaceholderTab("Allgemeine Einstellungen – folgen in einer späteren Version"), "Einstellungen")
         self.setCentralWidget(self.tabs)
         self.connection = QtWidgets.QLabel()
@@ -43,6 +45,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.diagram.refresh(snapshot)
         self.infrastructure.refresh(snapshot)
+        self.operating_points.refresh(snapshot)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
         self.adapter.close()

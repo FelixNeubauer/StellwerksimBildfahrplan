@@ -13,6 +13,10 @@ from .model import (
 )
 from .graph_builder import InfrastructureGraphBuilder
 from .persistence import save_generated_graph
+from .operating_point_assignments import (
+    EditableOperatingPoint, OperatingPointAssignments, OperatingPointConfigStore,
+    is_unprefixed_numeric, natural_sort_key, related_selection,
+)
 from .wege_parser import parse_bahnsteigliste, parse_wege
 from .schedule_graph import (
     OperatingPoint, OperatingPointGraph, OperatingPointResolver, PlatformRelationGraph,
@@ -36,6 +40,8 @@ __all__ = [
     "OperationalRouteEdge", "OperationalRouteGraph", "OperationalRouteNode",
     "PlatformEvidence", "RawInfrastructureGraph", "RouteAnchor", "RoutePath",
     "parse_bahnsteigliste", "parse_wege", "save_generated_graph",
+    "EditableOperatingPoint", "OperatingPointAssignments", "OperatingPointConfigStore",
+    "is_unprefixed_numeric", "natural_sort_key", "related_selection",
     "OperatingPoint", "OperatingPointGraph", "OperatingPointResolver", "ScheduleEdge",
     "ScheduleCaptureProvenance", "SchedulePointGraph", "SchedulePointNode",
     "PlatformRelationGraph", "RouteAxisGraph", "RouteAxisNode", "station_key",
