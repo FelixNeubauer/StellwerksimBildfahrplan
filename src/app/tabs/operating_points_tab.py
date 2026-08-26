@@ -87,6 +87,38 @@ class UnassignedDropList(RawNamesList):
         else: event.ignore()
 
 
+class AssignedDropList(RawNamesList):
+    """Die ganze mittlere Liste ordnet zum aktuell ausgewaehlten Ziel zu."""
+
+    def __init__(self, target_provider, dropped, parent=None) -> None:
+        super().__init__("assigned", parent)
+        self.target_provider = target_provider
+        self.dropped = dropped
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+
+    def _can_accept(self, event) -> bool:
+        return bool(_drop_payload(event) and self.target_provider())
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if self._can_accept(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802 - Qt API
+        payload = _drop_payload(event)
+        point_id = self.target_provider()
+        if payload and point_id:
+            self.dropped(payload["raw_names"], point_id)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+
 class OperatingPointsTab(QtWidgets.QWidget):
     def __init__(self, config_directory, parent=None) -> None:
         super().__init__(parent)
@@ -123,7 +155,8 @@ class OperatingPointsTab(QtWidgets.QWidget):
         left.addWidget(self.add_button); columns.addLayout(left, 2)
         middle = QtWidgets.QVBoxLayout()
         middle.addWidget(QtWidgets.QLabel("Zugeordnet"))
-        self.assigned = RawNamesList("assigned"); middle.addWidget(self.assigned, 1)
+        self.assigned = AssignedDropList(self._selected_point_id, self._assign_names)
+        middle.addWidget(self.assigned, 1)
         self.assign_button = QtWidgets.QPushButton("← Zuordnen")
         self.unassign_button = QtWidgets.QPushButton("→ Zuordnung entfernen")
         actions = QtWidgets.QHBoxLayout(); actions.addWidget(self.assign_button); actions.addWidget(self.unassign_button)
@@ -239,6 +272,9 @@ class OperatingPointsTab(QtWidgets.QWidget):
             self._assign_names([item.data(ID_ROLE) for item in self.unassigned.selectedItems()], point_id)
 
     def _assign_names(self, raw_names, point_id: str) -> None:
+        raw_names = set(raw_names) & self.model.all_raw_names
+        if not raw_names or all(self.model.assignments.get(name) == point_id for name in raw_names):
+            return
         self.model.assign(raw_names, point_id)
         self._persist(); self._refresh_points(point_id)
 
