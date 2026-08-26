@@ -55,6 +55,9 @@ class InfrastructureTab(QtWidgets.QWidget):
             ("travel_time_junctions", "TravelTime Junction Estimates"),
             ("raw_junctions", "Raw Junction Estimates"),
             ("role_changes", "Role Changes After Finalization"),
+            ("applied_between", "Applied High-Confidence Between"),
+            ("hidden_boundaries", "Hidden External Boundaries"),
+            ("topology_questions", "Topology Questions Pending"),
             ("external_boundaries", "External Boundaries"),
             ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
             ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
@@ -74,7 +77,9 @@ class InfrastructureTab(QtWidgets.QWidget):
 
     def refresh(self, snapshot) -> None:
         signature = (snapshot.aid, snapshot.infrastructure_documents,
-                     tuple((service.zid, len(service.original_schedule)) for service in snapshot.services))
+                     tuple((service.zid, len(service.original_schedule),
+                            getattr(service, "origin", None), getattr(service, "destination", None))
+                           for service in snapshot.services))
         if signature == self._last_signature:
             return
         self._last_signature = signature
@@ -144,6 +149,10 @@ class InfrastructureTab(QtWidgets.QWidget):
                 "raw_junctions": sum(item.raw_junction_node is not None
                                      for item in corridor.synthetic_junctions.values()),
                 "role_changes": len(corridor.role_changes),
+                "applied_between": len(corridor.applied_between_resolutions),
+                "hidden_boundaries": len(corridor.synthetic_external_boundaries),
+                "topology_questions": sum(item.status == "needs_user_confirmation"
+                                          for item in corridor.topology_questions.values()),
                 "terminal_candidates": sum(item.classification == "terminal"
                                            for item in corridor.terminal_evidence.values()),
                 "external_boundaries": sum(item.classification == "external_boundary"
@@ -170,6 +179,21 @@ class InfrastructureTab(QtWidgets.QWidget):
                 f"Terminal rejected: {item.node}\n  classification: {item.classification}"
                 f"\n  contradictions: {item.contradicting_terminal_evidence}"
                 for item in corridor.terminal_evidence.values() if item.contradicting_terminal_evidence
+            ) + "\n\n" + "\n".join(
+                f"Applied Between: {' → '.join(path)}\n  between: {path[1]}"
+                f"\n  final action: {path[0]}–{path[2]} skip; chain edges retained"
+                for path in corridor.applied_between_resolutions.values()
+            ) + "\n\n" + "\n".join(
+                f"Hidden external boundary: {item.source_node} → {item.external_name}"
+                f"\n  outgoing: {item.outgoing_observations}\n  incoming: {item.incoming_observations}"
+                f"\n  raw connector: {item.raw_connector or 'not confirmed'}"
+                f"\n  directionality: {item.directionality}\n  confidence: {item.confidence}"
+                f"\n  evidence: {item.evidence}"
+                for item in corridor.hidden_boundary_evidence.values()
+            ) + "\n\n" + "\n".join(
+                f"Topology question: {item.question_text}\n  status: {item.status}"
+                f"\n  options: {item.options}\n  evidence: {item.evidence_summary}"
+                for item in corridor.topology_questions.values()
             ) + "\n\n" + "\n".join(
                 f"Synthetic junction: {item.display_name}\n  host edge: {' – '.join(item.host_edge)}"
                 f"\n  branch: {item.branch_node}\n  attachment: edge"

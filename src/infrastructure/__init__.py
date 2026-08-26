@@ -20,9 +20,10 @@ from .schedule_graph import (
 )
 from .corridor import (
     BackboneEdge, BackboneScore, BranchAttachment, CorridorGraph, CorridorGraphBuilder,
-    DerivedRouteEdge, DirectionChangeEvidence, JunctionPositionEstimate, PathTimeStats,
-    RawAdjacencyEvidence, SyntheticJunctionNode, TerminalEvidence, TravelTimeStats,
-    TriangleResolutionEvidence,
+    DerivedRouteEdge, DirectionChangeEvidence, HiddenExternalBoundaryEvidence,
+    JunctionPositionEstimate, PathTimeStats, RawAdjacencyEvidence,
+    SyntheticExternalBoundaryNode, SyntheticJunctionNode, TerminalEvidence,
+    TopologyQuestion, TravelTimeStats, TriangleResolutionEvidence,
 )
 
 __all__ = [
@@ -37,4 +38,5 @@ __all__ = [
     "BackboneEdge", "BackboneScore", "PathTimeStats", "RawAdjacencyEvidence", "TerminalEvidence",
     "TravelTimeStats", "TriangleResolutionEvidence", "BranchAttachment",
     "JunctionPositionEstimate", "SyntheticJunctionNode",
+    "HiddenExternalBoundaryEvidence", "SyntheticExternalBoundaryNode", "TopologyQuestion",
 ]

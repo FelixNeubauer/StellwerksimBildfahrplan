@@ -13,16 +13,18 @@ from infrastructure import (
 )
 
 
-def service(zid, *names, kind="train"):
+def service(zid, *names, kind="train", origin=None, destination=None):
     points = [SimpleNamespace(planned_name=name, raw_name=name) for name in names]
-    return SimpleNamespace(zid=zid, service_kind=kind, original_schedule=points, current_schedule=[])
+    return SimpleNamespace(zid=zid, service_kind=kind, original_schedule=points, current_schedule=[],
+                           origin=origin, destination=destination)
 
 
-def timed_service(zid, *points):
+def timed_service(zid, *points, origin=None, destination=None):
     schedule = [SimpleNamespace(
         planned_name=name, raw_name=name, planned_arrival=arrival, planned_departure=departure,
     ) for name, arrival, departure in points]
-    return SimpleNamespace(zid=zid, service_kind="train", original_schedule=schedule, current_schedule=[])
+    return SimpleNamespace(zid=zid, service_kind="train", original_schedule=schedule, current_schedule=[],
+                           origin=origin, destination=destination)
 
 
 class ScheduleGraphTests(unittest.TestCase):
@@ -354,6 +356,90 @@ class ScheduleGraphTests(unittest.TestCase):
         self.assertEqual(corridor.edges[("TER", "TUDT")].classification, "skip")
         self.assertEqual(corridor.edges[("TER", "TUDT")].covered_path, ("TER", "TEIN", "TUDT"))
         self.assertEqual(corridor.between_evidence[("TER", "TEIN", "TUDT")]["confidence"], "high")
+
+    def test_heidenheim_high_between_is_applied_before_branch_for_three_triangles(self):
+        triples = (("THMA", "TBER", "TSON"), ("TUE", "TOLC", "TTL"),
+                   ("TKS", "TIT", "THDS"))
+        names = {name for triple in triples for name in triple}
+        extensions = {endpoint: f"EXT_{endpoint}" for a, _, c in triples for endpoint in (a, c)}
+        names.update(extensions.values())
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in names}}
+        services = []; zid = 100
+        for a, middle, c in triples:
+            services.extend([
+                timed_service(zid, (a, "08:00", "08:00"), (middle, "08:02", "08:02"),
+                              (c, "08:04", "08:04")),
+                timed_service(zid + 1, (c, "09:00", "09:00"), (middle, "09:02", "09:02"),
+                              (a, "09:04", "09:04")),
+                service(zid + 2, extensions[a], a), service(zid + 3, a, extensions[a]),
+                service(zid + 4, c, extensions[c]), service(zid + 5, extensions[c], c),
+            ])
+            zid += 6
+            for minute in range(6):
+                services.extend([
+                    timed_service(zid, (a, f"10:{minute:02d}", f"10:{minute:02d}"),
+                                  (c, f"10:{minute + 5:02d}", f"10:{minute + 5:02d}")),
+                    timed_service(zid + 1, (c, f"11:{minute:02d}", f"11:{minute:02d}"),
+                                  (a, f"11:{minute + 5:02d}", f"11:{minute + 5:02d}")),
+                ])
+                zid += 2
+        schedule = SchedulePointGraph.from_services(services)
+        operating = OperatingPointResolver((), manual).resolve(schedule)
+        self.assertEqual(len(operating.branch_nodes), 6)
+        corridor = CorridorGraphBuilder(schedule, operating).build()
+        for a, middle, c in triples:
+            path = corridor.applied_between_resolutions[frozenset((a, c))]
+            self.assertEqual(path[1], middle)
+            for pair in ((a, c), (c, a)):
+                self.assertEqual(corridor.edges[pair].classification, "skip")
+                self.assertEqual(corridor.edges[pair].covered_path[1], middle)
+            self.assertNotIn(f"synthetic:abzw_{middle.casefold()}", corridor.synthetic_junctions)
+            self.assertNotEqual(corridor.node_roles[a], "branch_junction")
+            self.assertNotEqual(corridor.node_roles[c], "branch_junction")
+        self.assertFalse(corridor.branch_nodes)
+
+    def test_hidden_external_boundaries_use_service_endpoints_and_raw_connectors(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("TTL", "TUO")}}
+        services = [
+            service(1, "TTL", "TUO", destination="Ulm Hbf"),
+            service(2, "TTL", "TUO", destination="Ulm Hbf"),
+            service(3, "TUO", "TTL", origin="Ulm Hbf"),
+            service(4, "TTL", "TUO", destination="Ulm Rbf"),
+            service(5, "TTL", "TUO", destination="Ulm Rbf"),
+            service(6, "TUO", "TTL", origin="Ulm Rbf"),
+        ]
+        raw = parse_wege("""<wege>
+          <e enr='1' name='TTL'/><e enr='2'/><e enr='3' name='TUO'/><e enr='4'/>
+          <e enr='5' name='Ulm Hbf'/><e enr='6' name='Ulm Rbf'/>
+          <connector enr1='1' enr2='2'/><connector enr1='2' enr2='3'/>
+          <connector enr1='3' enr2='4'/><connector enr1='4' enr2='5'/>
+          <connector enr1='4' enr2='6'/>
+        </wege>""")
+        schedule = SchedulePointGraph.from_services(services)
+        corridor = CorridorGraphBuilder(
+            schedule, OperatingPointResolver((), manual).resolve(schedule), raw).build()
+        self.assertEqual(corridor.node_roles["TUO"], "boundary_adjacent")
+        self.assertNotEqual(corridor.node_roles["TUO"], "terminal")
+        self.assertEqual({item.external_name for item in corridor.synthetic_external_boundaries.values()},
+                         {"Ulm Hbf", "Ulm Rbf"})
+        self.assertTrue(all(item.directionality == "bidirectional"
+                            for item in corridor.synthetic_external_boundaries.values()))
+        operational = corridor.to_operational_graph()
+        self.assertTrue(all(operational.nodes[item.id].node_type == "synthetic_external_boundary"
+                            for item in corridor.synthetic_external_boundaries.values()))
+
+    def test_ambiguous_single_external_endpoint_prepares_topology_question(self):
+        manual = {"operating_points": {
+            name: {"display_name": name, "raw_names": [name]} for name in ("A", "X")}}
+        schedule = SchedulePointGraph.from_services([
+            service(1, "A", "X", destination="External Unknown")])
+        corridor = CorridorGraphBuilder(schedule, OperatingPointResolver((), manual).resolve(schedule)).build()
+        self.assertFalse(corridor.synthetic_external_boundaries)
+        question = next(iter(corridor.topology_questions.values()))
+        self.assertEqual(question.question_type, "terminal_or_external_boundary")
+        self.assertEqual(question.status, "needs_user_confirmation")
 
     def test_raw_continuation_rejects_observed_terminal_but_mof_remains_terminal(self):
         manual = {"operating_points": {

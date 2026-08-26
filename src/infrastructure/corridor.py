@@ -153,6 +153,47 @@ class BranchAttachment:
 
 
 @dataclass(frozen=True)
+class HiddenExternalBoundaryEvidence:
+    source_node: str
+    external_name: str
+    incoming_observations: int
+    outgoing_observations: int
+    services: tuple[int, ...]
+    raw_connector: str | None
+    directionality: str
+    confidence: str
+    evidence: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SyntheticExternalBoundaryNode:
+    id: str
+    display_name: str
+    source_node: str
+    external_name: str
+    evidence: tuple[str, ...]
+    confidence: str
+    raw_connector: str | None
+    directionality: str
+    display_offset: float = MINIMUM_DISPLAY_OFFSET_FRACTION
+    node_origin: str = "synthetic_external_boundary"
+
+
+@dataclass(frozen=True)
+class TopologyQuestion:
+    id: str
+    subject_node: str
+    question_type: str
+    question_text: str
+    options: tuple[str, ...]
+    evidence_summary: tuple[str, ...]
+    confidence: str
+    recommended_option: str | None
+    status: str = "needs_user_confirmation"
+    answer: str | None = None
+
+
+@dataclass(frozen=True)
 class BackboneEdge:
     source: str
     target: str
@@ -191,6 +232,10 @@ class CorridorGraph:
     junction_position_estimates: dict[str, JunctionPositionEstimate] = field(default_factory=dict)
     pre_split_node_roles: dict[str, str] = field(default_factory=dict)
     role_changes: dict[str, dict[str, str]] = field(default_factory=dict)
+    applied_between_resolutions: dict[frozenset[str], tuple[str, ...]] = field(default_factory=dict)
+    hidden_boundary_evidence: dict[tuple[str, str], HiddenExternalBoundaryEvidence] = field(default_factory=dict)
+    synthetic_external_boundaries: dict[str, SyntheticExternalBoundaryNode] = field(default_factory=dict)
+    topology_questions: dict[str, TopologyQuestion] = field(default_factory=dict)
     component_roles: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -247,6 +292,14 @@ class CorridorGraph:
                 graph.edges.append(OperationalRouteEdge(
                     junction.id, junction.branch_node, 1.0, {"branch": 1},
                     junction.confidence, (junction.id, junction.branch_node)))
+        for boundary in self.synthetic_external_boundaries.values():
+            graph.nodes[boundary.id] = OperationalRouteNode(
+                boundary.id, boundary.display_name, (), (), boundary.confidence,
+                "synthetic_external_boundary")
+            graph.edges.append(OperationalRouteEdge(
+                boundary.source_node, boundary.id, boundary.display_offset,
+                {"hidden_external_boundary": 1}, boundary.confidence,
+                (boundary.source_node, boundary.id)))
         return graph
 
     def expand_axis_path(self, path: Iterable[str]) -> tuple[str, ...]:
@@ -411,7 +464,8 @@ class CorridorGraphBuilder:
         return [DirectionChangeEvidence(t, a, count, tuple(sorted(services)))
                 for (t, a), (count, services) in found.items()]
 
-    def _terminal_stats(self, reversals: list[DirectionChangeEvidence]) -> dict[str, TerminalEvidence]:
+    def _terminal_stats(self, reversals: list[DirectionChangeEvidence],
+                        hidden_boundary_sources: set[str]) -> dict[str, TerminalEvidence]:
         starts: dict[str, int] = defaultdict(int); ends: dict[str, int] = defaultdict(int)
         through: dict[str, int] = defaultdict(int); neighbours: dict[str, set[str]] = defaultdict(set)
         for path in self._axis_paths().values():
@@ -435,6 +489,7 @@ class CorridorGraphBuilder:
             contradictions = tuple(filter(None, (
                 "raw_external_continuation" if raw_outgoing > len(neighbours[node]) else "",
                 "multiple_raw_corridors" if raw_outgoing > 1 else "",
+                "hidden_external_boundary" if node in hidden_boundary_sources else "",
             )))
             terminal = (not boundary and endpoint_weight >= 2 and through[node] == 0
                         and len(neighbours[node]) <= 1 and not contradictions)
@@ -494,6 +549,77 @@ class CorridorGraphBuilder:
             corridors.append(labels)
         evidence = tuple(sorted({label for corridor in corridors for label in corridor}))
         return len(corridors), evidence
+
+    @staticmethod
+    def _external_key(value: str | None) -> str:
+        return " ".join((value or "").casefold().split())
+
+    def _raw_external_connector(self, source: str, external_name: str) -> str | None:
+        if self.raw_graph is None:
+            return None
+        target_key = self._external_key(external_name)
+        targets = {node.id for node in self.raw_graph.nodes.values()
+                   if self._external_key(node.raw_name) == target_key}
+        starts = self._raw_anchors().get(source, set())
+        if not starts or not targets:
+            return None
+        queue = deque(sorted(starts)); visited = set(starts)
+        while queue:
+            current = queue.popleft()
+            if current in targets:
+                return current
+            for neighbour in sorted(self.raw_graph.neighbours(current) - visited):
+                visited.add(neighbour); queue.append(neighbour)
+        return None
+
+    def _hidden_external_boundaries(self, result: CorridorGraph) -> None:
+        visible_names = {self._external_key(name) for name in self.schedule.nodes}
+        observed: dict[tuple[str, str], dict[str, Any]] = defaultdict(
+            lambda: {"incoming": 0, "outgoing": 0, "services": set(), "name": ""})
+        for zid, path in self._axis_paths().items():
+            if not path:
+                continue
+            origin, destination = self.schedule.service_endpoints.get(zid, (None, None))
+            for source, external, direction in (
+                    (path[0], origin, "incoming"), (path[-1], destination, "outgoing")):
+                key = self._external_key(external)
+                if not key or key in visible_names:
+                    continue
+                item = observed[(source, key)]
+                item[direction] += 1; item["services"].add(zid); item["name"] = external.strip()
+        for (source, _), item in observed.items():
+            external_name = item["name"]
+            raw_connector = self._raw_external_connector(source, external_name)
+            incoming, outgoing = item["incoming"], item["outgoing"]
+            total = incoming + outgoing
+            bidirectional = bool(incoming and outgoing)
+            # Names from ``von``/``nach`` alone can also denote the terminal
+            # itself under a different spelling. Automatic topology therefore
+            # requires repeated endpoint evidence plus a matching raw connector;
+            # bidirectional details without raw confirmation become a question.
+            resolved = total >= 2 and raw_connector is not None
+            directionality = "bidirectional" if bidirectional else "observed_one_way"
+            evidence = ("schedule_endpoint", "zugdetails_von_nach") + (
+                ("reverse_observations",) if bidirectional else ()) + (
+                ("raw_external_connector",) if raw_connector else ())
+            confidence = "exact" if bidirectional and raw_connector else "inferred" if resolved else "low"
+            boundary = HiddenExternalBoundaryEvidence(
+                source, external_name, incoming, outgoing, tuple(sorted(item["services"])),
+                raw_connector, directionality, confidence, evidence)
+            result.hidden_boundary_evidence[(source, external_name)] = boundary
+            slug = re.sub(r"[^a-z0-9]+", "_", self._external_key(external_name)).strip("_")
+            boundary_id = f"synthetic:external:{source.casefold()}:{slug or 'unknown'}"
+            if resolved:
+                result.synthetic_external_boundaries[boundary_id] = SyntheticExternalBoundaryNode(
+                    boundary_id, external_name, source, external_name, evidence, confidence,
+                    raw_connector, directionality)
+                continue
+            question_id = f"question:terminal_or_external:{source}:{slug or 'unknown'}"
+            result.topology_questions[question_id] = TopologyQuestion(
+                question_id, source, "terminal_or_external_boundary",
+                f"Ist {source} ein Streckenende oder der letzte sichtbare Punkt vor {external_name}?",
+                ("terminal", "hidden_external_boundary"), evidence, confidence,
+                "hidden_external_boundary" if raw_connector else None)
 
     def _raw_adjacencies(self) -> dict[frozenset[str], RawAdjacencyEvidence]:
         result: dict[frozenset[str], RawAdjacencyEvidence] = {}
@@ -592,6 +718,16 @@ class CorridorGraphBuilder:
             item["reverse"] = self.axis.edges.get((target, source), ScheduleEdge(target, source)).observation_count
         result.raw_adjacency_evidence = self._raw_adjacencies()
         self._triangles(result, undirected)
+        mandatory_chain_edges: set[frozenset[str]] = set()
+        forbidden_transitive_edges: set[frozenset[str]] = set()
+        for triangle in result.triangle_resolutions:
+            if triangle.confidence != "high" or not triangle.between_candidate or not triangle.direct_edge:
+                continue
+            direct_key = frozenset(triangle.direct_edge)
+            forbidden_transitive_edges.add(direct_key)
+            mandatory_chain_edges.update(frozenset(edge) for edge in triangle.chain_edges)
+            a, c = triangle.direct_edge
+            result.applied_between_resolutions[direct_key] = (a, triangle.between_candidate, c)
         candidate_adjacency: dict[str, set[str]] = defaultdict(set)
         for key in undirected:
             left, right = tuple(key); candidate_adjacency[left].add(right); candidate_adjacency[right].add(left)
@@ -661,7 +797,34 @@ class CorridorGraphBuilder:
                 parent[node] = parent[parent[node]]; node = parent[node]
             return node
 
+        for key in sorted(mandatory_chain_edges, key=lambda item: tuple(sorted(item))):
+            source, target = tuple(key)
+            evidence = undirected[key]
+            if root(source) == root(target):
+                question_id = "question:between_conflict:" + ":".join(sorted(key))
+                result.topology_questions[question_id] = TopologyQuestion(
+                    question_id, source, "between_or_branch",
+                    f"Widersprüchliche Between-Ketten betreffen {source} und {target}.",
+                    ("between", "branch"), ("conflicting_high_between_constraints",),
+                    "low", "between")
+                continue
+            parent[root(source)] = root(target)
+            evidence["selection"] = "selected_high_confidence_between_chain"
+            confidence = "exact" if evidence["forward"] and evidence["reverse"] else "inferred"
+            result.backbone_edges[key] = BackboneEdge(source, target, evidence, confidence)
+
+        for direct_key, path in tuple(result.applied_between_resolutions.items()):
+            chain_keys = {frozenset(edge) for edge in zip(path, path[1:])}
+            if chain_keys <= result.backbone_edges.keys():
+                continue
+            result.applied_between_resolutions.pop(direct_key)
+            forbidden_transitive_edges.discard(direct_key)
+
         for key, evidence in ranked:
+            if key in forbidden_transitive_edges or key in result.backbone_edges:
+                if key in forbidden_transitive_edges:
+                    evidence["selection"] = "rejected_high_confidence_between_transitive"
+                continue
             source, target = tuple(key)
             # Terminal reversals admit only their confirmed approach into backbone.
             terminal_blocked = any(
@@ -869,7 +1032,12 @@ class CorridorGraphBuilder:
         for node in graph.nodes:
             degree = len(adjacency[node]); previous = result.pre_split_node_roles.get(node)
             terminal = result.terminal_evidence.get(node)
-            if node in result.synthetic_junctions:
+            hidden_sources = {item.source_node for item in result.synthetic_external_boundaries.values()}
+            if node in result.synthetic_external_boundaries:
+                role = "external_boundary"
+            elif node in hidden_sources:
+                role = "boundary_adjacent"
+            elif node in result.synthetic_junctions:
                 role = "branch_junction" if degree > 2 else "unresolved"
             elif previous == "branch_terminal":
                 role = "branch_terminal"
@@ -898,7 +1066,9 @@ class CorridorGraphBuilder:
         result.travel_time_stats = self._timings()
         self._current_travel_stats = result.travel_time_stats
         result.direction_changes = self._reversals()
-        result.terminal_evidence = self._terminal_stats(result.direction_changes)
+        self._hidden_external_boundaries(result)
+        hidden_sources = {item.source_node for item in result.synthetic_external_boundaries.values()}
+        result.terminal_evidence = self._terminal_stats(result.direction_changes, hidden_sources)
         terminal_approach: dict[str, DirectionChangeEvidence] = {}
         for item in result.direction_changes:
             current = terminal_approach.get(item.terminal)
@@ -907,13 +1077,23 @@ class CorridorGraphBuilder:
 
         # Phase D: immutable backbone. No edge has been called skip yet.
         self._backbone(result, terminal_approach)
+        high_between_middles = {path[1] for path in result.applied_between_resolutions.values()}
+        terminal_approach = {node: evidence for node, evidence in terminal_approach.items()
+                             if node not in high_between_middles}
 
         # Phase E: classify raw directed observations only against fixed backbone.
         for pair, raw_edge in self.axis.edges.items():
             source, target = pair; key = frozenset(pair)
             classification, covered, confidence = "neighbour", (source, target), "inferred"
             evidence: dict[str, Any] = {"schedule_observations": raw_edge.observation_count}
-            if key in result.backbone_edges:
+            if key in result.applied_between_resolutions:
+                path = result.applied_between_resolutions[key]
+                if path[0] != source:
+                    path = tuple(reversed(path))
+                classification, covered = "skip", path
+                evidence["between_final_action"] = "transitive_direct_edge_is_skip"
+                evidence["applied_high_confidence_between"] = True
+            elif key in result.backbone_edges:
                 evidence["backbone"] = result.backbone_edges[key].evidence
                 confidence = result.backbone_edges[key].confidence
             else:
@@ -954,6 +1134,7 @@ class CorridorGraphBuilder:
         # when the return working is represented by a separate STS schedule.
         rejected_middles = {middle for (_, middle, _), evidence in result.between_evidence.items()
                             if evidence.get("score", 0) < 0}
+        rejected_middles -= high_between_middles
         for terminal in rejected_middles:
             incident = [key for key in result.backbone_edges if terminal in key]
             if len(incident) != 1:

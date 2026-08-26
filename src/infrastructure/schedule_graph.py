@@ -35,6 +35,7 @@ class SchedulePointGraph:
     edges: dict[tuple[str, str], ScheduleEdge] = field(default_factory=dict)
     service_paths: dict[int, tuple[str, ...]] = field(default_factory=dict)
     service_schedules: dict[int, tuple[object, ...]] = field(default_factory=dict)
+    service_endpoints: dict[int, tuple[str | None, str | None]] = field(default_factory=dict)
 
     def observe(self, zid: int, raw_names: Iterable[str]) -> None:
         names = tuple(name for name in raw_names if name)
@@ -58,6 +59,8 @@ class SchedulePointGraph:
             zid = getattr(service, "zid")
             graph.observe(zid, (p.planned_name or p.raw_name for p in schedule))
             graph.service_schedules[zid] = tuple(schedule)
+            graph.service_endpoints[zid] = (
+                getattr(service, "origin", None), getattr(service, "destination", None))
         return graph
 
 
