@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.3.5.6
+# StellwerkSim Bildfahrplan V0.4.0
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -35,6 +35,41 @@ python bildfahrplan_app.py --state Schnittstellentest/sts_collector_state.json
 Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
+
+## Visueller Streckengraph-Editor V0.4.0
+
+Der Tab **Strecke** enthält nun einen auf `QGraphicsScene` und
+`QGraphicsView` basierenden Editor. Der automatisch erkannte
+`OperationalRouteGraph` wird für ein neues Stellwerk genau einmal als
+Initialvorschlag importiert. Danach ist der AID-spezifisch unter
+`config/topology/<aid>.json` gespeicherte editierbare Graph autoritativ und wird
+durch spätere automatische Erkennungen nicht verändert. Nur die ausdrücklich
+bestätigte Aktion **Graph automatisch neu erzeugen** archiviert den bisherigen
+Stand und ersetzt ihn durch einen neuen Import.
+
+Knoten können verschoben, hinzugefügt, gelöscht und als
+Streckenbetriebsstelle, Einfahrt oder Abzweigbetriebsstelle klassifiziert
+werden. Positionen sind reine Layoutdaten. Kanten lassen sich interaktiv
+erstellen und löschen; mehrere getrennte Graphkomponenten bleiben erlaubt und
+werden beim Auto-Layout unabhängig angeordnet. Ungültige Knotengrade blockieren
+die Bearbeitung nicht, sondern werden sichtbar gewarnt. Eine Einfahrt erwartet
+Grad 1, eine Streckenbetriebsstelle Grad 2 und eine Abzweigbetriebsstelle erlaubt
+jeden Grad, ausdrücklich auch Grad 2.
+
+Strecken werden niemals aus Knotentypen abgeleitet. Der Nutzer definiert sie als
+geordnete, zusammenhängende Graphpfade mit eigener `route_id`. Junctions dürfen
+innerhalb einer Strecke liegen; Strecken dürfen Knoten und Kanten überlappend
+verwenden. Die Bildfahrplan-Konfiguration speichert davon unabhängige Instanzen
+mit eigener `instance_id`, frei sortierbarer Reihenfolge und wählbarem linken
+Endpunkt. Dieselbe Strecke kann mehrfach und zusammen mit Strecken aus anderen
+Graphkomponenten verwendet werden.
+
+Graph, Strecken, Layout und Bildfahrplan-Reihenfolge werden gemeinsam atomar mit
+AID, Stellwerkname, Artefakttyp, Schema-Version und Speicherzeit gespeichert.
+Änderungen werden nach 30 Sekunden, beim Verlassen des Tabs und beim Beenden
+gesichert. Der eigentliche Bildfahrplan-Tab verwendet in diesem Meilenstein noch
+das bisherige lineare `RouteProfile`; das neue persistente Modell bereitet seine
+spätere Umstellung vor.
 
 ## Umfang V0.3.5.6
 

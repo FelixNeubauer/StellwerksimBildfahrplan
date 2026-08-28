@@ -1,340 +1,437 @@
-"""Diagnoseansicht fuer den konservativ abgeleiteten Streckengraphen."""
+"""Visueller Editor fuer den autoritativen, manuellen Streckengraphen."""
 
 from __future__ import annotations
 
 import json
-from PySide6 import QtWidgets
+from pathlib import Path
+
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from infrastructure import (
-    CorridorGraphBuilder, InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
-    SchedulePointGraph, parse_bahnsteigliste, parse_wege, save_generated_graph,
-    SavedStellwerkIdentity, validate_saved_stellwerk_identity,
+    CorridorGraphBuilder, EditableTopologyGraph, EditableTopologyGraphStore,
+    InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
+    SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, find_identity_candidate,
+    parse_bahnsteigliste, parse_wege, save_generated_graph, validate_saved_stellwerk_identity,
 )
+from app.widgets.topology_graphics import (
+    TopologyEdgeItem, TopologyGraphicsScene, TopologyGraphicsView, TopologyNodeItem,
+)
+
+TYPE_LABELS = {
+    "line": "Streckenbetriebsstelle", "entry": "Einfahrt", "junction": "Abzweigbetriebsstelle",
+}
+ID_ROLE = QtCore.Qt.ItemDataRole.UserRole
+
+
+class MoveNodeCommand(QtGui.QUndoCommand):
+    def __init__(self, tab, node_id, old, new) -> None:
+        super().__init__("Betriebsstelle verschieben")
+        self.tab, self.node_id, self.old, self.new = tab, node_id, old, new
+        self._first = True
+
+    def _set(self, value) -> None:
+        item = self.tab.node_items.get(self.node_id)
+        if item: item.setPos(value)
+        self.tab._mark_dirty()
+
+    def redo(self) -> None:
+        if self._first: self._first = False; return
+        self._set(self.new)
+
+    def undo(self) -> None: self._set(self.old)
 
 
 class InfrastructureTab(QtWidgets.QWidget):
-    def __init__(self, generated_directory, parent=None) -> None:
+    def __init__(self, config_directory, parent=None) -> None:
         super().__init__(parent)
-        self.generated_directory = generated_directory
-        self._last_signature = None
-        self.values: dict[str, QtWidgets.QLabel] = {}
-        layout = QtWidgets.QFormLayout(self)
-        rows = (
-            ("schedule_nodes", "SchedulePointNodes"), ("schedule_edges", "ScheduleEdges"),
-            ("operating_points", "erkannte OperatingPoints"),
-            ("automatic", "automatisch gruppierte OperatingPoints"),
-            ("manual", "manuell bestätigte OperatingPoints"),
-            ("virtual", "virtuelle Fahrplanpunkte"),
-            ("ungrouped", "nicht gruppierte SchedulePoints"),
-            ("operational_nodes", "OperationalRouteNodes"),
-            ("operational_edges", "OperationalRouteEdges"),
-            ("branches", "Verzweigungsknoten"),
-            ("station_key_clusters", "Station-Key-Cluster"),
-            ("platform_relation_clusters", "PlatformRelation-Cluster"),
-            ("internal_points_merged", "zusammengeführte interne Punkte"),
-            ("sandwich_merges", "Sandwich-Merges"),
-            ("closed_excursion_merges", "Closed-Excursion-Merges"),
-            ("unprefixed_platform_clusters", "unpräfixierte Platform-Cluster"),
-            ("route_axis_nodes", "RouteAxisNodes"),
-            ("axis_branches", "Verzweigungen nach Axis-Kollaps"),
-            ("conflicting_candidates", "konfliktbehaftete Kandidaten"),
-            ("neighbour_edges", "Neighbour-Edges"), ("skip_edges", "Skip-Edges"),
-            ("branch_edges", "Branch-Edges"), ("alternative_route_edges", "Alternative Routes"),
-            ("local_internal_edges", "Local-Internal-Edges"), ("unresolved_edges", "Unresolved-Edges"),
-            ("branch_junctions", "Final Branch Junctions"),
-            ("branch_terminals", "Final Branch Terminals"),
-            ("final_terminals", "Final Terminals"),
-            ("direction_changes", "Direction Changes"), ("secondary_components", "Secondary Components"),
-            ("backbone_edges", "BackboneEdges"), ("backbone_candidates", "Backbone Candidates"),
-            ("travel_time_comparisons", "TravelTime Comparisons"),
-            ("between_evidence", "Between-Evidence"), ("terminal_candidates", "Terminal Candidates"),
-            ("triangle_resolutions", "Triangle Resolutions"),
-            ("terminal_contradictions", "Terminal Contradictions"),
-            ("synthetic_junctions", "Synthetic Junctions"),
-            ("edge_attachments", "Edge Attachments"),
-            ("node_attachments", "Node Attachments"),
-            ("unresolved_attachments", "Unresolved Branch Attachments"),
-            ("travel_time_junctions", "TravelTime Junction Estimates"),
-            ("raw_junctions", "Raw Junction Estimates"),
-            ("role_changes", "Role Changes After Finalization"),
-            ("applied_between", "Applied High-Confidence Between"),
-            ("between_constraints", "Between Constraints Detected"),
-            ("between_conflicts", "Between Constraints Conflicting"),
-            ("hidden_boundaries", "Hidden External Boundaries"),
-            ("boundary_adjacent", "Boundary Adjacent Nodes"),
-            ("explicit_boundaries", "Explicit External Boundaries"),
-            ("deferred_boundaries", "Deferred External Boundary Candidates"),
-            ("confirmed_deferred", "Confirmed Deferred Boundaries"),
-            ("external_targets", "External Target Resolutions"),
-            ("topology_questions", "Topology Questions Pending"),
-            ("uncertain_schedule_starts", "Schedules With Uncertain Start"),
-            ("ignored_endpoints", "Endpoint Observations Ignored"),
-            ("deferred_questions", "Questions Deferred For History"),
-            ("same_service_triples", "Observed Same-Service Triples"),
-            ("bidirectional_triples", "Bidirectional Same-Service Triples"),
-            ("ordered_triangle_conflicts", "Conflicting Ordered Triples"),
-            ("external_boundaries", "External Boundaries"),
-            ("schedule_start_count", "Schedule Starts"), ("schedule_end_count", "Schedule Ends"),
-            ("through_count", "Through Count"), ("reversal_count", "Reversal Count"),
-            ("raw_nodes", "Raw-Infrastruktur: Nodes"), ("raw_edges", "Raw-Infrastruktur: Edges"),
-            ("raw_types", "Raw-Infrastruktur: Elementtypen"),
-            ("anchors", "Raw-Infrastruktur: Anchor-Zuordnungen"),
-        )
-        for key, title in rows:
-            label = self.values[key] = QtWidgets.QLabel("0")
-            layout.addRow(title, label)
-        self.status = QtWidgets.QLabel("Noch keine <wege>-Antwort empfangen.")
-        self.status.setWordWrap(True)
-        layout.addRow("Status", self.status)
-        self.clusters = QtWidgets.QPlainTextEdit()
-        self.clusters.setReadOnly(True)
-        layout.addRow("OperatingPoint-Cluster", self.clusters)
+        self.config_directory = Path(config_directory)
+        self.store = EditableTopologyGraphStore(config_directory)
+        self.graph = EditableTopologyGraph()
+        self.aid = None; self.facility_name = None
+        self._last_signature = None; self._automatic_graph = None
+        self._dirty = False; self._identity_ready = False; self._loading = False
+        self._route_path: list[str] | None = None
+        self.node_items: dict[str, TopologyNodeItem] = {}; self.edge_items: dict[str, TopologyEdgeItem] = {}
+        self.undo_stack = QtGui.QUndoStack(self)
+        self.autosave_timer = QtCore.QTimer(self); self.autosave_timer.setSingleShot(True)
+        self.autosave_timer.setInterval(30_000); self.autosave_timer.timeout.connect(self.flush_pending_save)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QtWidgets.QVBoxLayout(self); toolbar = QtWidgets.QHBoxLayout()
+        self.regenerate = QtWidgets.QPushButton("Graph automatisch neu erzeugen")
+        self.regenerate.clicked.connect(self._regenerate_graph); toolbar.addWidget(self.regenerate)
+        auto_layout = QtWidgets.QPushButton("Auto-Layout"); auto_layout.clicked.connect(self._auto_layout)
+        toolbar.addWidget(auto_layout)
+        add_node = QtWidgets.QPushButton("+ Betriebsstelle"); add_node.clicked.connect(self._add_node)
+        toolbar.addWidget(add_node)
+        self.connect_button = QtWidgets.QPushButton("Verbinden"); self.connect_button.setCheckable(True)
+        self.connect_button.clicked.connect(self._start_connecting); toolbar.addWidget(self.connect_button)
+        delete = QtWidgets.QPushButton("Löschen"); delete.clicked.connect(self._delete_selected); toolbar.addWidget(delete)
+        toolbar.addWidget(self._tool_button("Undo", self.undo_stack.undo)); toolbar.addWidget(self._tool_button("Redo", self.undo_stack.redo))
+        toolbar.addStretch(); self.search = QtWidgets.QLineEdit(); self.search.setPlaceholderText("Suche …")
+        self.search.textChanged.connect(self._search); toolbar.addWidget(self.search); root.addLayout(toolbar)
+
+        self.scene = TopologyGraphicsScene(self); self.scene.selectionChanged.connect(self._selection_changed)
+        self.scene.nodeActivated.connect(self._node_activated)
+        self.view = TopologyGraphicsView(self.scene); self.view.deletePressed.connect(self._delete_selected)
+        inspector = self._build_inspector()
+        split = QtWidgets.QSplitter(); split.addWidget(self.view); split.addWidget(inspector)
+        split.setStretchFactor(0, 5); split.setStretchFactor(1, 1); root.addWidget(split, 5)
+
+        lower = QtWidgets.QSplitter(); lower.addWidget(self._build_routes_panel()); lower.addWidget(self._build_bildfahrplan_panel())
+        lower.setStretchFactor(0, 1); lower.setStretchFactor(1, 1); root.addWidget(lower, 2)
+        self.status = QtWidgets.QLabel("Noch keine Graphdaten verfügbar."); root.addWidget(self.status)
+
+    @staticmethod
+    def _tool_button(text, callback):
+        button = QtWidgets.QPushButton(text); button.clicked.connect(callback); return button
+
+    def _build_inspector(self):
+        box = QtWidgets.QGroupBox("Eigenschaften"); form = QtWidgets.QFormLayout(box)
+        self.inspector_name = QtWidgets.QLineEdit(); self.inspector_name.editingFinished.connect(self._edit_node)
+        self.inspector_type = QtWidgets.QComboBox()
+        for value, label in TYPE_LABELS.items(): self.inspector_type.addItem(label, value)
+        self.inspector_type.currentIndexChanged.connect(self._edit_node)
+        self.inspector_connections = QtWidgets.QLabel("–"); self.inspector_id = QtWidgets.QLabel("–")
+        self.inspector_id.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.inspector_source = QtWidgets.QLabel("–"); self.inspector_validation = QtWidgets.QLabel("Keine Auswahl")
+        self.inspector_validation.setWordWrap(True)
+        form.addRow("Name:", self.inspector_name); form.addRow("Typ:", self.inspector_type)
+        form.addRow("Verbindungen:", self.inspector_connections); form.addRow("ID:", self.inspector_id)
+        form.addRow("Quelle:", self.inspector_source); form.addRow("Validierung:", self.inspector_validation)
+        return box
+
+    def _build_routes_panel(self):
+        box = QtWidgets.QGroupBox("Definierte Strecken"); layout = QtWidgets.QVBoxLayout(box)
+        self.route_list = QtWidgets.QListWidget(); self.route_list.currentItemChanged.connect(self._route_selected)
+        layout.addWidget(self.route_list)
+        self.route_path_label = QtWidgets.QLabel("Keine Strecke ausgewählt"); self.route_path_label.setWordWrap(True)
+        layout.addWidget(self.route_path_label)
+        buttons = QtWidgets.QHBoxLayout(); add = QtWidgets.QPushButton("+ Strecke definieren")
+        add.clicked.connect(self._start_route); buttons.addWidget(add)
+        self.finish_route = QtWidgets.QPushButton("Strecke abschließen"); self.finish_route.setEnabled(False)
+        self.finish_route.clicked.connect(self._finish_route); buttons.addWidget(self.finish_route)
+        rename = QtWidgets.QPushButton("Umbenennen"); rename.clicked.connect(self._rename_route); buttons.addWidget(rename)
+        remove = QtWidgets.QPushButton("Löschen"); remove.clicked.connect(self._delete_route); buttons.addWidget(remove)
+        layout.addLayout(buttons); return box
+
+    def _build_bildfahrplan_panel(self):
+        box = QtWidgets.QGroupBox("Bildfahrplan"); layout = QtWidgets.QVBoxLayout(box)
+        self.bf_list = QtWidgets.QListWidget(); self.bf_list.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
+        self.bf_list.setDefaultDropAction(QtCore.Qt.DropAction.MoveAction)
+        self.bf_list.model().rowsMoved.connect(self._instances_reordered); layout.addWidget(self.bf_list)
+        add = QtWidgets.QPushButton("+ Strecke hinzufügen"); add.clicked.connect(self._add_instance); layout.addWidget(add)
+        return box
 
     def refresh(self, snapshot) -> None:
-        signature = (snapshot.aid, snapshot.infrastructure_documents,
-                     tuple((service.zid, len(service.original_schedule),
-                            getattr(service, "origin", None), getattr(service, "destination", None))
-                           for service in snapshot.services))
-        if signature == self._last_signature:
-            return
+        signature = (snapshot.aid, snapshot.facility_name, snapshot.infrastructure_documents,
+                     tuple((service.zid, len(service.original_schedule), getattr(service, "origin", None),
+                            getattr(service, "destination", None)) for service in snapshot.services))
+        identity_changed = (snapshot.aid, snapshot.facility_name) != (self.aid, self.facility_name)
+        if identity_changed:
+            self.flush_pending_save(); self.aid = snapshot.aid; self.facility_name = snapshot.facility_name
+            self._identity_ready = False; self._last_signature = None
+        if signature == self._last_signature: return
         self._last_signature = signature
-        wege_xml = next((raw for raw in reversed(snapshot.infrastructure_documents)
-                     if raw.lstrip().startswith("<wege")), None)
         try:
-            raw_graph = parse_wege(wege_xml) if wege_xml else RawInfrastructureGraph()
-            builder = InfrastructureGraphBuilder(raw_graph)
-            schedule = SchedulePointGraph.from_services(snapshot.services)
-            builder.resolve_names(schedule.nodes)
-            platforms = ()
-            platform_xml = next((raw for raw in reversed(snapshot.infrastructure_documents)
-                                 if raw.lstrip().startswith("<bahnsteigliste")), None)
-            if platform_xml:
-                platforms = parse_bahnsteigliste(platform_xml)
-            manual = {}
-            if snapshot.aid is not None:
-                manual_path = self.generated_directory / "operating_points" / f"{snapshot.aid}.json"
-                if manual_path.exists():
-                    candidate = json.loads(manual_path.read_text(encoding="utf-8"))
-                    identity = validate_saved_stellwerk_identity(
-                        candidate, SavedStellwerkIdentity(snapshot.aid, snapshot.facility_name or "unbekannt"),
-                        manual_path)
-                    if identity.status == "match":
-                        manual = candidate
-            operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
-            axis = operating.to_route_axis_graph()
-            corridor = CorridorGraphBuilder(schedule, operating, raw_graph).build()
-            operational = corridor.to_operational_graph()
-            counts = {
-                "schedule_nodes": len(schedule.nodes), "schedule_edges": len(schedule.edges),
-                "operating_points": len(operating.nodes),
-                "automatic": sum(
-                    any(key in p.evidence for key in ("platform_relation", "same_station_key",
-                                                       "schedule_sandwich", "closed_excursion"))
-                    for p in operating.nodes.values()
-                ),
-                "manual": sum(p.manual_confirmation for p in operating.nodes.values()),
-                "virtual": sum(p.point_type in {"virtual_schedule_point", "entry_exit"}
-                               for p in operating.nodes.values()),
-                "ungrouped": sum(len(p.raw_names) == 1 and not p.manual_confirmation
-                                 for p in operating.nodes.values()),
-                "raw_nodes": len(raw_graph.nodes), "raw_edges": len(raw_graph.edges),
-                "raw_types": len({p.element_type for p in raw_graph.nodes.values()}),
-                "anchors": sum(a.resolution != "unresolved" for a in builder.anchors.values()),
-                "operational_nodes": len(operational.nodes), "operational_edges": len(operational.edges),
-                "branches": len(operating.branch_nodes),
-                "route_axis_nodes": len(axis.nodes), "axis_branches": len(axis.branch_nodes),
-                **operating.diagnostics,
-                **{f"{kind}_edges": sum(edge.classification == kind for edge in corridor.edges.values())
-                   for kind in ("neighbour", "skip", "branch", "alternative_route", "local_internal", "unresolved")},
-                "branch_junctions": sum(role == "branch_junction" for role in corridor.topology_roles.values()),
-                "branch_terminals": sum(role == "branch_terminal" for role in corridor.topology_roles.values()),
-                "final_terminals": sum(role == "terminal" for role in corridor.topology_roles.values()),
-                "direction_changes": len(corridor.direction_changes),
-                "secondary_components": sum(role == "secondary_component" for role in corridor.component_roles.values()),
-                "backbone_edges": len(corridor.backbone_edges),
-                "backbone_candidates": len(corridor.backbone_candidates),
-                "travel_time_comparisons": len(corridor.travel_time_stats),
-                "between_evidence": len(corridor.between_evidence),
-                "triangle_resolutions": len(corridor.triangle_resolutions),
-                "terminal_contradictions": sum(bool(item.contradicting_terminal_evidence)
-                                                for item in corridor.terminal_evidence.values()),
-                "synthetic_junctions": len(corridor.synthetic_junctions),
-                "edge_attachments": sum(item.attachment_type == "edge"
-                                        for item in corridor.branch_attachments.values()),
-                "node_attachments": sum(item.attachment_type == "node"
-                                        for item in corridor.branch_attachments.values()),
-                "unresolved_attachments": sum(item.attachment_type == "unresolved"
-                                              for item in corridor.branch_attachments.values()),
-                "travel_time_junctions": sum(item.edge_fraction is not None
-                                             for item in corridor.junction_position_estimates.values()),
-                "raw_junctions": sum(item.raw_junction_node is not None
-                                     for item in corridor.synthetic_junctions.values()),
-                "role_changes": len(corridor.role_changes),
-                "applied_between": len(corridor.applied_between_resolutions),
-                "between_constraints": len(corridor.between_constraints),
-                "between_conflicts": sum(item.status == "conflicting"
-                                           for item in corridor.between_constraints.values()),
-                "hidden_boundaries": len(corridor.synthetic_external_boundaries),
-                "boundary_adjacent": sum(role == "boundary_adjacent"
-                                         for role in corridor.boundary_roles.values()),
-                "explicit_boundaries": len(corridor.explicit_external_boundaries),
-                "deferred_boundaries": len(corridor.deferred_external_boundary_candidates),
-                "confirmed_deferred": sum(item.status == "confirmed_automatically"
-                                          for item in corridor.deferred_external_boundary_candidates.values()),
-                "external_targets": len(corridor.external_target_resolutions),
-                "topology_questions": sum(item.status == "needs_user_confirmation"
-                                          for item in corridor.topology_questions.values()),
-                "uncertain_schedule_starts": sum(not item.start_trusted
-                                                  for item in schedule.service_provenance.values()),
-                "ignored_endpoints": len(corridor.ignored_endpoint_observations),
-                "deferred_questions": len(corridor.deferred_questions),
-                "same_service_triples": sum(bool(item.total_services)
-                                             for item in corridor.same_service_triple_evidence.values()),
-                "bidirectional_triples": sum(bool(item.forward_count and item.reverse_count)
-                                              for item in corridor.same_service_triple_evidence.values()),
-                "ordered_triangle_conflicts": sum(
-                    item.question_type == "conflicting_ordered_schedule_sequences"
-                    for item in corridor.topology_questions.values()),
-                "terminal_candidates": sum(item.classification == "terminal"
-                                           for item in corridor.terminal_evidence.values()),
-                "external_boundaries": sum(item.classification == "external_boundary"
-                                           for item in corridor.terminal_evidence.values()),
-                "schedule_start_count": sum(item.schedule_start_count for item in corridor.terminal_evidence.values()),
-                "schedule_end_count": sum(item.schedule_end_count for item in corridor.terminal_evidence.values()),
-                "through_count": sum(item.through_count for item in corridor.terminal_evidence.values()),
-                "reversal_count": sum(item.reversal_count for item in corridor.terminal_evidence.values()),
-            }
-            for key, count in counts.items():
-                self.values[key].setText(str(count))
-
-            def triangle_diagnostic(item) -> str:
-                text = (f"Triangle: {' / '.join(item.nodes)}\n  between: "
-                        f"{item.between_candidate or 'rejected'}\n  supports: {item.supporting_evidence}"
-                        f"\n  contradictions: {item.contradicting_evidence}")
-                key = next((candidate for candidate in corridor.halt_aware_time_comparisons
-                            if frozenset(candidate) == frozenset(item.nodes)
-                            and candidate[1] == item.between_candidate), None)
-                if key is None:
-                    return text
-                comparison = corridor.halt_aware_time_comparisons[key]
-                between = corridor.between_evidence.get(key, {})
-                return (text + f"\n  direct movement: {comparison.direct_movement_median} s"
-                        f"\n  via movement: {comparison.via_movement_sum} s"
-                        f"\n  intermediate dwell: {comparison.intermediate_dwell_median} s"
-                        f"\n  intermediate stop: {comparison.intermediate_stop_observed}"
-                        f"\n  stop-aware interpretation: {comparison.comparison_interpretation}"
-                        f"\n  raw between support: {between.get('raw_between_support', 'unresolved')}")
-
-            self.status.setText("Betrieblicher Graph aus original_schedule; <wege> dient nur als Raw-Evidenz.")
-            self.clusters.setPlainText("\n\n".join(
-                f"OperatingPoint {point.display_name}\n    " + "\n    ".join(point.raw_names)
-                for point in sorted(operating.nodes.values(), key=lambda item: item.display_name)
-            ) + "\n\n" + "\n".join(
-                f"Backbone: {edge.source} ↔ {edge.target}\n  evidence: {edge.evidence}"
-                for edge in corridor.backbone_edges.values()
-            ) + "\n\n" + "\n".join(
-                triangle_diagnostic(item)
-                for item in corridor.triangle_resolutions
-            ) + "\n\n" + "\n".join(
-                f"Triangle hypothesis: {' → '.join(item.path)}\n  middle: {item.middle}"
-                f"\n  same-service forward: {item.same_service_forward_count}"
-                f"\n  same-service reverse: {item.same_service_reverse_count}"
-                f"\n  pairwise support: {item.pairwise_support}"
-                f"\n  pairwise only: {item.pairwise_only_support}"
-                f"\n  travel time: {item.travel_time_interpretation}"
-                f"\n  raw support: {item.raw_between_support}"
-                f"\n  final score: {item.final_score:g}\n  selected: {item.selected}"
-                for item in corridor.triangle_hypotheses
-            ) + "\n\n" + "\n".join(
-                f"Terminal rejected: {item.node}\n  classification: {item.classification}"
-                f"\n  contradictions: {item.contradicting_terminal_evidence}"
-                for item in corridor.terminal_evidence.values() if item.contradicting_terminal_evidence
-            ) + "\n\n" + "\n".join(
-                f"Applied Between: {' → '.join(path)}\n  between: {path[1]}"
-                f"\n  final action: {path[0]}–{path[2]} skip; chain edges retained"
-                for path in corridor.applied_between_resolutions.values()
-            ) + "\n\n" + "\n".join(
-                f"Between constraint: {' → '.join(item.path)}\n  status: {item.status}"
-                f"\n  required: {item.required_edges}\n  forbidden direct: {item.forbidden_transitive_edge}"
-                f"\n  conflicts: {item.conflict_ids or 'none'}"
-                for item in corridor.between_constraints.values()
-            ) + "\n\n" + "\n".join(
-                f"External target: {item.source_node} / {item.original_target!r}"
-                f"\n  normalized candidate: {item.normalized_candidate}"
-                f"\n  resolution: {item.classification}\n  matched node: {item.matched_node or 'none'}"
-                f"\n  matched raw names: {item.matched_raw_names or 'none'}"
-                f"\n  raw connector: {item.raw_connector or 'none'}"
-                for item in corridor.external_target_resolutions.values()
-            ) + "\n\n" + "\n".join(
-                f"Node roles: {node}\n  topology role: {corridor.topology_roles[node]}"
-                f"\n  boundary role: {corridor.boundary_roles.get(node, 'none')}"
-                for node in sorted(corridor.topology_roles)
-            ) + "\n\n" + "\n".join(
-                f"Explicit external boundary: {item.route_axis_node} → {item.external_name}"
-                f"\n  raw schedule name: {item.raw_schedule_name}"
-                f"\n  raw connector: {item.raw_connector or 'none'}\n  confidence: {item.confidence}"
-                for item in corridor.explicit_external_boundaries.values()
-            ) + "\n\n" + "\n".join(
-                f"Deferred external boundary: {item.external_name}"
-                f"\n  possible sources: {item.possible_source_nodes}"
-                f"\n  trusted incoming/outgoing: {item.trusted_incoming_count}/{item.trusted_outgoing_count}"
-                f"\n  untrusted incoming/outgoing: {item.untrusted_incoming_count}/{item.untrusted_outgoing_count}"
-                f"\n  raw connector: {item.raw_connector or 'none'}\n  status: {item.status}"
-                f"\n  reason: {item.reason}"
-                for item in corridor.deferred_external_boundary_candidates.values()
-            ) + "\n\n" + "\n".join(
-                f"Hidden external boundary: {item.source_node} → {item.external_name}"
-                f"\n  outgoing: {item.outgoing_observations}\n  incoming: {item.incoming_observations}"
-                f"\n  raw connector: {item.raw_connector or 'not confirmed'}"
-                f"\n  directionality: {item.directionality}\n  confidence: {item.confidence}"
-                f"\n  evidence: {item.evidence}"
-                for item in corridor.hidden_boundary_evidence.values()
-            ) + "\n\n" + "\n".join(
-                f"Deferred endpoint: ZID {item['zid']} / {item['source_node']} ↔ {item['external_name']}"
-                f"\n  discovery source: {item['discovery_source']}"
-                f"\n  start completeness: {item['start_completeness']}"
-                f"\n  end completeness: {item['end_completeness']}"
-                f"\n  reason: {item['uncertainty_source']}"
-                for item in corridor.deferred_questions
-            ) + "\n\n" + "\n".join(
-                f"Topology question: {item.question_text}\n  status: {item.status}"
-                f"\n  options: {item.options}\n  evidence: {item.evidence_summary}"
-                for item in corridor.topology_questions.values()
-            ) + "\n\n" + "\n".join(
-                f"Synthetic junction: {item.display_name}\n  host edge: {' – '.join(item.host_edge)}"
-                f"\n  branch: {item.branch_node}\n  attachment: edge"
-                f"\n  topological fraction: {item.topological_fraction if item.topological_fraction is not None else 'unresolved'}"
-                f"\n  topological source: {item.topological_position_source}"
-                f"\n  display fraction: {item.display_fraction}"
-                f"\n  display source: {item.display_position_source}\n  evidence: {item.evidence}"
-                f"\n  topological confidence: {item.topological_confidence}"
-                f"\n  raw support: {item.raw_junction_node or 'not confirmed'}"
-                for item in corridor.synthetic_junctions.values()
-            ) + "\n\n" + "\n".join(
-                f"Role finalized: {node}\n  {change['pre_split_node_role']} → {change['final_node_role']}"
-                f"\n  reason: {change['role_change_reason']}"
-                for node, change in corridor.role_changes.items()
-            ) + "\n\n" + "\n".join(
-                f"Boundary evidence: {item.node}\n  starts: {item.schedule_start_count}"
-                f"\n  ends: {item.schedule_end_count}\n  through: {item.through_count}"
-                f"\n  raw outgoing corridors: {item.raw_outgoing_corridors}"
-                f"\n  supporting: {item.evidence}"
-                f"\n  contradictions: {item.contradicting_terminal_evidence}"
-                f"\n  final role: {corridor.node_roles.get(item.node, 'not visible')}"
-                for item in corridor.terminal_evidence.values()
-                if item.classification != "candidate" or item.contradicting_terminal_evidence
-            ) + "\n\n" + "\n".join(
-                f"Skip: {edge.source} → {edge.target}\n  covered by: {' → '.join(edge.covered_path)}"
-                for edge in corridor.edges.values() if edge.classification == "skip"
-            ) + "\n\n" + "\n".join(
-                f"Branch terminal: {item.terminal}\n  approach: {item.approach}\n  observations: {item.observations}"
-                for item in corridor.direction_changes
-            ))
-            if snapshot.aid is not None:
-                save_generated_graph(
-                    self.generated_directory, snapshot.aid, snapshot.facility_name or "unbekannt",
-                    raw_graph, builder.anchors, operational, platforms,
-                    schedule=schedule, operating=operating, corridor=corridor,
-                )
-        except (ValueError, StopIteration) as exc:
+            automatic, context = self._build_automatic(snapshot)
+            self._automatic_graph = automatic
+            if not self._identity_ready and self.aid is not None and self.facility_name:
+                self._load_or_initialize(automatic)
+            raw, builder, operational, platforms, schedule, operating, corridor = context
+            if self.aid is not None:
+                save_generated_graph(self.config_directory, self.aid, self.facility_name or "unbekannt",
+                                     raw, builder.anchors, operational, platforms, schedule=schedule,
+                                     operating=operating, corridor=corridor)
+        except (ValueError, StopIteration, json.JSONDecodeError, OSError) as exc:
             self.status.setText(f"Graphdaten konnten nicht ausgewertet werden: {exc}")
+
+    def _build_automatic(self, snapshot):
+        wege_xml = next((raw for raw in reversed(snapshot.infrastructure_documents)
+                         if raw.lstrip().startswith("<wege")), None)
+        raw = parse_wege(wege_xml) if wege_xml else RawInfrastructureGraph()
+        builder = InfrastructureGraphBuilder(raw); schedule = SchedulePointGraph.from_services(snapshot.services)
+        builder.resolve_names(schedule.nodes)
+        platform_xml = next((raw_xml for raw_xml in reversed(snapshot.infrastructure_documents)
+                             if raw_xml.lstrip().startswith("<bahnsteigliste")), None)
+        platforms = parse_bahnsteigliste(platform_xml) if platform_xml else ()
+        manual = {}
+        if snapshot.aid is not None:
+            manual_path = self.config_directory / "operating_points" / f"{snapshot.aid}.json"
+            if manual_path.exists():
+                candidate = json.loads(manual_path.read_text(encoding="utf-8"))
+                validation = validate_saved_stellwerk_identity(
+                    candidate, SavedStellwerkIdentity(snapshot.aid, snapshot.facility_name or "unbekannt"), manual_path)
+                if validation.status == "match": manual = candidate
+        operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
+        corridor = CorridorGraphBuilder(schedule, operating, raw).build(); operational = corridor.to_operational_graph()
+        return EditableTopologyGraph.from_operational_graph(operational), (raw, builder, operational, platforms,
+                                                                          schedule, operating, corridor)
+
+    def _load_or_initialize(self, automatic) -> None:
+        current = SavedStellwerkIdentity(self.aid, self.facility_name)
+        path = self.store.path_for(self.aid)
+        validation = (validate_saved_stellwerk_identity(self.store.load_path(path), current, path)
+                      if path.exists() else find_identity_candidate(self.store.directory, current,
+                                                                   self.store.ARTIFACT_TYPE))
+        data = None
+        if validation.status == "match": data = self.store.load_path(path)
+        elif validation.status in {"name_changed", "aid_changed", "legacy_identity_confirmation"}:
+            message = "Die gespeicherten Streckendaten besitzen eine abweichende Stellwerksidentität. Trotzdem laden?"
+            if QtWidgets.QMessageBox.question(self, "Gespeicherte Streckendaten prüfen", message,
+                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                    QtWidgets.QMessageBox.StandardButton.No) == QtWidgets.QMessageBox.StandardButton.Yes:
+                data = self.store.load_path(validation.path)
+                old_path = validation.path
+                graph = EditableTopologyGraph.from_dict(data); self.store.save(self.aid, self.facility_name, graph)
+                if old_path != path and old_path.exists(): archive_artifact(old_path)
+            elif validation.path and validation.path.exists(): archive_artifact(validation.path)
+        elif validation.status == "ambiguous":
+            QtWidgets.QMessageBox.warning(self, "Mehrdeutige Stellwerkdateien",
+                                          "Mehrere Dateien besitzen denselben Stellwerknamen; keine wird geladen.")
+        elif validation.status == "different_installation" and validation.path:
+            QtWidgets.QMessageBox.warning(
+                self, "Anderes Stellwerk", "Die gespeicherte Streckendatei gehört zu einem anderen Stellwerk. "
+                "Sie wird archiviert und nicht geladen.")
+            if validation.path.exists(): archive_artifact(validation.path)
+        self.graph = EditableTopologyGraph.from_dict(data) if data else automatic
+        self._identity_ready = True; self._dirty = data is None
+        self._rebuild_scene(); self._refresh_routes(); self._refresh_instances()
+        if data is None: self.flush_pending_save()
+        self.status.setText("Finaler gespeicherter Graph geladen." if data else "Initialgraph automatisch erzeugt und gespeichert.")
+
+    def _rebuild_scene(self) -> None:
+        self._loading = True; self.scene.clear(); self.node_items = {}; self.edge_items = {}
+        for node in self.graph.nodes.values():
+            item = TopologyNodeItem(node, self.graph); item.moved.connect(self._node_moved)
+            self.scene.addItem(item); self.node_items[node.id] = item
+        for edge in self.graph.edges.values():
+            if edge.node_a not in self.node_items or edge.node_b not in self.node_items: continue
+            item = TopologyEdgeItem(edge.id, self.node_items[edge.node_a], self.node_items[edge.node_b])
+            self.scene.addItem(item); self.edge_items[edge.id] = item
+            self.node_items[edge.node_a].edges.add(item); self.node_items[edge.node_b].edges.add(item)
+        self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-120, -120, 120, 120)); self._loading = False
+
+    def _mark_dirty(self) -> None:
+        if self._loading: return
+        self._dirty = True; self.autosave_timer.start(); self.status.setText("Ungespeicherte Änderungen")
+
+    def is_dirty(self) -> bool: return self._dirty
+
+    def flush_pending_save(self) -> None:
+        if not self._dirty or not self._identity_ready or self.aid is None or not self.facility_name: return
+        self.store.save(self.aid, self.facility_name, self.graph)
+        self._dirty = False; self.autosave_timer.stop(); self.status.setText("Gespeichert")
+
+    def _node_moved(self, node_id, old, new) -> None:
+        self.undo_stack.push(MoveNodeCommand(self, node_id, old, new)); self._mark_dirty()
+
+    def _selection_changed(self) -> None:
+        nodes = [item for item in self.scene.selectedItems() if isinstance(item, TopologyNodeItem)]
+        self._loading = True
+        if len(nodes) == 1:
+            node = self.graph.nodes[nodes[0].node_id]; self.inspector_name.setText(node.display_name)
+            self.inspector_type.setCurrentIndex(self.inspector_type.findData(node.node_type))
+            self.inspector_connections.setText(str(self.graph.degree(node.id))); self.inspector_id.setText(node.id)
+            self.inspector_source.setText(node.source)
+            warning = self.graph.node_validation(node.id)
+            self.inspector_validation.setText("⚠ " + warning if warning else "✓ gültig")
+        else:
+            self.inspector_name.clear(); self.inspector_connections.setText("–"); self.inspector_id.setText("–")
+            self.inspector_source.setText("–"); self.inspector_validation.setText(
+                f"{len(nodes)} Betriebsstellen ausgewählt" if nodes else "Keine Auswahl")
+        self._loading = False
+
+    def _edit_node(self) -> None:
+        if self._loading: return
+        nodes = [item for item in self.scene.selectedItems() if isinstance(item, TopologyNodeItem)]
+        if len(nodes) != 1: return
+        node = self.graph.nodes[nodes[0].node_id]; name = self.inspector_name.text().strip()
+        if name: node.display_name = name
+        node.node_type = self.inspector_type.currentData(); nodes[0].setToolTip(node.display_name); nodes[0].update()
+        self._mark_dirty(); self._selection_changed(); self._refresh_routes(); self._refresh_instances()
+
+    def _node_activated(self, node_id: str) -> None:
+        if self._route_path is not None:
+            if not self._route_path:
+                if self.graph.nodes[node_id].node_type not in {"entry", "junction"}:
+                    self.status.setText("Startpunkt muss Einfahrt oder Abzweigbetriebsstelle sein."); return
+            elif node_id == self._route_path[-1]: return
+            elif self.graph.edge_between(self._route_path[-1], node_id) is None:
+                self.status.setText("Der nächste Punkt muss direkt verbunden sein."); return
+            elif node_id in self._route_path:
+                self.status.setText("Ein Pfad darf dieselbe Betriebsstelle nicht mehrfach enthalten."); return
+            self._route_path.append(node_id); self.finish_route.setEnabled(
+                len(self._route_path) >= 2 and self.graph.nodes[node_id].node_type in {"entry", "junction"})
+            self.route_path_label.setText(" → ".join(self.graph.nodes[item].display_name for item in self._route_path))
+            self._highlight_path(self._route_path); return
+        if self.connect_button.isChecked():
+            selected = self.connect_button.property("first_node")
+            if selected is None:
+                self.connect_button.setProperty("first_node", node_id); self.status.setText("Zweite Betriebsstelle anklicken.")
+            else:
+                try: self.graph.add_edge(selected, node_id); self._mark_dirty(); self._rebuild_scene()
+                except ValueError as exc: self.status.setText(str(exc))
+                self.connect_button.setChecked(False); self.connect_button.setProperty("first_node", None)
+
+    def _start_connecting(self, checked) -> None:
+        self.connect_button.setProperty("first_node", None)
+        self.status.setText("Erste Betriebsstelle anklicken." if checked else "Verbinden abgebrochen.")
+
+    def _add_node(self) -> None:
+        dialog = QtWidgets.QDialog(self); dialog.setWindowTitle("Betriebsstelle hinzufügen")
+        form = QtWidgets.QFormLayout(dialog); name = QtWidgets.QLineEdit(); kind = QtWidgets.QComboBox()
+        for value, label in TYPE_LABELS.items(): kind.addItem(label, value)
+        form.addRow("Name:", name); form.addRow("Typ:", kind)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                             QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
+        if dialog.exec() and name.text().strip():
+            center = self.view.mapToScene(self.view.viewport().rect().center())
+            self.graph.add_node(name.text().strip(), kind.currentData(), position=(center.x(), center.y()))
+            self._mark_dirty(); self._rebuild_scene()
+
+    def _delete_selected(self) -> None:
+        edges = [item.edge_id for item in self.scene.selectedItems() if isinstance(item, TopologyEdgeItem)]
+        nodes = [item.node_id for item in self.scene.selectedItems() if isinstance(item, TopologyNodeItem)]
+        affected = {route.route_id for node_id in nodes for route in self.graph.routes_using_node(node_id)}
+        if affected:
+            answer = QtWidgets.QMessageBox.question(
+                self, "Betriebsstelle wird verwendet",
+                f"Diese Auswahl wird von {len(affected)} definierten Strecken verwendet. Trotzdem löschen und "
+                "betroffene Strecken ungültig markieren?",
+                QtWidgets.QMessageBox.StandardButton.Cancel | QtWidgets.QMessageBox.StandardButton.Yes,
+                QtWidgets.QMessageBox.StandardButton.Cancel)
+            if answer != QtWidgets.QMessageBox.StandardButton.Yes: return
+        for edge_id in edges:
+            if edge_id in self.graph.edges: self.graph.delete_edge(edge_id)
+        for node_id in nodes:
+            if node_id in self.graph.nodes: self.graph.delete_node(node_id)
+        if edges or nodes:
+            self._mark_dirty(); self._rebuild_scene(); self._refresh_routes()
+
+    def _auto_layout(self) -> None:
+        self.graph.auto_layout(); self._mark_dirty(); self._rebuild_scene(); self.view.fitInView(
+            self.scene.itemsBoundingRect(), QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+
+    def _regenerate_graph(self) -> None:
+        if self._automatic_graph is None: return
+        box = QtWidgets.QMessageBox(self); box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        box.setWindowTitle("Graph automatisch neu erzeugen")
+        box.setText("Der gespeicherte Streckengraph wird durch eine neue automatische Erkennung ersetzt. "
+                    "Manuelle Änderungen gehen verloren.")
+        regenerate = box.addButton("Graph neu erzeugen", QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Abbrechen", QtWidgets.QMessageBox.ButtonRole.RejectRole); box.exec()
+        if box.clickedButton() != regenerate: return
+        self.flush_pending_save(); path = self.store.path_for(self.aid)
+        if path.exists(): archive_artifact(path)
+        self.graph = self._automatic_graph; self.undo_stack.clear(); self._dirty = True
+        self._rebuild_scene(); self._refresh_routes(); self._refresh_instances(); self.flush_pending_save()
+
+    def _start_route(self) -> None:
+        self._route_path = []; self.finish_route.setEnabled(False); self.route_path_label.setText(
+            "Startpunkt und anschließend den gewünschten Pfad anklicken.")
+        self.status.setText("Streckenpfad auswählen.")
+
+    def _finish_route(self) -> None:
+        if not self._route_path: return
+        default = " – ".join((self.graph.nodes[self._route_path[0]].display_name,
+                              self.graph.nodes[self._route_path[-1]].display_name))
+        name, accepted = QtWidgets.QInputDialog.getText(self, "Strecke abschließen", "Name:", text=default)
+        if accepted and name.strip():
+            try: self.graph.add_route(name.strip(), self._route_path); self._mark_dirty()
+            except ValueError as exc: QtWidgets.QMessageBox.warning(self, "Ungültiger Streckenpfad", str(exc)); return
+        self._route_path = None; self.finish_route.setEnabled(False); self._highlight_path([])
+        self._refresh_routes(); self._refresh_instances()
+
+    def _refresh_routes(self) -> None:
+        current = self.route_list.currentItem().data(ID_ROLE) if self.route_list.currentItem() else None
+        self.route_list.blockSignals(True); self.route_list.clear()
+        for route in self.graph.defined_routes.values():
+            errors = self.graph.route_validation(route)
+            item = QtWidgets.QListWidgetItem(("⚠ " if errors else "") + route.display_name)
+            item.setData(ID_ROLE, route.route_id); item.setToolTip("\n".join(errors)); self.route_list.addItem(item)
+            if route.route_id == current: self.route_list.setCurrentItem(item)
+        self.route_list.blockSignals(False)
+
+    def _route_selected(self, current, previous=None) -> None:
+        if not current: self._highlight_path([]); self.route_path_label.setText("Keine Strecke ausgewählt"); return
+        route = self.graph.defined_routes[current.data(ID_ROLE)]
+        self.route_path_label.setText(" → ".join(self.graph.nodes[node].display_name if node in self.graph.nodes else node
+                                                for node in route.ordered_node_ids))
+        self._highlight_path(route.ordered_node_ids)
+
+    def _highlight_path(self, path) -> None:
+        nodes = set(path); pairs = {frozenset(pair) for pair in zip(path, path[1:])}
+        for node_id, item in self.node_items.items(): item.setData(1, node_id in nodes); item.update()
+        for edge in self.edge_items.values():
+            model = self.graph.edges[edge.edge_id]; edge.setData(1, frozenset((model.node_a, model.node_b)) in pairs); edge.update()
+
+    def _rename_route(self) -> None:
+        item = self.route_list.currentItem()
+        if not item: return
+        route = self.graph.defined_routes[item.data(ID_ROLE)]
+        name, accepted = QtWidgets.QInputDialog.getText(self, "Strecke umbenennen", "Name:", text=route.display_name)
+        if accepted and name.strip(): route.display_name = name.strip(); self._mark_dirty(); self._refresh_routes(); self._refresh_instances()
+
+    def _delete_route(self) -> None:
+        item = self.route_list.currentItem()
+        if item: self.graph.delete_route(item.data(ID_ROLE)); self._mark_dirty(); self._refresh_routes(); self._refresh_instances()
+
+    def _add_instance(self) -> None:
+        if not self.graph.defined_routes:
+            QtWidgets.QMessageBox.information(self, "Keine Strecken", "Zuerst muss eine Strecke definiert werden."); return
+        route_id = next(iter(self.graph.defined_routes)); self.graph.add_bildfahrplan_instance(route_id)
+        self._mark_dirty(); self._refresh_instances()
+
+    def _refresh_instances(self) -> None:
+        self.bf_list.blockSignals(True); self.bf_list.clear()
+        for instance in self.graph.bildfahrplan_routes:
+            item = QtWidgets.QListWidgetItem(); item.setData(ID_ROLE, instance.instance_id); item.setSizeHint(QtCore.QSize(300, 38))
+            self.bf_list.addItem(item); row = QtWidgets.QWidget(); layout = QtWidgets.QHBoxLayout(row)
+            layout.setContentsMargins(2, 1, 2, 1); layout.addWidget(QtWidgets.QLabel("≡"))
+            routes = QtWidgets.QComboBox()
+            for route in self.graph.defined_routes.values(): routes.addItem(route.display_name, route.route_id)
+            routes.setCurrentIndex(routes.findData(instance.route_id)); routes.currentIndexChanged.connect(
+                lambda _index, iid=instance.instance_id, combo=routes: self._instance_route_changed(iid, combo.currentData()))
+            endpoints = QtWidgets.QComboBox(); self._fill_endpoint_combo(endpoints, instance)
+            endpoints.currentIndexChanged.connect(lambda _index, iid=instance.instance_id, combo=endpoints:
+                                                  self._instance_endpoint_changed(iid, combo.currentData()))
+            remove = QtWidgets.QPushButton("×"); remove.setMaximumWidth(30)
+            remove.clicked.connect(lambda _checked=False, iid=instance.instance_id: self._remove_instance(iid))
+            layout.addWidget(routes, 3); layout.addWidget(endpoints, 2); layout.addWidget(remove)
+            self.bf_list.setItemWidget(item, row)
+        self.bf_list.blockSignals(False)
+
+    def _fill_endpoint_combo(self, combo, instance) -> None:
+        combo.clear(); route = self.graph.defined_routes.get(instance.route_id)
+        if not route: return
+        for node_id in (route.endpoint_a, route.endpoint_b):
+            combo.addItem(self.graph.nodes[node_id].display_name if node_id in self.graph.nodes else node_id, node_id)
+        combo.setCurrentIndex(combo.findData(instance.left_endpoint))
+
+    def _instance(self, instance_id):
+        return next(item for item in self.graph.bildfahrplan_routes if item.instance_id == instance_id)
+
+    def _instance_route_changed(self, instance_id, route_id) -> None:
+        if self._loading or route_id is None: return
+        instance = self._instance(instance_id); instance.route_id = route_id
+        instance.left_endpoint = self.graph.defined_routes[route_id].endpoint_a; self._mark_dirty(); self._refresh_instances()
+
+    def _instance_endpoint_changed(self, instance_id, endpoint) -> None:
+        if endpoint is not None: self._instance(instance_id).left_endpoint = endpoint; self._mark_dirty()
+
+    def _remove_instance(self, instance_id) -> None:
+        self.graph.bildfahrplan_routes = [item for item in self.graph.bildfahrplan_routes if item.instance_id != instance_id]
+        self.graph.normalize_instance_order(); self._mark_dirty(); self._refresh_instances()
+
+    def _instances_reordered(self, parent, start, end, destination, row) -> None:
+        ids = [self.bf_list.item(index).data(ID_ROLE) for index in range(self.bf_list.count())]
+        lookup = {item.instance_id: item for item in self.graph.bildfahrplan_routes}
+        self.graph.bildfahrplan_routes = [lookup[item_id] for item_id in ids]
+        self.graph.normalize_instance_order(); self._mark_dirty()
+
+    def _search(self, text: str) -> None:
+        needle = text.casefold().strip()
+        for node_id, item in self.node_items.items(): item.setVisible(not needle or needle in self.graph.nodes[node_id].display_name.casefold())
