@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
+from hashlib import sha1
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
+from .model import RawInfrastructureGraph
 from .schedule_graph import OperatingPointGraph, station_key
 
 _NATURAL_PART = re.compile(r"(\d+)")
@@ -33,6 +36,77 @@ def related_selection(raw_names: Iterable[str], selected: Iterable[str]) -> set[
             (include_unprefixed and is_unprefixed_numeric(name))}
 
 
+ASSIGNABLE_KINDS = {"platform_or_haltpunkt", "schedule_point", "entry"}
+TARGET_KINDS = {"operating_point", "entry_point"}
+
+
+@dataclass(frozen=True)
+class EntryInfrastructureElement:
+    node_id: str
+    element_type: str
+    enr: str | None
+    raw_name: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class EntryPoint:
+    id: str
+    display_name: str
+    source: str = "wege"
+    infrastructure_elements: tuple[EntryInfrastructureElement, ...] = ()
+    evidence: tuple[str, ...] = ("wege_type_6_or_7",)
+    boundary_evidence: tuple[dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class AssignableRawItem:
+    raw_name: str
+    kind: str
+    evidence: tuple[str, ...] = ()
+
+
+class InvalidAssignment(ValueError):
+    def __init__(self, raw_names: Iterable[str]) -> None:
+        self.raw_names = tuple(raw_names)
+        super().__init__(f"{len(self.raw_names)} ausgewählte Elemente können diesem Ziel nicht zugeordnet werden.")
+
+
+def _entry_key(name: str) -> str:
+    return unicodedata.normalize("NFC", name).strip().casefold()
+
+
+def entry_point_id(name: str) -> str:
+    key = _entry_key(name)
+    slug = re.sub(r"[^a-z0-9]+", "-", key).strip("-") or "extern"
+    return f"entry:wege:{slug}:{sha1(key.encode('utf-8')).hexdigest()[:10]}"
+
+
+def entry_points_from_raw_graph(raw: RawInfrastructureGraph) -> dict[str, EntryPoint]:
+    """Projiziert type-6/7-Shapes verlustfrei auf deduplizierte äußere Ziele."""
+    grouped: dict[str, list] = {}
+    labels: dict[str, str] = {}
+    for node in raw.nodes.values():
+        if str(node.element_type) not in {"6", "7"} or not node.raw_name:
+            continue
+        key = _entry_key(node.raw_name)
+        grouped.setdefault(key, []).append(node); labels.setdefault(key, node.raw_name)
+    result = {}
+    for key, nodes in sorted(grouped.items()):
+        label = labels[key]; identifier = entry_point_id(label)
+        elements = tuple(EntryInfrastructureElement(
+            node.id, str(node.element_type), node.enr, node.raw_name or "", dict(node.metadata))
+            for node in sorted(nodes, key=lambda item: (item.enr or "", item.id)))
+        result[identifier] = EntryPoint(identifier, label, infrastructure_elements=elements)
+    return result
+
+
+def can_assign_kind(assignable_kind: str, target_kind: str) -> bool:
+    if assignable_kind not in ASSIGNABLE_KINDS or target_kind not in TARGET_KINDS:
+        return False
+    return target_kind == "entry_point" or assignable_kind != "entry"
+
+
 @dataclass
 class EditableOperatingPoint:
     id: str
@@ -52,39 +126,77 @@ class OperatingPointAssignments:
     explicitly_unassigned: set[str] = field(default_factory=set)
     manual_point_ids: set[str] = field(default_factory=set)
     all_raw_names: set[str] = field(default_factory=set)
+    entry_points: dict[str, EntryPoint] = field(default_factory=dict)
+    raw_items: dict[str, AssignableRawItem] = field(default_factory=dict)
     _automatic_members: dict[str, tuple[str, ...]] = field(default_factory=dict, repr=False)
 
     def rebuild(self, automatic: OperatingPointGraph, raw_names: Iterable[str],
                 haltpunkt_names: Iterable[str], config: dict | None = None,
-                *, respect_unassigned: bool = True) -> None:
+                *, respect_unassigned: bool = True,
+                entry_points: dict[str, EntryPoint] | None = None,
+                raw_item_kinds: dict[str, str] | None = None,
+                automatic_entry_assignments: dict[str, str] | None = None) -> None:
         """Wendet Automatik neu an; persistierte Nutzerentscheidungen gewinnen immer."""
         config = config or {}
         snapshot = config.get("editor_snapshot", {})
         self.all_raw_names = {name for name in raw_names if name} | set(snapshot.get("raw_names", ()))
         haltepunkte = set(haltpunkt_names)
+        configured_kinds = dict(config.get("raw_item_kinds", {}))
+        configured_kinds.update({name: values.get("kind", "schedule_point")
+                                 for name, values in snapshot.get("raw_items", {}).items()})
+        configured_kinds.update(raw_item_kinds or {})
+        kind_evidence = {"entry": ("confirmed_boundary",),
+                         "platform_or_haltpunkt": ("bahnsteigliste",),
+                         "schedule_point": ("original_schedule",)}
+        self.raw_items = {}
+        for name in self.all_raw_names:
+            kind = configured_kinds.get(name, "schedule_point")
+            evidence = tuple(snapshot.get("raw_items", {}).get(name, {}).get(
+                "evidence", kind_evidence.get(kind, ())))
+            self.raw_items[name] = AssignableRawItem(name, kind, evidence)
+        self.entry_points = dict(entry_points or {})
+        configured_entries = dict(config.get("entry_points", {}))
+        configured_entries.update(snapshot.get("entry_points", {}))
+        for point_id, values in configured_entries.items():
+            if point_id not in self.entry_points:
+                elements = tuple(EntryInfrastructureElement(**item)
+                                 for item in values.get("infrastructure_elements", ()))
+                self.entry_points[point_id] = EntryPoint(
+                    point_id, values.get("display_name", point_id), values.get("source", "snapshot"),
+                    elements, tuple(values.get("evidence", ())), tuple(values.get("boundary_evidence", ())))
+        entry_names = {name for name, item in self.raw_items.items() if item.kind == "entry"}
         self.points = {
             point.id: EditableOperatingPoint(point.id, point.display_name, station_key(point.display_name), False)
             for point in automatic.nodes.values()
+            if not point.raw_names or any(name not in entry_names for name in point.raw_names)
         }
         self._automatic_members = {point.id: point.raw_names for point in automatic.nodes.values()}
         self.assignments = {}
         self.sources = {}
         for raw_name, point_id in automatic.raw_to_operating_point.items():
-            if raw_name not in self.all_raw_names:
+            if raw_name not in self.all_raw_names or self.raw_items[raw_name].kind == "entry" or point_id not in self.points:
                 continue
             self.assignments[raw_name] = point_id
             self.sources[raw_name] = "self_haltpunkt" if raw_name in haltepunkte and (
                 automatic.nodes[point_id].raw_names == (raw_name,)) else "automatic"
 
         self._extend_by_station_key(haltepunkte)
+        for raw_name, point_id in (automatic_entry_assignments or {}).items():
+            if raw_name in self.all_raw_names and point_id in self.entry_points:
+                self.assignments[raw_name] = point_id; self.sources[raw_name] = "self_entry"
 
         for point_id, values in snapshot.get("operating_points", {}).items():
+            automatic_point = automatic.nodes.get(point_id)
+            if (automatic_point and automatic_point.raw_names
+                    and all(name in entry_names for name in automatic_point.raw_names)
+                    and values.get("source") != "manual"):
+                continue
             self.points.setdefault(point_id, EditableOperatingPoint(
                 point_id, values.get("display_name", point_id), values.get("station_key"),
                 values.get("source") == "manual"))
         for raw_name, values in snapshot.get("assignments", {}).items():
-            if raw_name not in self.assignments and raw_name in self.all_raw_names and values.get("operating_point") in self.points:
-                self.assignments[raw_name] = values["operating_point"]
+            if raw_name not in self.assignments and raw_name in self.all_raw_names and values.get("target", values.get("operating_point")) in (self.points | self.entry_points):
+                self.assignments[raw_name] = values.get("target", values.get("operating_point"))
                 self.sources[raw_name] = values.get("source", "automatic")
 
         point_data = config.get("operating_points", {})
@@ -105,30 +217,34 @@ class OperatingPointAssignments:
         assignment_sources = config.get("assignment_sources", {})
         persisted = {
             raw_name: point_id for raw_name, point_id in config.get("assignments", {}).items()
-            if assignment_sources.get(raw_name, "manual") in {"manual", "imported", "manual_config"}
+            if assignment_sources.get(raw_name, "manual") in {"manual", "manual_entry", "imported", "manual_config"}
         }
         # Rueckwaertskompatibilitaet mit den bisherigen raw_names-Clustern.
         for point_id, values in point_data.items():
             source = values.get("assignment_source", "manual")
             for raw_name in values.get("raw_names", values.get("members", ())):
                 raw_source = assignment_sources.get(raw_name, source)
-                if raw_source in {"manual", "imported", "manual_config"}:
+                if raw_source in {"manual", "manual_entry", "imported", "manual_config"}:
                     persisted.setdefault(raw_name, point_id)
         self.manual_assignments = {
             raw_name: point_id for raw_name, point_id in persisted.items()
-            if raw_name in self.all_raw_names and point_id in self.points
+            if raw_name in self.all_raw_names and point_id in (self.points | self.entry_points)
         }
         self.explicitly_unassigned = (set(config.get("unassigned", ())) & self.all_raw_names
                                       if respect_unassigned else set())
         for raw_name in self.explicitly_unassigned:
             self.assignments.pop(raw_name, None); self.sources.pop(raw_name, None)
         for raw_name, point_id in self.manual_assignments.items():
-            self.assignments[raw_name] = point_id; self.sources[raw_name] = "manual"
+            self.assignments[raw_name] = point_id
+            self.sources[raw_name] = assignment_sources.get(
+                raw_name, "manual_entry" if point_id in self.entry_points else "manual")
 
     def _extend_by_station_key(self, haltpunkt_names: set[str]) -> None:
         """Erweitert nur die Editor-Ortszuordnung, nicht den Topologiegraphen."""
         names_by_key: dict[str, set[str]] = {}
         for raw_name in self.all_raw_names:
+            if self.raw_items.get(raw_name, AssignableRawItem(raw_name, "schedule_point")).kind == "entry":
+                continue
             key = station_key(raw_name)
             if key and raw_name not in haltpunkt_names:
                 names_by_key.setdefault(key, set()).add(raw_name)
@@ -157,12 +273,27 @@ class OperatingPointAssignments:
     def unassigned(self) -> set[str]:
         return self.all_raw_names - set(self.assignments)
 
+    def target_kind(self, target_id: str) -> str:
+        if target_id in self.points:
+            return "operating_point"
+        if target_id in self.entry_points:
+            return "entry_point"
+        raise KeyError(target_id)
+
+    def can_assign(self, raw_name: str, target_id: str) -> bool:
+        item = self.raw_items.get(raw_name)
+        return bool(item and can_assign_kind(item.kind, self.target_kind(target_id)))
+
     def assign(self, raw_names: Iterable[str], point_id: str) -> None:
-        if point_id not in self.points:
-            raise KeyError(point_id)
-        for raw_name in set(raw_names) & self.all_raw_names:
+        target_kind = self.target_kind(point_id)
+        selected = set(raw_names) & self.all_raw_names
+        invalid = sorted((name for name in selected if not self.can_assign(name, point_id)), key=natural_sort_key)
+        if invalid:
+            raise InvalidAssignment(invalid)
+        source = "manual_entry" if target_kind == "entry_point" else "manual"
+        for raw_name in selected:
             self.assignments[raw_name] = point_id
-            self.sources[raw_name] = "manual"
+            self.sources[raw_name] = source
             self.manual_assignments[raw_name] = point_id
             self.explicitly_unassigned.discard(raw_name)
 
@@ -175,7 +306,7 @@ class OperatingPointAssignments:
     def clear_editable_assignments(self) -> None:
         """Loest alles ausser den fachlich belegten Self-Haltepunkten."""
         for raw_name in tuple(self.assignments):
-            if self.sources.get(raw_name) != "self_haltpunkt":
+            if self.sources.get(raw_name) not in {"self_haltpunkt", "self_entry"}:
                 self.remove_assignments((raw_name,))
 
     def add_point(self, display_name: str, key: str | None = None) -> str:
@@ -201,9 +332,20 @@ class OperatingPointAssignments:
         self.points.pop(point_id); self.manual_point_ids.discard(point_id)
 
     def to_config(self) -> dict:
-        configured_ids = self.manual_point_ids | set(self.manual_assignments.values())
+        configured_ids = self.manual_point_ids | (set(self.manual_assignments.values()) & set(self.points))
         result = {
-            "schema_version": 2,
+            "schema_version": 3,
+            "entry_points": {
+                point_id: {"display_name": point.display_name, "source": point.source,
+                           "infrastructure_elements": [
+                               {"node_id": item.node_id, "element_type": item.element_type,
+                                "enr": item.enr, "raw_name": item.raw_name, "metadata": item.metadata}
+                               for item in point.infrastructure_elements],
+                           "evidence": list(point.evidence),
+                           "boundary_evidence": list(point.boundary_evidence)}
+                for point_id, point in sorted(self.entry_points.items())
+            },
+            "raw_item_kinds": {name: item.kind for name, item in sorted(self.raw_items.items())},
             "operating_points": {
                 point_id: {"display_name": self.points[point_id].display_name,
                            "station_key": self.points[point_id].station_key,
@@ -214,18 +356,23 @@ class OperatingPointAssignments:
             },
             "manual_point_ids": sorted(self.manual_point_ids),
             "assignments": dict(sorted(self.manual_assignments.items(), key=lambda item: natural_sort_key(item[0]))),
-            "assignment_sources": {name: "manual" for name in sorted(self.manual_assignments, key=natural_sort_key)},
+            "assignment_sources": {name: self.sources.get(name, "manual")
+                                   for name in sorted(self.manual_assignments, key=natural_sort_key)},
             "unassigned": sorted(self.explicitly_unassigned, key=natural_sort_key),
         }
         result["editor_snapshot"] = {
             "raw_names": sorted(self.all_raw_names, key=natural_sort_key),
+            "raw_items": {name: {"kind": item.kind, "evidence": list(item.evidence)}
+                          for name, item in sorted(self.raw_items.items())},
+            "entry_points": result["entry_points"],
             "operating_points": {
                 point_id: {"display_name": point.display_name, "station_key": point.station_key,
                            "source": "manual" if point_id in self.manual_point_ids else "automatic"}
                 for point_id, point in sorted(self.points.items())
             },
             "assignments": {
-                name: {"operating_point": self.assignments.get(name),
+                name: {"target": self.assignments.get(name),
+                       "operating_point": self.assignments.get(name),
                        "source": self.sources.get(
                            name, "unassigned_manual_tombstone" if name in self.explicitly_unassigned
                            else "unassigned")}
@@ -252,7 +399,7 @@ class OperatingPointConfigStore:
 
     def save(self, aid: int, stellwerk_name: str, model: OperatingPointAssignments) -> Path:
         from .artifact_identity import SavedStellwerkIdentity, artifact_metadata, atomic_write_json
-        payload = {**artifact_metadata(SavedStellwerkIdentity(aid, stellwerk_name), "operating_points", 2),
+        payload = {**artifact_metadata(SavedStellwerkIdentity(aid, stellwerk_name), "operating_points", 3),
                    **model.to_config()}
-        payload["schema_version"] = 2
+        payload["schema_version"] = 3
         return atomic_write_json(self.path_for(aid), payload)

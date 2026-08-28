@@ -133,6 +133,24 @@ Bearbeitung automatisch sowie beim Verlassen des Tabs und beim Beenden sofort
 atomar gespeichert. Automatische Snapshot-Einträge bleiben automatisch; nur
 der getrennte Override-Bereich ist autoritativ manuell.
 
+Äußere Ein-/Ausfahrten und Anschlüsse werden im Ortszuordnungseditor als eigene
+logische Ziele behandelt. Primäre Quelle sind die verlustfrei geparsten
+`<wege>`-Shapes der Typen 6 und 7; mehrere Shapes und ENRs mit demselben Namen
+werden zu einem sichtbaren EntryPoint zusammengefasst, bleiben intern aber als
+einzelne Infrastrukturelemente erhalten. Vorhandene bestätigte Boundary-Evidenz
+ergänzt diese Ziele und kann eindeutige Einfahrts-Fahrplanpunkte als
+`self_entry` zuordnen. Ungeklärte Boundary-Fälle werden nicht geraten.
+
+Die linke Spalte trennt Betriebsstellen und Einfahrten in einem verschiebbaren
+2:1-Splitter. Konkrete STS-Rawnamen bleiben davon getrennte Arbeitsobjekte in
+„Zugeordnet“ beziehungsweise „Nicht zugeordnet“. Entry-Rawnamen sind dezent rot,
+Bahnsteig-/Haltepunkt- und normale Schedule-Rawnamen dezent blau markiert. Eine
+zentrale, GUI-unabhängige Validierung verhindert Entry-Zuordnungen zu normalen
+Betriebsstellen; EntryPoints akzeptieren daneben auch bewusst zugeordnete
+Schedule- und Platform-Rawnamen. Das AID-spezifische Persistenzschema 3 erhält
+EntryPoints, alle Type-6/7-Elemente, Raw-Arten und Assignment-Quellen und liest
+ältere Schema-1/2-Dateien weiterhin konservativ.
+
 Stellwerksbezogene JSON-Artefakte tragen gemeinsame Metadaten mit AID,
 Stellwerkname, Artefakttyp und Speicherzeit. Beim Laden werden AID und Name
 gemeinsam geprüft. Namensänderungen, mögliche AID-Wechsel und Legacy-Dateien

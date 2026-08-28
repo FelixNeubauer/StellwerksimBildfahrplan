@@ -7,9 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from infrastructure import OperatingPointResolver, SchedulePointGraph, parse_bahnsteigliste
+from infrastructure import OperatingPointResolver, SchedulePointGraph, parse_bahnsteigliste, parse_wege
 from infrastructure.operating_point_assignments import (
-    OperatingPointAssignments, OperatingPointConfigStore, natural_sort_key, related_selection,
+    InvalidAssignment, OperatingPointAssignments, OperatingPointConfigStore, can_assign_kind,
+    entry_points_from_raw_graph, natural_sort_key, related_selection,
 )
 
 
@@ -34,6 +35,121 @@ def automatic(*names, platforms=()):
 
 
 class AssignmentLogicTests(unittest.TestCase):
+    def test_type_six_and_seven_create_one_lossless_entry_point(self):
+        raw = parse_wege("""<wege>
+            <shape type='6' name='Friedrichshafen' enr='101' extra='in'/>
+            <shape type='6' name='Friedrichshafen' enr='103' extra='second'/>
+            <shape type='7' name='Friedrichshafen' enr='102' extra='out'/>
+        </wege>""")
+        entries = entry_points_from_raw_graph(raw)
+        self.assertEqual(len(entries), 1)
+        point = next(iter(entries.values()))
+        self.assertEqual(point.display_name, "Friedrichshafen")
+        self.assertEqual({item.enr for item in point.infrastructure_elements}, {"101", "102", "103"})
+        self.assertEqual({item.element_type for item in point.infrastructure_elements}, {"6", "7"})
+        self.assertEqual({item.metadata["extra"] for item in point.infrastructure_elements},
+                         {"in", "second", "out"})
+
+    def test_different_external_names_create_different_entry_points(self):
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='Friedrichshafen' enr='1'/>"
+            "<shape type='7' name='Ulm Hbf' enr='2'/></wege>"))
+        self.assertEqual({item.display_name for item in entries.values()}, {"Friedrichshafen", "Ulm Hbf"})
+
+    def test_assignment_kind_matrix(self):
+        self.assertTrue(can_assign_kind("platform_or_haltpunkt", "operating_point"))
+        self.assertTrue(can_assign_kind("schedule_point", "operating_point"))
+        self.assertFalse(can_assign_kind("entry", "operating_point"))
+        for kind in ("platform_or_haltpunkt", "schedule_point", "entry"):
+            self.assertTrue(can_assign_kind(kind, "entry_point"))
+
+    def test_entry_raw_is_not_operating_point_and_self_entry_is_created(self):
+        graph = automatic("Einfahrt Friedrichshafen", "TAT 1")
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='Friedrichshafen' enr='1'/></wege>"))
+        entry_id = next(iter(entries))
+        model = OperatingPointAssignments()
+        model.rebuild(
+            graph, ("Einfahrt Friedrichshafen", "TAT 1"), (), entry_points=entries,
+            raw_item_kinds={"Einfahrt Friedrichshafen": "entry", "TAT 1": "schedule_point"},
+            automatic_entry_assignments={"Einfahrt Friedrichshafen": entry_id})
+        self.assertNotIn("schedule:Einfahrt Friedrichshafen", model.points)
+        self.assertEqual(model.assignments["Einfahrt Friedrichshafen"], entry_id)
+        self.assertEqual(model.sources["Einfahrt Friedrichshafen"], "self_entry")
+
+    def test_assignment_is_atomic_when_entry_is_dropped_on_operating_point(self):
+        graph = automatic("TAT 1", "Einfahrt Friedrichshafen")
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='Friedrichshafen' enr='1'/></wege>"))
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TAT 1", "Einfahrt Friedrichshafen"), (), entry_points=entries,
+                      raw_item_kinds={"TAT 1": "platform_or_haltpunkt",
+                                      "Einfahrt Friedrichshafen": "entry"})
+        target = model.add_point("TAU")
+        previous = dict(model.assignments)
+        with self.assertRaises(InvalidAssignment):
+            model.assign(("TAT 1", "Einfahrt Friedrichshafen"), target)
+        self.assertEqual(model.assignments, previous)
+
+    def test_entry_target_accepts_entry_schedule_and_platform(self):
+        names = ("Einfahrt Friedrichshafen", "Grenzpunkt", "TAT 1")
+        graph = automatic(*names)
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='7' name='Friedrichshafen' enr='1'/></wege>"))
+        entry_id = next(iter(entries)); model = OperatingPointAssignments()
+        model.rebuild(graph, names, (), entry_points=entries,
+                      raw_item_kinds={names[0]: "entry", names[1]: "schedule_point",
+                                      names[2]: "platform_or_haltpunkt"})
+        model.assign(names, entry_id)
+        self.assertEqual({model.assignments[name] for name in names}, {entry_id})
+        self.assertEqual({model.sources[name] for name in names}, {"manual_entry"})
+        config = model.to_config()
+        self.assertEqual(set(config["assignments"].values()), {entry_id})
+        self.assertEqual(set(config["assignment_sources"].values()), {"manual_entry"})
+
+    def test_clear_keeps_evidence_based_self_assignments(self):
+        graph = automatic("Martinszell", "Einfahrt F")
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='F' enr='1'/></wege>")); entry_id = next(iter(entries))
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("Martinszell", "Einfahrt F"), ("Martinszell",), entry_points=entries,
+                      raw_item_kinds={"Martinszell": "platform_or_haltpunkt", "Einfahrt F": "entry"},
+                      automatic_entry_assignments={"Einfahrt F": entry_id})
+        model.clear_editable_assignments()
+        self.assertEqual(model.sources["Martinszell"], "self_haltpunkt")
+        self.assertEqual(model.sources["Einfahrt F"], "self_entry")
+
+    def test_schema_three_roundtrip_preserves_entries_kinds_and_sources(self):
+        graph = automatic("Einfahrt F")
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='F' enr='1' custom='raw'/></wege>")); entry_id = next(iter(entries))
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("Einfahrt F",), (), entry_points=entries,
+                      raw_item_kinds={"Einfahrt F": "entry"},
+                      automatic_entry_assignments={"Einfahrt F": entry_id})
+        config = model.to_config()
+        self.assertEqual(config["schema_version"], 3)
+        restored = OperatingPointAssignments()
+        restored.rebuild(graph, (), (), config)
+        self.assertEqual(restored.raw_items["Einfahrt F"].kind, "entry")
+        self.assertEqual(restored.sources["Einfahrt F"], "self_entry")
+        self.assertEqual(next(iter(restored.entry_points.values())).infrastructure_elements[0].metadata["custom"],
+                         "raw")
+
+    def test_legacy_manual_operating_point_is_not_migrated_by_name(self):
+        graph = automatic("Einfahrt F")
+        legacy = {"schema_version": 2, "manual_point_ids": ["manual:einfahrt-f"],
+                  "operating_points": {"manual:einfahrt-f": {
+                      "display_name": "Einfahrt F", "raw_names": [], "removable": True}},
+                  "assignments": {}, "unassigned": []}
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='F' enr='1'/></wege>"))
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("Einfahrt F",), (), legacy, entry_points=entries,
+                      raw_item_kinds={"Einfahrt F": "entry"})
+        self.assertIn("manual:einfahrt-f", model.points)
+        self.assertIn("manual:einfahrt-f", model.manual_point_ids)
+
     def test_natural_sort(self):
         self.assertEqual(sorted(("TBL 10", "TBL 2", "TBL 1"), key=natural_sort_key),
                          ["TBL 1", "TBL 2", "TBL 10"])

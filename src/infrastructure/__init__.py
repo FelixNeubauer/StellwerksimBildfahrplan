@@ -23,7 +23,9 @@ from .editable_topology import (
 )
 from .editable_topology_persistence import EditableTopologyGraphStore
 from .operating_point_assignments import (
-    EditableOperatingPoint, OperatingPointAssignments, OperatingPointConfigStore,
+    AssignableRawItem, EditableOperatingPoint, EntryInfrastructureElement, EntryPoint,
+    InvalidAssignment, OperatingPointAssignments, OperatingPointConfigStore,
+    can_assign_kind, entry_point_id, entry_points_from_raw_graph,
     is_unprefixed_numeric, natural_sort_key, related_selection,
 )
 from .wege_parser import parse_bahnsteigliste, parse_wege
@@ -53,7 +55,9 @@ __all__ = [
     "BildfahrplanRouteInstance", "DefinedRoute", "EditableTopologyGraph", "NODE_TYPES",
     "TopologyEdge", "TopologyNode", "EditableTopologyGraphStore",
     "atomic_write_json", "find_identity_candidate", "validate_saved_stellwerk_identity",
-    "EditableOperatingPoint", "OperatingPointAssignments", "OperatingPointConfigStore",
+    "AssignableRawItem", "EditableOperatingPoint", "EntryInfrastructureElement", "EntryPoint",
+    "InvalidAssignment", "OperatingPointAssignments", "OperatingPointConfigStore",
+    "can_assign_kind", "entry_point_id", "entry_points_from_raw_graph",
     "is_unprefixed_numeric", "natural_sort_key", "related_selection",
     "OperatingPoint", "OperatingPointGraph", "OperatingPointResolver", "ScheduleEdge",
     "ScheduleCaptureProvenance", "SchedulePointGraph", "SchedulePointNode",
