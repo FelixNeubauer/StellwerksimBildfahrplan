@@ -313,7 +313,14 @@ class OperatingPointsTab(QtWidgets.QWidget):
             return
         self._automatic = OperatingPointResolver(self._platforms, aid=self.aid).resolve(self._schedule)
         self._entry_points = entry_points_from_raw_graph(self._raw_graph)
+        # Ein type-6/7-Element begründet sowohl das logische Ziel links als
+        # auch genau ein dedupliziertes, konkretes RawItem. Diese
+        # Identitätszuordnung ist unabhängig von beobachteten Zügen.
         self._automatic_entry_assignments = {}
+        for point in self._entry_points.values():
+            self._raw_names.add(point.display_name)
+            self._raw_item_kinds[point.display_name] = "entry"
+            self._automatic_entry_assignments[point.display_name] = point.id
         corridor = CorridorGraphBuilder(self._schedule, self._automatic, self._raw_graph).build()
         by_name = {point.display_name.strip().casefold(): point for point in self._entry_points.values()}
         boundary_items = list(corridor.explicit_external_boundaries.values())
@@ -405,7 +412,15 @@ class OperatingPointsTab(QtWidgets.QWidget):
                             "self_haltpunkt": "Eigenständiger Haltepunkt",
                             "self_entry": "Eindeutiger Einfahrts-Rawname"}.get(source, "Nicht zugeordnet")
             target = self.model.assignments.get(name)
-            item.setToolTip(f"Art: {kind_label}\nQuelle: {source_label}" + (f"\nZiel: {target}" if target else ""))
+            details = ""
+            if kind == "entry" and target in self.model.entry_points:
+                elements = self.model.entry_points[target].infrastructure_elements
+                if elements:
+                    details = "\nSTS-Infrastrukturelemente:" + "".join(
+                        f"\n- type {element.element_type}, enr {element.enr or '–'}"
+                        for element in elements)
+            item.setToolTip(f"Art: {kind_label}\nQuelle: {source_label}"
+                            + (f"\nZiel: {target}" if target else "") + details)
             color = QtGui.QColor(180, 45, 55, 90) if kind == "entry" else QtGui.QColor(35, 100, 180, 90)
             item.setBackground(QtGui.QBrush(color))
             widget.addItem(item); item.setSelected(name in selected)

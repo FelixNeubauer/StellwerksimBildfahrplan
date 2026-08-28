@@ -1,4 +1,4 @@
-# StellwerkSim Bildfahrplan V0.4.0
+# StellwerkSim Bildfahrplan V0.4.1
 
 Die neue Endanwenderanwendung ist von dem tkinter-Diagnosewerkzeug in
 `Schnittstellentest/` getrennt. Sie verwendet dessen stabilen `STSLiveCollector`
@@ -70,6 +70,21 @@ AID, Stellwerkname, Artefakttyp, Schema-Version und Speicherzeit gespeichert.
 gesichert. Der eigentliche Bildfahrplan-Tab verwendet in diesem Meilenstein noch
 das bisherige lineare `RouteProfile`; das neue persistente Modell bereitet seine
 spätere Umstellung vor.
+
+### Bedienung V0.4.1
+
+Der Graph besitzt drei exklusive Mausmodi: **Umsehen** ist der Standard und
+verschiebt die Ansicht mit der linken Maustaste, **Auswählen** bearbeitet genau
+ein Graphobjekt, und **Verbinden** zieht mit einer Vorschau direkt von einem
+Knoten zum nächsten. Eine explizite Regeneration importiert stets einen frischen
+automatischen Graph und funktioniert daher auch nach dem Speichern eines leeren
+Editorzustands.
+
+Manuelle Betriebsstellen und bekannte Type-6/7-EntryPoints, die der automatische
+Graph nicht eingebunden hat, werden ohne erfundene Kante in einer Parking-Area
+ergänzt. Strecken werden weiterhin ausschließlich manuell definiert; als
+Bedienhilfe wählt der Nutzer nun Start und Ende und bestätigt anschließend einen
+der deterministisch auf 50 Kandidaten begrenzten einfachen Graphpfade.
 
 ## Umfang V0.3.5.6
 

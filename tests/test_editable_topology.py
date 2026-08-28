@@ -90,6 +90,48 @@ class EditableTopologyTests(unittest.TestCase):
             self.assertEqual(len(restored.bildfahrplan_routes), 2)
             self.assertEqual([item.order for item in restored.bildfahrplan_routes], [0, 1])
 
+    def test_supplement_nodes_are_unconnected_parked_and_not_repositioned(self):
+        graph = graph_with_nodes(("A", "entry"), ("B", "entry"))
+        graph.nodes["A"].layout_x = 100; graph.nodes["B"].layout_x = 270
+        manual = graph.ensure_supplement_node("manual:X", "ManualX", "junction", "operating_point_config")
+        entry = graph.ensure_supplement_node("entry:Y", "Y", "entry", "entry_point_config")
+        self.assertFalse(graph.neighbours(manual.id)); self.assertFalse(graph.neighbours(entry.id))
+        self.assertNotEqual((manual.layout_x, manual.layout_y), (entry.layout_x, entry.layout_y))
+        position = (manual.layout_x, manual.layout_y)
+        graph.ensure_supplement_node("manual:X", "Umbenannt", "junction", "operating_point_config")
+        self.assertEqual((manual.layout_x, manual.layout_y), position)
+
+    def test_simple_path_enumeration_is_complete_sorted_and_bounded(self):
+        graph = graph_with_nodes(("A", "entry"), ("X", "junction"), ("B", "line"),
+                                 ("C", "line"), ("E", "line"), ("F", "line"), ("D", "entry"))
+        for edge in (("A", "X"), ("X", "B"), ("B", "C"), ("C", "D"),
+                     ("X", "E"), ("E", "F"), ("F", "D")):
+            graph.add_edge(*edge)
+        result = graph.enumerate_simple_paths("A", "D", limit=50)
+        self.assertEqual(result.paths, (("A", "X", "B", "C", "D"),
+                                        ("A", "X", "E", "F", "D")))
+        limited = graph.enumerate_simple_paths("A", "D", limit=1)
+        self.assertEqual(len(limited.paths), 1); self.assertTrue(limited.truncated)
+
+    def test_fresh_import_restores_graph_after_editable_copy_was_emptied(self):
+        source = OperationalRouteGraph(
+            nodes={name: OperationalRouteNode(name, name, (), (name,), "inferred")
+                   for name in ("A", "B", "C")},
+            edges=[OperationalRouteEdge(a, b, 1, {}, "inferred", (a, b))
+                   for a, b in (("A", "B"), ("B", "C"))])
+        editable = EditableTopologyGraph.from_operational_graph(source)
+        editable.nodes.clear(); editable.edges.clear()
+        regenerated = EditableTopologyGraph.from_operational_graph(source)
+        self.assertEqual(set(regenerated.nodes), {"A", "B", "C"})
+        self.assertEqual({frozenset((edge.node_a, edge.node_b)) for edge in regenerated.edges.values()},
+                         {frozenset(("A", "B")), frozenset(("B", "C"))})
+        with tempfile.TemporaryDirectory() as directory:
+            store = EditableTopologyGraphStore(directory)
+            store.save(7, "Test", editable)
+            store.save(7, "Test", regenerated)
+            reloaded = EditableTopologyGraph.from_dict(store.load_path(store.path_for(7)))
+            self.assertEqual(set(reloaded.nodes), {"A", "B", "C"})
+
 
 if __name__ == "__main__":
     unittest.main()

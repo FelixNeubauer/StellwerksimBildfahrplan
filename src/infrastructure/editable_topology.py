@@ -52,6 +52,12 @@ class BildfahrplanRouteInstance:
     order: int
 
 
+@dataclass(frozen=True)
+class PathEnumerationResult:
+    paths: tuple[tuple[str, ...], ...]
+    truncated: bool = False
+
+
 @dataclass
 class EditableTopologyGraph:
     nodes: dict[str, TopologyNode] = field(default_factory=dict)
@@ -127,6 +133,24 @@ class EditableTopologyGraph:
         if node_type not in NODE_TYPES: raise ValueError(f"Unbekannter Knotentyp: {node_type}")
         node = TopologyNode(_identifier("manual-node"), display_name, node_type, "manual", *position)
         self.nodes[node.id] = node
+        return node
+
+    def ensure_supplement_node(self, node_id: str, display_name: str, node_type: str,
+                               source: str, *, anchor_id: str | None = None) -> TopologyNode:
+        """Ergänzt nur neue bekannte Ziele und schützt bestehende Layoutdaten."""
+        if node_id in self.nodes:
+            return self.nodes[node_id]
+        if anchor_id in self.nodes:
+            anchor = self.nodes[anchor_id]
+            same_anchor = sum(item.metadata.get("parking_anchor") == anchor_id for item in self.nodes.values())
+            position = (anchor.layout_x + 90.0, anchor.layout_y + 80.0 + same_anchor * 70.0)
+        else:
+            maximum_x = max((item.layout_x for item in self.nodes.values()), default=0.0)
+            parked = sum(item.metadata.get("parking_area") is True for item in self.nodes.values())
+            position = (maximum_x + 220.0, parked * 75.0)
+        node = TopologyNode(node_id, display_name, node_type, source, *position,
+                            metadata={"parking_area": anchor_id is None, "parking_anchor": anchor_id})
+        self.nodes[node_id] = node
         return node
 
     def add_edge(self, node_a: str, node_b: str, *, source: str = "manual") -> TopologyEdge:
@@ -210,6 +234,24 @@ class EditableTopologyGraph:
                 stack.extend(self.neighbours(node_id) - component)
             components.append(component)
         return tuple(components)
+
+    def enumerate_simple_paths(self, start_id: str, end_id: str, *, limit: int = 50) -> PathEnumerationResult:
+        """Enumeriert deterministisch und begrenzt nur echte einfache Graphpfade."""
+        if start_id not in self.nodes or end_id not in self.nodes or start_id == end_id or limit < 1:
+            return PathEnumerationResult(())
+        found: list[tuple[str, ...]] = []
+        stack: list[tuple[str, tuple[str, ...]]] = [(start_id, (start_id,))]
+        while stack and len(found) <= limit:
+            current, path = stack.pop()
+            if current == end_id:
+                found.append(path); continue
+            neighbours = sorted(
+                (node for node in self.neighbours(current) if node not in path),
+                key=lambda node: (self.nodes[node].display_name.casefold(), node), reverse=True)
+            stack.extend((node, (*path, node)) for node in neighbours)
+        found.sort(key=lambda path: (
+            len(path), tuple(self.nodes[node].display_name.casefold() for node in path), path))
+        return PathEnumerationResult(tuple(found[:limit]), len(found) > limit or bool(stack))
 
     def auto_layout(self) -> None:
         y_offset = 0.0

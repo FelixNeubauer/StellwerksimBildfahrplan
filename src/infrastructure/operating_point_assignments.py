@@ -191,6 +191,14 @@ class OperatingPointAssignments:
                     and all(name in entry_names for name in automatic_point.raw_names)
                     and values.get("source") != "manual"):
                 continue
+            # Der Snapshot ist eine Diagnose des damaligen Autozustands, keine
+            # zweite autoritative Quelle. Nicht mehr reproduzierbare
+            # automatische Ziele (z. B. ``schedule:TKS`` neben dem aktuellen
+            # Resolver-Ziel ``TKS``) würden sonst als leere Schattenobjekte
+            # wieder erscheinen.
+            if (values.get("source") != "manual" and point_id not in self.points
+                    and point_id not in automatic.nodes):
+                continue
             self.points.setdefault(point_id, EditableOperatingPoint(
                 point_id, values.get("display_name", point_id), values.get("station_key"),
                 values.get("source") == "manual"))

@@ -12,7 +12,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, adapter, profile) -> None:
         super().__init__()
         self.adapter = adapter
-        self.setWindowTitle("StellwerkSim Bildfahrplan V0.4.0")
+        self.setWindowTitle("StellwerkSim Bildfahrplan V0.4.1")
         self.resize(1200, 760)
         self.tabs = QtWidgets.QTabWidget()
         self.diagram = BildfahrplanTab(adapter, profile)

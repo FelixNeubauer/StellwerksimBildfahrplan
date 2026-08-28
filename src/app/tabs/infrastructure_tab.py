@@ -14,7 +14,7 @@ from infrastructure import (
     parse_bahnsteigliste, parse_wege, save_generated_graph, validate_saved_stellwerk_identity,
 )
 from app.widgets.topology_graphics import (
-    TopologyEdgeItem, TopologyGraphicsScene, TopologyGraphicsView, TopologyNodeItem,
+    EditorMode, TopologyEdgeItem, TopologyGraphicsScene, TopologyGraphicsView, TopologyNodeItem,
 )
 
 TYPE_LABELS = {
@@ -48,9 +48,11 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.store = EditableTopologyGraphStore(config_directory)
         self.graph = EditableTopologyGraph()
         self.aid = None; self.facility_name = None
-        self._last_signature = None; self._automatic_graph = None
+        self._last_signature = None; self._automatic_graph = None; self._automatic_source = None
+        self._supplements: list[tuple[str, str, str, str, str | None]] = []
         self._dirty = False; self._identity_ready = False; self._loading = False
         self._route_path: list[str] | None = None
+        self._route_endpoints: list[str] | None = None; self._editing_route_id: str | None = None
         self.node_items: dict[str, TopologyNodeItem] = {}; self.edge_items: dict[str, TopologyEdgeItem] = {}
         self.undo_stack = QtGui.QUndoStack(self)
         self.autosave_timer = QtCore.QTimer(self); self.autosave_timer.setSingleShot(True)
@@ -65,8 +67,13 @@ class InfrastructureTab(QtWidgets.QWidget):
         toolbar.addWidget(auto_layout)
         add_node = QtWidgets.QPushButton("+ Betriebsstelle"); add_node.clicked.connect(self._add_node)
         toolbar.addWidget(add_node)
-        self.connect_button = QtWidgets.QPushButton("Verbinden"); self.connect_button.setCheckable(True)
-        self.connect_button.clicked.connect(self._start_connecting); toolbar.addWidget(self.connect_button)
+        self.mode_group = QtWidgets.QButtonGroup(self); self.mode_group.setExclusive(True)
+        for mode, text in ((EditorMode.PAN, "✋ Umsehen"), (EditorMode.SELECT, "⌖ Auswählen"),
+                           (EditorMode.CONNECT, "✎ Verbinden")):
+            button = QtWidgets.QToolButton(); button.setText(text); button.setCheckable(True)
+            button.setProperty("editor_mode", mode); self.mode_group.addButton(button); toolbar.addWidget(button)
+            if mode == EditorMode.PAN: button.setChecked(True)
+        self.mode_group.buttonClicked.connect(lambda button: self._set_editor_mode(button.property("editor_mode")))
         delete = QtWidgets.QPushButton("Löschen"); delete.clicked.connect(self._delete_selected); toolbar.addWidget(delete)
         toolbar.addWidget(self._tool_button("Undo", self.undo_stack.undo)); toolbar.addWidget(self._tool_button("Redo", self.undo_stack.redo))
         toolbar.addStretch(); self.search = QtWidgets.QLineEdit(); self.search.setPlaceholderText("Suche …")
@@ -75,6 +82,8 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.scene = TopologyGraphicsScene(self); self.scene.selectionChanged.connect(self._selection_changed)
         self.scene.nodeActivated.connect(self._node_activated)
         self.view = TopologyGraphicsView(self.scene); self.view.deletePressed.connect(self._delete_selected)
+        self.view.connectionRequested.connect(self._connect_nodes)
+        self.view.connection_validator = lambda first, second: self.graph.edge_between(first, second) is None
         inspector = self._build_inspector()
         split = QtWidgets.QSplitter(); split.addWidget(self.view); split.addWidget(inspector)
         split.setStretchFactor(0, 5); split.setStretchFactor(1, 1); root.addWidget(split, 5)
@@ -110,8 +119,8 @@ class InfrastructureTab(QtWidgets.QWidget):
         layout.addWidget(self.route_path_label)
         buttons = QtWidgets.QHBoxLayout(); add = QtWidgets.QPushButton("+ Strecke definieren")
         add.clicked.connect(self._start_route); buttons.addWidget(add)
-        self.finish_route = QtWidgets.QPushButton("Strecke abschließen"); self.finish_route.setEnabled(False)
-        self.finish_route.clicked.connect(self._finish_route); buttons.addWidget(self.finish_route)
+        change = QtWidgets.QPushButton("Pfad ändern"); change.clicked.connect(self._change_route_path)
+        buttons.addWidget(change)
         rename = QtWidgets.QPushButton("Umbenennen"); rename.clicked.connect(self._rename_route); buttons.addWidget(rename)
         remove = QtWidgets.QPushButton("Löschen"); remove.clicked.connect(self._delete_route); buttons.addWidget(remove)
         layout.addLayout(buttons); return box
@@ -137,8 +146,13 @@ class InfrastructureTab(QtWidgets.QWidget):
         try:
             automatic, context = self._build_automatic(snapshot)
             self._automatic_graph = automatic
+            self._automatic_source = context[2]
             if not self._identity_ready and self.aid is not None and self.facility_name:
                 self._load_or_initialize(automatic)
+            elif self._identity_ready:
+                before = len(self.graph.nodes); self._apply_supplements(self.graph)
+                if len(self.graph.nodes) != before:
+                    self._mark_dirty(); self._rebuild_scene()
             raw, builder, operational, platforms, schedule, operating, corridor = context
             if self.aid is not None:
                 save_generated_graph(self.config_directory, self.aid, self.facility_name or "unbekannt",
@@ -166,8 +180,40 @@ class InfrastructureTab(QtWidgets.QWidget):
                 if validation.status == "match": manual = candidate
         operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
         corridor = CorridorGraphBuilder(schedule, operating, raw).build(); operational = corridor.to_operational_graph()
-        return EditableTopologyGraph.from_operational_graph(operational), (raw, builder, operational, platforms,
-                                                                          schedule, operating, corridor)
+        graph = EditableTopologyGraph.from_operational_graph(operational)
+        self._supplements = self._topology_supplements(manual, raw)
+        supplemented = {item[0] for item in self._supplements}
+        self._supplements.extend(
+            (point.id, point.display_name, "junction", "operating_point", None)
+            for point in sorted(operating.nodes.values(), key=lambda item: item.id)
+            if point.id not in operational.nodes and point.id not in supplemented
+            and point.point_type != "entry_exit")
+        self._apply_supplements(graph)
+        return graph, (raw, builder, operational, platforms, schedule, operating, corridor)
+
+    def _topology_supplements(self, config: dict, raw: RawInfrastructureGraph):
+        result: list[tuple[str, str, str, str, str | None]] = []
+        manual_ids = set(config.get("manual_point_ids", ()))
+        for point_id in sorted(manual_ids):
+            values = config.get("operating_points", {}).get(point_id, {})
+            result.append((point_id, values.get("display_name", point_id), "junction",
+                           "operating_point_config", None))
+        entries = entry_points_from_raw_graph(raw)
+        configured = config.get("entry_points", {})
+        for point_id, entry in entries.items():
+            anchor = None
+            evidence = configured.get(point_id, {}).get("boundary_evidence", ())
+            for item in evidence:
+                anchor = item.get("source_node") or item.get("route_axis_node")
+                if not anchor and item.get("possible_source_nodes"):
+                    anchor = item["possible_source_nodes"][0]
+                if anchor: break
+            result.append((point_id, entry.display_name, "entry", "entry_point_config", anchor))
+        return result
+
+    def _apply_supplements(self, graph: EditableTopologyGraph) -> None:
+        for node_id, name, node_type, source, anchor in self._supplements:
+            graph.ensure_supplement_node(node_id, name, node_type, source, anchor_id=anchor)
 
     def _load_or_initialize(self, automatic) -> None:
         current = SavedStellwerkIdentity(self.aid, self.facility_name)
@@ -195,7 +241,9 @@ class InfrastructureTab(QtWidgets.QWidget):
                 self, "Anderes Stellwerk", "Die gespeicherte Streckendatei gehört zu einem anderen Stellwerk. "
                 "Sie wird archiviert und nicht geladen.")
             if validation.path.exists(): archive_artifact(validation.path)
-        self.graph = EditableTopologyGraph.from_dict(data) if data else automatic
+        self.graph = (EditableTopologyGraph.from_dict(data) if data else
+                      EditableTopologyGraph.from_dict(automatic.to_dict()))
+        self._apply_supplements(self.graph)
         self._identity_ready = True; self._dirty = data is None
         self._rebuild_scene(); self._refresh_routes(); self._refresh_instances()
         if data is None: self.flush_pending_save()
@@ -212,6 +260,7 @@ class InfrastructureTab(QtWidgets.QWidget):
             self.scene.addItem(item); self.edge_items[edge.id] = item
             self.node_items[edge.node_a].edges.add(item); self.node_items[edge.node_b].edges.add(item)
         self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-120, -120, 120, 120)); self._loading = False
+        self.view.set_editor_mode(self.view.editor_mode)
 
     def _mark_dirty(self) -> None:
         if self._loading: return
@@ -252,32 +301,31 @@ class InfrastructureTab(QtWidgets.QWidget):
         node.node_type = self.inspector_type.currentData(); nodes[0].setToolTip(node.display_name); nodes[0].update()
         self._mark_dirty(); self._selection_changed(); self._refresh_routes(); self._refresh_instances()
 
-    def _node_activated(self, node_id: str) -> None:
-        if self._route_path is not None:
-            if not self._route_path:
-                if self.graph.nodes[node_id].node_type not in {"entry", "junction"}:
-                    self.status.setText("Startpunkt muss Einfahrt oder Abzweigbetriebsstelle sein."); return
-            elif node_id == self._route_path[-1]: return
-            elif self.graph.edge_between(self._route_path[-1], node_id) is None:
-                self.status.setText("Der nächste Punkt muss direkt verbunden sein."); return
-            elif node_id in self._route_path:
-                self.status.setText("Ein Pfad darf dieselbe Betriebsstelle nicht mehrfach enthalten."); return
-            self._route_path.append(node_id); self.finish_route.setEnabled(
-                len(self._route_path) >= 2 and self.graph.nodes[node_id].node_type in {"entry", "junction"})
-            self.route_path_label.setText(" → ".join(self.graph.nodes[item].display_name for item in self._route_path))
-            self._highlight_path(self._route_path); return
-        if self.connect_button.isChecked():
-            selected = self.connect_button.property("first_node")
-            if selected is None:
-                self.connect_button.setProperty("first_node", node_id); self.status.setText("Zweite Betriebsstelle anklicken.")
-            else:
-                try: self.graph.add_edge(selected, node_id); self._mark_dirty(); self._rebuild_scene()
-                except ValueError as exc: self.status.setText(str(exc))
-                self.connect_button.setChecked(False); self.connect_button.setProperty("first_node", None)
+    def _set_editor_mode(self, mode: EditorMode) -> None:
+        self.view.set_editor_mode(mode)
+        self.status.setText({EditorMode.PAN: "Umsehen: Ansicht mit linker Maustaste verschieben.",
+                             EditorMode.SELECT: "Auswählen: Knoten oder Verbindung bearbeiten.",
+                             EditorMode.CONNECT: "Verbinden: Von einem Knoten zu einem anderen ziehen."}[mode])
 
-    def _start_connecting(self, checked) -> None:
-        self.connect_button.setProperty("first_node", None)
-        self.status.setText("Erste Betriebsstelle anklicken." if checked else "Verbinden abgebrochen.")
+    def _node_activated(self, node_id: str) -> None:
+        if self._route_endpoints is None:
+            return
+        if self.graph.nodes[node_id].node_type not in {"entry", "junction"}:
+            self.status.setText("Start und Ende müssen Einfahrt oder Abzweigbetriebsstelle sein."); return
+        if self._route_endpoints and node_id == self._route_endpoints[0]:
+            self.status.setText("Start und Ende müssen verschieden sein."); return
+        self._route_endpoints.append(node_id)
+        self._highlight_path(self._route_endpoints)
+        if len(self._route_endpoints) == 1:
+            self.status.setText("Endknoten auswählen."); return
+        self._complete_route_from_endpoints()
+
+    def _connect_nodes(self, node_a: str, node_b: str) -> None:
+        if self.graph.edge_between(node_a, node_b):
+            self.status.setText("Diese Verbindung existiert bereits."); return
+        self.graph.add_edge(node_a, node_b); self._mark_dirty(); self._rebuild_scene()
+        self.status.setText("Verbindung erstellt. Verbinden bleibt aktiv.")
+
 
     def _add_node(self) -> None:
         dialog = QtWidgets.QDialog(self); dialog.setWindowTitle("Betriebsstelle hinzufügen")
@@ -316,7 +364,7 @@ class InfrastructureTab(QtWidgets.QWidget):
             self.scene.itemsBoundingRect(), QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
     def _regenerate_graph(self) -> None:
-        if self._automatic_graph is None: return
+        if self._automatic_source is None: return
         box = QtWidgets.QMessageBox(self); box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
         box.setWindowTitle("Graph automatisch neu erzeugen")
         box.setText("Der gespeicherte Streckengraph wird durch eine neue automatische Erkennung ersetzt. "
@@ -326,23 +374,68 @@ class InfrastructureTab(QtWidgets.QWidget):
         if box.clickedButton() != regenerate: return
         self.flush_pending_save(); path = self.store.path_for(self.aid)
         if path.exists(): archive_artifact(path)
-        self.graph = self._automatic_graph; self.undo_stack.clear(); self._dirty = True
+        self.graph = EditableTopologyGraph.from_operational_graph(self._automatic_source)
+        self._apply_supplements(self.graph)
+        self.undo_stack.clear(); self._dirty = True
         self._rebuild_scene(); self._refresh_routes(); self._refresh_instances(); self.flush_pending_save()
 
     def _start_route(self) -> None:
-        self._route_path = []; self.finish_route.setEnabled(False); self.route_path_label.setText(
-            "Startpunkt und anschließend den gewünschten Pfad anklicken.")
-        self.status.setText("Streckenpfad auswählen.")
+        self._editing_route_id = None; self._begin_endpoint_selection()
 
-    def _finish_route(self) -> None:
-        if not self._route_path: return
-        default = " – ".join((self.graph.nodes[self._route_path[0]].display_name,
-                              self.graph.nodes[self._route_path[-1]].display_name))
-        name, accepted = QtWidgets.QInputDialog.getText(self, "Strecke abschließen", "Name:", text=default)
+    def _change_route_path(self) -> None:
+        item = self.route_list.currentItem()
+        if not item: return
+        self._editing_route_id = item.data(ID_ROLE); self._begin_endpoint_selection()
+
+    def _begin_endpoint_selection(self) -> None:
+        self._route_endpoints = []; self._route_path = None
+        select_button = next(button for button in self.mode_group.buttons()
+                             if button.property("editor_mode") == EditorMode.SELECT)
+        select_button.setChecked(True); self._set_editor_mode(EditorMode.SELECT)
+        self.route_path_label.setText("Start- und Endknoten im Graph auswählen.")
+        self.status.setText("Startknoten auswählen.")
+
+    def _complete_route_from_endpoints(self) -> None:
+        start, end = self._route_endpoints
+        result = self.graph.enumerate_simple_paths(start, end, limit=50)
+        if not result.paths:
+            QtWidgets.QMessageBox.warning(self, "Kein Weg", "Zwischen den Endpunkten existiert kein Graphpfad.")
+            self._route_endpoints = None; self._highlight_path([]); return
+        path = result.paths[0]
+        if len(result.paths) > 1:
+            dialog = QtWidgets.QDialog(self); dialog.setWindowTitle("Mehrere Wege gefunden")
+            layout = QtWidgets.QVBoxLayout(dialog)
+            if result.truncated:
+                layout.addWidget(QtWidgets.QLabel("Es werden maximal 50 deterministische Kandidaten angezeigt."))
+            choices = QtWidgets.QListWidget(); layout.addWidget(choices)
+            for candidate in result.paths:
+                item = QtWidgets.QListWidgetItem(" → ".join(self.graph.nodes[node].display_name for node in candidate))
+                item.setData(ID_ROLE, candidate); choices.addItem(item)
+            choices.setCurrentRow(0)
+            choices.currentItemChanged.connect(
+                lambda current, _previous: self._highlight_path(current.data(ID_ROLE) if current else ()))
+            buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                 QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); layout.addWidget(buttons)
+            if not dialog.exec(): self._route_endpoints = None; self._highlight_path([]); return
+            path = tuple(choices.currentItem().data(ID_ROLE))
+        self._highlight_path(path)
+        default = " – ".join((self.graph.nodes[path[0]].display_name, self.graph.nodes[path[-1]].display_name))
+        existing = self.graph.defined_routes.get(self._editing_route_id)
+        name, accepted = QtWidgets.QInputDialog.getText(
+            self, "Strecke speichern", "Name:", text=existing.display_name if existing else default)
         if accepted and name.strip():
-            try: self.graph.add_route(name.strip(), self._route_path); self._mark_dirty()
-            except ValueError as exc: QtWidgets.QMessageBox.warning(self, "Ungültiger Streckenpfad", str(exc)); return
-        self._route_path = None; self.finish_route.setEnabled(False); self._highlight_path([])
+            if existing:
+                old_a, old_b = existing.endpoint_a, existing.endpoint_b
+                existing.display_name = name.strip(); existing.ordered_node_ids = list(path)
+                existing.endpoint_a, existing.endpoint_b = path[0], path[-1]
+                for instance in self.graph.bildfahrplan_routes:
+                    if instance.route_id == existing.route_id:
+                        instance.left_endpoint = path[-1] if instance.left_endpoint == old_b else path[0]
+            else:
+                self.graph.add_route(name.strip(), path)
+            self._mark_dirty()
+        self._route_endpoints = None; self._editing_route_id = None; self._highlight_path([])
         self._refresh_routes(); self._refresh_instances()
 
     def _refresh_routes(self) -> None:

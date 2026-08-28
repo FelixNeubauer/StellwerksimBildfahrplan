@@ -77,6 +77,44 @@ class AssignmentLogicTests(unittest.TestCase):
         self.assertEqual(model.assignments["Einfahrt Friedrichshafen"], entry_id)
         self.assertEqual(model.sources["Einfahrt Friedrichshafen"], "self_entry")
 
+    def test_stale_automatic_snapshot_does_not_restore_empty_station_shadow(self):
+        graph = automatic("TKS 1", "TKS 2", "TKS 3", "TKS 4")
+        config = {"editor_snapshot": {
+            "raw_names": ["TKS 1", "TKS 2", "TKS 3", "TKS 4"],
+            "operating_points": {
+                "schedule:TKS": {"display_name": "TKS", "station_key": "TKS", "source": "automatic"}},
+            "assignments": {}}}
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TKS 1", "TKS 2", "TKS 3", "TKS 4"), (), config)
+        self.assertEqual([(point.id, point.display_name) for point in model.points.values()], [("TKS", "TKS")])
+        self.assertEqual(sum(owner == "TKS" for owner in model.assignments.values()), 4)
+
+    def test_manual_points_with_equal_display_name_are_preserved(self):
+        graph = automatic("TKS 1", "TKS 2")
+        config = {"editor_snapshot": {"raw_names": ["TKS 1", "TKS 2"], "operating_points": {
+            "manual:one": {"display_name": "TKS", "source": "manual"},
+            "manual:two": {"display_name": "TKS", "source": "manual"}}, "assignments": {}},
+            "manual_point_ids": ["manual:one", "manual:two"], "operating_points": {
+                "manual:one": {"display_name": "TKS", "removable": True},
+                "manual:two": {"display_name": "TKS", "removable": True}}}
+        model = OperatingPointAssignments(); model.rebuild(graph, ("TKS 1", "TKS 2"), (), config)
+        self.assertTrue({"manual:one", "manual:two"}.issubset(model.points))
+
+    def test_type_six_seven_seed_is_one_self_entry_raw_member(self):
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='Aalen' enr='101'/>"
+            "<shape type='7' name='Aalen' enr='102'/></wege>"))
+        entry_id = next(iter(entries)); graph = automatic("Aalen")
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("Aalen",), (), entry_points=entries,
+                      raw_item_kinds={"Aalen": "entry"},
+                      automatic_entry_assignments={"Aalen": entry_id})
+        self.assertEqual(len(model.entry_points), 1)
+        self.assertEqual([name for name, item in model.raw_items.items() if item.kind == "entry"], ["Aalen"])
+        self.assertEqual((model.assignments["Aalen"], model.sources["Aalen"]), (entry_id, "self_entry"))
+        self.assertEqual(sum(owner == entry_id for owner in model.assignments.values()), 1)
+        self.assertEqual(len(model.entry_points[entry_id].infrastructure_elements), 2)
+
     def test_assignment_is_atomic_when_entry_is_dropped_on_operating_point(self):
         graph = automatic("TAT 1", "Einfahrt Friedrichshafen")
         entries = entry_points_from_raw_graph(parse_wege(
