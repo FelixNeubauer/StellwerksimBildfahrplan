@@ -18,6 +18,55 @@ def graph_with_nodes(*values):
 
 
 class EditableTopologyTests(unittest.TestCase):
+    def test_operational_representations_collapse_to_canonical_operating_point(self):
+        source = OperationalRouteGraph(
+            nodes={
+                "schedule:THDM": OperationalRouteNode("schedule:THDM", "THDM", ("THDM",),
+                                                       ("schedule:THDM",), "inferred"),
+                "axis:THDM": OperationalRouteNode("axis:THDM", "THDM", ("THDM 1",),
+                                                   ("station:THDM",), "inferred"),
+                "X": OperationalRouteNode("X", "X", (), ("X",), "inferred"),
+                "Y": OperationalRouteNode("Y", "Y", (), ("Y",), "inferred"),
+            }, edges=[OperationalRouteEdge("schedule:THDM", "X", 1, {}, "inferred", ()),
+                      OperationalRouteEdge("axis:THDM", "Y", 1, {}, "inferred", ()),
+                      OperationalRouteEdge("schedule:THDM", "axis:THDM", 1, {}, "inferred", ())])
+        graph = EditableTopologyGraph.from_operational_graph(
+            source, {"schedule:THDM": "THDM", "axis:THDM": "THDM"})
+        self.assertEqual(set(graph.nodes), {"THDM", "X", "Y"})
+        self.assertEqual(graph.neighbours("THDM"), {"X", "Y"})
+        self.assertIsNone(graph.edge_between("THDM", "THDM"))
+        self.assertEqual(len(graph.edges), 2)
+
+    def test_saved_automatic_duplicates_merge_edges_and_route_references(self):
+        graph = graph_with_nodes(("old:TRM", "junction"), ("axis:TRM", "junction"),
+                                 ("A", "entry"), ("B", "entry"), ("manual", "junction"))
+        for node_id in ("old:TRM", "axis:TRM", "A", "B"):
+            graph.nodes[node_id].source = "automatic"
+        graph.nodes["old:TRM"].display_name = graph.nodes["axis:TRM"].display_name = "TRM"
+        graph.nodes["manual"].display_name = "TRM"
+        graph.add_edge("A", "old:TRM"); graph.add_edge("old:TRM", "axis:TRM"); graph.add_edge("axis:TRM", "B")
+        route = graph.add_route("A-B", ["A", "old:TRM", "axis:TRM", "B"])
+        changed = graph.canonicalize_automatic_nodes({"old:TRM": "TRM", "axis:TRM": "TRM"})
+        self.assertEqual(changed, 1)
+        canonical = next(node for node in graph.nodes.values() if node.operating_point_id == "TRM")
+        self.assertEqual(graph.neighbours(canonical.id), {"A", "B"})
+        self.assertEqual(route.ordered_node_ids, ["A", canonical.id, "B"])
+        self.assertIn("manual", graph.nodes)
+
+    def test_auto_layout_uses_horizontal_backbone_and_offsets_real_branch(self):
+        graph = graph_with_nodes(*((name, "line") for name in "ABCDE"))
+        for left, right in zip("ABCDE", "BCDE"): graph.add_edge(left, right)
+        graph.auto_layout()
+        self.assertEqual(len({graph.nodes[name].layout_y for name in "ABCDE"}), 1)
+        self.assertEqual([graph.nodes[name].layout_x for name in "ABCDE"], sorted(
+            graph.nodes[name].layout_x for name in "ABCDE"))
+        branch = graph_with_nodes(("A", "entry"), ("B", "junction"), ("C", "entry"), ("X", "entry"))
+        branch.add_edge("A", "B"); branch.add_edge("B", "C"); branch.add_edge("B", "X")
+        branch.auto_layout()
+        self.assertEqual(branch.nodes["A"].layout_y, branch.nodes["B"].layout_y)
+        self.assertEqual(branch.nodes["B"].layout_y, branch.nodes["C"].layout_y)
+        self.assertNotEqual(branch.nodes["X"].layout_y, branch.nodes["B"].layout_y)
+
     def test_node_degree_validation_does_not_block_intermediate_states(self):
         graph = graph_with_nodes(("A", "entry"), ("X", "junction"), ("B", "line"))
         graph.add_edge("A", "X")

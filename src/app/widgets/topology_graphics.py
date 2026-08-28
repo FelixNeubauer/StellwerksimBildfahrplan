@@ -130,7 +130,7 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
                 item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, mode != EditorMode.CONNECT)
         self.setDragMode(self.DragMode.NoDrag)
         self.setCursor(QtCore.Qt.CursorShape.CrossCursor if mode != EditorMode.NAVIGATE else
-                       QtCore.Qt.CursorShape.OpenHandCursor)
+                       QtCore.Qt.CursorShape.ArrowCursor)
 
     def wheelEvent(self, event) -> None:
         self.scale(1.18 if event.angleDelta().y() > 0 else 1 / 1.18,
@@ -201,7 +201,7 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
             event.accept(); return
         if self._pan_start is not None:
             self._pan_start = None; self._pan_scroll = None
-            self.setCursor(QtCore.Qt.CursorShape.OpenHandCursor); event.accept(); return
+            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor); event.accept(); return
         super().mouseReleaseEvent(event)
 
     def cancel_connection(self) -> None:

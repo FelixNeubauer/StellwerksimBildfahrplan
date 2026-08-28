@@ -10,7 +10,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from infrastructure import (
     CorridorGraphBuilder, EditableTopologyGraph, EditableTopologyGraphStore,
     InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
-    SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, entry_points_from_raw_graph,
+    OperatingPointAssignments, SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, entry_points_from_raw_graph,
     find_identity_candidate, parse_bahnsteigliste, parse_wege, save_generated_graph,
     validate_saved_stellwerk_identity,
 )
@@ -51,6 +51,8 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.aid = None; self.facility_name = None
         self._last_signature = None; self._automatic_graph = None; self._automatic_source = None
         self._supplements: list[tuple[str, str, str, str, str | None]] = []
+        self._canonical_operating_by_node: dict[str, str] = {}
+        self._canonical_operating_aliases: dict[str, str] = {}
         self._dirty = False; self._identity_ready = False; self._loading = False
         self._route_path: list[str] | None = None
         self._route_endpoints: list[str] | None = None; self._editing_route_id: str | None = None
@@ -69,9 +71,11 @@ class InfrastructureTab(QtWidgets.QWidget):
         add_node = QtWidgets.QPushButton("+ Betriebsstelle"); add_node.clicked.connect(self._add_node)
         toolbar.addWidget(add_node)
         self.mode_group = QtWidgets.QButtonGroup(self); self.mode_group.setExclusive(True)
-        for mode, text in ((EditorMode.NAVIGATE, "✋ Umsehen"), (EditorMode.RECTANGLE, "▧ Auswahlrechteck"),
+        for mode, text in ((EditorMode.NAVIGATE, "✋ Umsehen"), (EditorMode.RECTANGLE, "▧ Auswahl"),
                            (EditorMode.CONNECT, "✎ Verbinden")):
             button = QtWidgets.QToolButton(); button.setText(text); button.setCheckable(True)
+            if mode == EditorMode.RECTANGLE:
+                button.setToolTip("Mehrere Elemente mit einem Auswahlrechteck markieren")
             button.setProperty("editor_mode", mode); self.mode_group.addButton(button); toolbar.addWidget(button)
             if mode == EditorMode.NAVIGATE: button.setChecked(True)
         self.mode_group.buttonClicked.connect(lambda button: self._set_editor_mode(button.property("editor_mode")))
@@ -181,7 +185,22 @@ class InfrastructureTab(QtWidgets.QWidget):
                 if validation.status == "match": manual = candidate
         operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
         corridor = CorridorGraphBuilder(schedule, operating, raw).build(); operational = corridor.to_operational_graph()
-        graph = EditableTopologyGraph.from_operational_graph(operational)
+        assignments = OperatingPointAssignments()
+        assignments.rebuild(operating, schedule.nodes, (), manual)
+        self._canonical_operating_aliases = {}
+        for operating_id, point in operating.nodes.items():
+            owners = {assignments.assignments[name] for name in point.raw_names
+                      if name in assignments.assignments and assignments.assignments[name] in assignments.points}
+            if len(owners) == 1:
+                self._canonical_operating_aliases[operating_id] = next(iter(owners))
+        self._canonical_operating_by_node = {}
+        for node_id, node in operational.nodes.items():
+            owners = {self._canonical_operating_aliases.get(value, value) for value in node.source_nodes}
+            owners.update(assignments.assignments[name] for name in node.raw_names
+                          if name in assignments.assignments and assignments.assignments[name] in assignments.points)
+            if len(owners) == 1:
+                self._canonical_operating_by_node[node_id] = next(iter(owners))
+        graph = EditableTopologyGraph.from_operational_graph(operational, self._canonical_operating_by_node)
         self._supplements = self._topology_supplements(manual, raw)
         supplemented = {item[0] for item in self._supplements}
         self._supplements.extend(
@@ -213,6 +232,20 @@ class InfrastructureTab(QtWidgets.QWidget):
         return result
 
     def _apply_supplements(self, graph: EditableTopologyGraph) -> None:
+        canonical_existing = {}
+        for node_id, node in graph.nodes.items():
+            candidates = set()
+            if node.operating_point_id:
+                candidates.add(self._canonical_operating_aliases.get(node.operating_point_id,
+                                                                      node.operating_point_id))
+            candidates.update(self._canonical_operating_aliases.get(value, value)
+                              for value in node.metadata.get("operating_point_ids", ()))
+            candidates.update(self._canonical_operating_by_node.get(value)
+                              for value in node.metadata.get("automatic_node_ids", ())
+                              if self._canonical_operating_by_node.get(value))
+            if len(candidates) == 1:
+                canonical_existing[node_id] = next(iter(candidates))
+        graph.canonicalize_automatic_nodes(canonical_existing)
         graph.remove_redundant_entry_supplements()
         for node_id, name, node_type, source, anchor in self._supplements:
             if source == "entry_point_config" and graph.represented_node(name, exclude_id=node_id):

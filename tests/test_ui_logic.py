@@ -28,6 +28,13 @@ class UiLogicTests(unittest.TestCase):
         self.assertIn("entry_points_from_raw_graph", imported)
         self.assertTrue(callable(entry_points_from_raw_graph))
 
+    def test_topology_tools_use_arrow_navigation_and_selection_label(self):
+        widgets = (ROOT / "src/app/widgets/topology_graphics.py").read_text(encoding="utf-8")
+        tab = (ROOT / "src/app/tabs/infrastructure_tab.py").read_text(encoding="utf-8")
+        self.assertIn("QtCore.Qt.CursorShape.ArrowCursor", widgets)
+        self.assertIn('(EditorMode.RECTANGLE, "▧ Auswahl")', tab)
+        self.assertIn("Mehrere Elemente mit einem Auswahlrechteck markieren", tab)
+
     def test_axis_contract_and_hard_time_limits(self):
         self.assertEqual(ROUTE_AXIS_POSITION, "top")
         self.assertFalse(X_INTERACTION_ENABLED); self.assertTrue(Y_INTERACTION_ENABLED)

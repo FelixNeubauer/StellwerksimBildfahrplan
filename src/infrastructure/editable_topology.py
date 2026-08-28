@@ -68,25 +68,82 @@ class EditableTopologyGraph:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_operational_graph(cls, source: OperationalRouteGraph) -> "EditableTopologyGraph":
+    def from_operational_graph(cls, source: OperationalRouteGraph,
+                               canonical_operating_points: dict[str, str] | None = None) -> "EditableTopologyGraph":
         graph = cls(metadata={"initial_source": "generated_graph"})
+        canonical_operating_points = canonical_operating_points or {}
         adjacency: dict[str, set[str]] = {node_id: set() for node_id in source.nodes}
         for edge in source.edges:
             if edge.source in adjacency and edge.target in adjacency and edge.source != edge.target:
                 adjacency[edge.source].add(edge.target); adjacency[edge.target].add(edge.source)
+        aliases = {node_id: canonical_operating_points.get(node_id, node_id) for node_id in source.nodes}
+        grouped: dict[str, list] = {}
         for node_id, node in source.nodes.items():
-            degree = len(adjacency[node_id])
-            is_boundary = node.node_type == "synthetic_external_boundary"
+            grouped.setdefault(aliases[node_id], []).append(node)
+        canonical_adjacency = {node_id: set() for node_id in grouped}
+        for edge in source.edges:
+            left, right = aliases[edge.source], aliases[edge.target]
+            if left != right:
+                canonical_adjacency[left].add(right); canonical_adjacency[right].add(left)
+        for node_id, grouped_nodes in grouped.items():
+            node = grouped_nodes[0]
+            degree = len(canonical_adjacency[node_id])
+            is_boundary = any(item.node_type == "synthetic_external_boundary" for item in grouped_nodes)
             node_type = "entry" if degree == 1 or is_boundary else "line" if degree == 2 else "junction"
-            operating_id = node.source_nodes[0] if len(node.source_nodes) == 1 else None
+            source_nodes = tuple(sorted({value for item in grouped_nodes for value in item.source_nodes}))
+            raw_names = tuple(sorted({value for item in grouped_nodes for value in item.raw_names}))
+            operating_id = node_id if (len(grouped_nodes) > 1 or any(
+                item.id in canonical_operating_points for item in grouped_nodes)) else (
+                source_nodes[0] if len(source_nodes) == 1 else None)
             graph.nodes[node_id] = TopologyNode(
                 node_id, node.label, node_type, "automatic", operating_point_id=operating_id,
-                metadata={"operating_point_ids": list(node.source_nodes), "automatic_node_type": node.node_type},
+                metadata={"operating_point_ids": list(source_nodes), "raw_names": list(raw_names),
+                          "automatic_node_ids": [item.id for item in grouped_nodes],
+                          "automatic_node_type": node.node_type},
             )
         for edge in source.edges:
-            graph.add_edge(edge.source, edge.target, source="automatic")
+            left, right = aliases[edge.source], aliases[edge.target]
+            if left != right:
+                graph.add_edge(left, right, source="automatic")
         graph.auto_layout()
         return graph
+
+    def canonicalize_automatic_nodes(self, canonical_by_node: dict[str, str]) -> int:
+        """Unifies automatic representations without touching authoritative manual nodes."""
+        groups: dict[str, list[str]] = {}
+        for node_id, canonical in canonical_by_node.items():
+            if node_id in self.nodes and self.nodes[node_id].source != "manual":
+                groups.setdefault(canonical, []).append(node_id)
+        changed = 0
+        for canonical, identifiers in groups.items():
+            if len(identifiers) < 2:
+                if identifiers:
+                    self.nodes[identifiers[0]].operating_point_id = canonical
+                continue
+            winner_id = canonical if canonical in identifiers else max(
+                identifiers, key=lambda value: (self.degree(value), value))
+            winner = self.nodes[winner_id]; winner.operating_point_id = canonical
+            for key in ("operating_point_ids", "raw_names", "automatic_node_ids"):
+                winner.metadata[key] = sorted({value for node_id in identifiers
+                                               for value in self.nodes[node_id].metadata.get(key, ())})
+            winner.metadata["automatic_node_ids"] = sorted(set(
+                winner.metadata["automatic_node_ids"]) | set(identifiers))
+            aliases = {item: winner_id for item in identifiers}
+            edge_pairs = []
+            for edge in self.edges.values():
+                left, right = aliases.get(edge.node_a, edge.node_a), aliases.get(edge.node_b, edge.node_b)
+                if left != right: edge_pairs.append((left, right, edge.source))
+            for route in self.defined_routes.values():
+                redirected = [aliases.get(item, item) for item in route.ordered_node_ids]
+                route.ordered_node_ids = [item for index, item in enumerate(redirected)
+                                          if index == 0 or item != redirected[index - 1]]
+                route.endpoint_a, route.endpoint_b = route.ordered_node_ids[0], route.ordered_node_ids[-1]
+            for old_id in identifiers:
+                if old_id != winner_id: self.delete_node(old_id); changed += 1
+            self.edges.clear()
+            for left, right, source in edge_pairs:
+                self.add_edge(left, right, source=source)
+        return changed
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EditableTopologyGraph":
@@ -294,19 +351,52 @@ class EditableTopologyGraph:
 
     def auto_layout(self) -> None:
         y_offset = 0.0
-        for component in sorted(self.connected_components(), key=lambda value: min(value)):
-            roots = sorted((node for node in component if self.degree(node) <= 1)) or sorted(component)
-            levels: dict[str, int] = {roots[0]: 0}; queue = [roots[0]]
+        components = [item for item in self.connected_components()
+                      if any(self.degree(node) for node in item)]
+        for component in sorted(components, key=lambda value: (-len(value), min(value))):
+            axis = self._layout_backbone(component)
+            axis_index = {node: index for index, node in enumerate(axis)}
+            for index, node_id in enumerate(axis):
+                self.nodes[node_id].layout_x = index * 170.0
+                self.nodes[node_id].layout_y = y_offset
+            remaining = component - set(axis); queue = list(axis); parent: dict[str, str] = {}
             while queue:
                 current = queue.pop(0)
-                for neighbour in sorted(self.neighbours(current)):
-                    if neighbour not in levels:
-                        levels[neighbour] = levels[current] + 1; queue.append(neighbour)
-            rows: dict[int, list[str]] = {}
-            for node_id in sorted(component): rows.setdefault(levels.get(node_id, 0), []).append(node_id)
-            component_height = max((len(row) for row in rows.values()), default=1) * 100.0
-            for level, node_ids in rows.items():
-                for row, node_id in enumerate(node_ids):
-                    self.nodes[node_id].layout_x = level * 170.0
-                    self.nodes[node_id].layout_y = y_offset + row * 100.0
-            y_offset += component_height + 130.0
+                for neighbour in sorted(self.neighbours(current) & remaining):
+                    remaining.remove(neighbour); parent[neighbour] = current; queue.append(neighbour)
+            branch_rows: dict[int, int] = {}
+            for node_id in sorted(parent, key=lambda value: (self._branch_depth(value, parent), value)):
+                root = node_id
+                while parent.get(root) not in axis_index: root = parent[root]
+                anchor = parent[root]; column = axis_index[anchor]
+                branch_rows[column] = branch_rows.get(column, 0) + 1
+                sign = -1 if branch_rows[column] % 2 == 0 else 1
+                depth = self._branch_depth(node_id, parent)
+                self.nodes[node_id].layout_x = column * 170.0 + (depth - 1) * 120.0
+                self.nodes[node_id].layout_y = y_offset + sign * branch_rows[column] * 100.0
+            height = max(1, max(branch_rows.values(), default=0)) * 100.0
+            y_offset += height * 2 + 130.0
+
+    def _layout_backbone(self, component: set[str]) -> tuple[str, ...]:
+        endpoints = sorted(node for node in component if self.degree(node) <= 1) or sorted(component)
+        candidates: list[tuple[str, ...]] = []
+        for start in endpoints:
+            paths = {start: (start,)}; queue = [start]
+            while queue:
+                current = queue.pop(0)
+                for neighbour in sorted(self.neighbours(current) & component):
+                    if neighbour not in paths:
+                        paths[neighbour] = (*paths[current], neighbour); queue.append(neighbour)
+            candidates.extend(paths[end] for end in endpoints if end in paths and start < end)
+        if not candidates:
+            return (min(component),)
+        longest = max(map(len, candidates))
+        normalized = [min(path, tuple(reversed(path))) for path in candidates if len(path) == longest]
+        return min(normalized)
+
+    @staticmethod
+    def _branch_depth(node_id: str, parent: dict[str, str]) -> int:
+        depth = 1
+        while parent.get(node_id) in parent:
+            node_id = parent[node_id]; depth += 1
+        return depth
