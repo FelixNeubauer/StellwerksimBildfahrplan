@@ -1,4 +1,5 @@
 import sys
+import ast
 import unittest
 from pathlib import Path
 
@@ -10,9 +11,23 @@ from bildfahrplan.navigation import (
     ROUTE_AXIS_POSITION, TIME_MAX, TIME_MIN, X_INTERACTION_ENABLED, Y_INTERACTION_ENABLED,
     centered_time_range, clamp_time_range, time_bounds,
 )
+from infrastructure import entry_points_from_raw_graph
 
 
 class UiLogicTests(unittest.TestCase):
+    def test_infrastructure_tab_imports_entry_point_supplement_builder(self):
+        """Startup regression: _topology_supplements must resolve its helper."""
+        path = Path(__file__).parents[1] / "src/app/tabs/infrastructure_tab.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported = {
+            alias.name
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom) and node.module == "infrastructure"
+            for alias in node.names
+        }
+        self.assertIn("entry_points_from_raw_graph", imported)
+        self.assertTrue(callable(entry_points_from_raw_graph))
+
     def test_axis_contract_and_hard_time_limits(self):
         self.assertEqual(ROUTE_AXIS_POSITION, "top")
         self.assertFalse(X_INTERACTION_ENABLED); self.assertTrue(Y_INTERACTION_ENABLED)

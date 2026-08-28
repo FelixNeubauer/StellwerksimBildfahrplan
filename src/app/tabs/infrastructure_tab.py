@@ -10,8 +10,9 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from infrastructure import (
     CorridorGraphBuilder, EditableTopologyGraph, EditableTopologyGraphStore,
     InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
-    SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, find_identity_candidate,
-    parse_bahnsteigliste, parse_wege, save_generated_graph, validate_saved_stellwerk_identity,
+    SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, entry_points_from_raw_graph,
+    find_identity_candidate, parse_bahnsteigliste, parse_wege, save_generated_graph,
+    validate_saved_stellwerk_identity,
 )
 from app.widgets.topology_graphics import (
     EditorMode, TopologyEdgeItem, TopologyGraphicsScene, TopologyGraphicsView, TopologyNodeItem,
