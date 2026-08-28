@@ -10,8 +10,8 @@ from infrastructure import EditableTopologyGraph
 
 
 class EditorMode(Enum):
-    PAN = "pan"
-    SELECT = "select"
+    NAVIGATE = "navigate"
+    RECTANGLE = "rectangle"
     CONNECT = "connect"
 
 
@@ -102,14 +102,18 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
     connectionRequested = QtCore.Signal(str, str)
 
     def __init__(self, scene, parent=None) -> None:
-        super().__init__(scene, parent); self.editor_mode = EditorMode.PAN
+        super().__init__(scene, parent); self.editor_mode = EditorMode.NAVIGATE
         self._connect_source: TopologyNodeItem | None = None
         self._connect_target: TopologyNodeItem | None = None
         self._preview: QtWidgets.QGraphicsLineItem | None = None
+        self._pan_start: QtCore.QPoint | None = None
+        self._pan_scroll: tuple[int, int] | None = None
+        self._selection_start: QtCore.QPointF | None = None
+        self._selection_rect: QtWidgets.QGraphicsRectItem | None = None
         self.connection_validator = lambda _source, _target: True
         self.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         self.setTransformationAnchor(self.ViewportAnchor.AnchorUnderMouse)
-        self.setBackgroundBrush(QtGui.QColor("#263238")); self.set_editor_mode(EditorMode.PAN)
+        self.setBackgroundBrush(QtGui.QColor("#263238")); self.set_editor_mode(EditorMode.NAVIGATE)
 
     def node_at(self, viewport_position) -> TopologyNodeItem | None:
         item = self.itemAt(viewport_position)
@@ -117,16 +121,16 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
 
     def set_editor_mode(self, mode: EditorMode) -> None:
         self.cancel_connection(); self.editor_mode = mode; self.scene().clearSelection()
-        editable = mode == EditorMode.SELECT
+        editable = mode == EditorMode.NAVIGATE
         for item in self.scene().items():
-            if isinstance(item, TopologyNodeItem): item.set_editable(editable)
-            elif isinstance(item, TopologyEdgeItem): item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, editable)
-        if mode == EditorMode.PAN:
-            self.setDragMode(self.DragMode.ScrollHandDrag); self.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
-        else:
-            self.setDragMode(self.DragMode.NoDrag)
-            self.setCursor(QtCore.Qt.CursorShape.CrossCursor if mode == EditorMode.CONNECT else
-                           QtCore.Qt.CursorShape.ArrowCursor)
+            if isinstance(item, TopologyNodeItem):
+                item.set_editable(editable)
+                item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, mode != EditorMode.CONNECT)
+            elif isinstance(item, TopologyEdgeItem):
+                item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, mode != EditorMode.CONNECT)
+        self.setDragMode(self.DragMode.NoDrag)
+        self.setCursor(QtCore.Qt.CursorShape.CrossCursor if mode != EditorMode.NAVIGATE else
+                       QtCore.Qt.CursorShape.OpenHandCursor)
 
     def wheelEvent(self, event) -> None:
         self.scale(1.18 if event.angleDelta().y() > 0 else 1 / 1.18,
@@ -140,8 +144,20 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
                 self._preview = self.scene().addLine(QtCore.QLineF(source.pos(), source.pos()),
                     QtGui.QPen(QtGui.QColor("#90caf9"), 2, QtCore.Qt.PenStyle.DashLine))
             event.accept(); return
-        if self.editor_mode == EditorMode.SELECT and event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self.scene().clearSelection()
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self.editor_mode == EditorMode.RECTANGLE:
+            self.scene().clearSelection(); self._selection_start = self.mapToScene(event.position().toPoint())
+            self._selection_rect = self.scene().addRect(
+                QtCore.QRectF(self._selection_start, self._selection_start),
+                QtGui.QPen(QtGui.QColor(66, 165, 245, 220), 2, QtCore.Qt.PenStyle.DashLine),
+                QtGui.QBrush(QtGui.QColor(66, 165, 245, 70)))
+            self._selection_rect.setZValue(100); event.accept(); return
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self.editor_mode == EditorMode.NAVIGATE:
+            item = self.itemAt(event.position().toPoint())
+            if isinstance(item, (TopologyNodeItem, TopologyEdgeItem)):
+                self.scene().clearSelection(); super().mousePressEvent(event); return
+            self.scene().clearSelection(); self._pan_start = event.position().toPoint()
+            self._pan_scroll = (self.horizontalScrollBar().value(), self.verticalScrollBar().value())
+            self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor); event.accept(); return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
@@ -157,6 +173,15 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
                 self._connect_target = target
                 if target: target.setData(2, True); target.update()
             event.accept(); return
+        if self._selection_start is not None and self._selection_rect is not None:
+            current = self.mapToScene(event.position().toPoint())
+            self._selection_rect.setRect(QtCore.QRectF(self._selection_start, current).normalized())
+            event.accept(); return
+        if self._pan_start is not None and self._pan_scroll is not None:
+            delta = event.position().toPoint() - self._pan_start
+            self.horizontalScrollBar().setValue(self._pan_scroll[0] - delta.x())
+            self.verticalScrollBar().setValue(self._pan_scroll[1] - delta.y())
+            event.accept(); return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
@@ -166,6 +191,17 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
             self.cancel_connection()
             if target and target is not source: self.connectionRequested.emit(source.node_id, target.node_id)
             event.accept(); return
+        if self._selection_start is not None and self._selection_rect is not None:
+            rectangle = self._selection_rect.rect()
+            self.scene().removeItem(self._selection_rect)
+            self._selection_rect = None; self._selection_start = None
+            for item in self.scene().items(rectangle, QtCore.Qt.ItemSelectionMode.IntersectsItemShape):
+                if isinstance(item, (TopologyNodeItem, TopologyEdgeItem)):
+                    item.setSelected(True)
+            event.accept(); return
+        if self._pan_start is not None:
+            self._pan_start = None; self._pan_scroll = None
+            self.setCursor(QtCore.Qt.CursorShape.OpenHandCursor); event.accept(); return
         super().mouseReleaseEvent(event)
 
     def cancel_connection(self) -> None:
@@ -175,6 +211,6 @@ class TopologyGraphicsView(QtWidgets.QGraphicsView):
 
     def keyPressEvent(self, event) -> None:
         if event.key() == QtCore.Qt.Key.Key_Escape: self.cancel_connection(); return
-        if event.key() == QtCore.Qt.Key.Key_Delete and self.editor_mode == EditorMode.SELECT:
+        if event.key() == QtCore.Qt.Key.Key_Delete and self.editor_mode != EditorMode.CONNECT:
             self.deletePressed.emit(); return
         super().keyPressEvent(event)

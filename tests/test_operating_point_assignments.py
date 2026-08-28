@@ -7,7 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from infrastructure import OperatingPointResolver, SchedulePointGraph, parse_bahnsteigliste, parse_wege
+from infrastructure import (OperatingPoint, OperatingPointGraph, OperatingPointResolver,
+                            SchedulePointGraph, parse_bahnsteigliste, parse_wege)
 from infrastructure.operating_point_assignments import (
     InvalidAssignment, OperatingPointAssignments, OperatingPointConfigStore, can_assign_kind,
     entry_points_from_raw_graph, natural_sort_key, related_selection,
@@ -35,6 +36,54 @@ def automatic(*names, platforms=()):
 
 
 class AssignmentLogicTests(unittest.TestCase):
+    def test_equal_automatic_targets_merge_but_manual_names_remain_distinct(self):
+        graph = OperatingPointGraph(
+            nodes={
+                "TKS": OperatingPoint("TKS", "TKS", ("TKS 1",), "station", "exact", {}),
+                "schedule:TKS": OperatingPoint("schedule:TKS", "TKS", ("TKS 2",), "station", "exact", {}),
+            }, raw_to_operating_point={"TKS 1": "TKS", "TKS 2": "schedule:TKS"})
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TKS 1", "TKS 2"), ())
+        self.assertEqual(list(model.points), ["TKS"])
+        self.assertEqual(set(model.assignments.values()), {"TKS"})
+        one = model.add_point("TKS"); two = model.add_point("TKS")
+        self.assertNotEqual(one, two)
+
+    def test_target_tombstones_survive_refresh_and_explicit_restore(self):
+        graph = automatic("TKS 1", "TKS 2")
+        model = OperatingPointAssignments(); model.rebuild(graph, ("TKS 1", "TKS 2"), ())
+        target = next(iter(model.points)); model.delete_point(target)
+        config = model.to_config()
+        refreshed = OperatingPointAssignments(); refreshed.rebuild(graph, ("TKS 1", "TKS 2"), (), config)
+        self.assertFalse(refreshed.points)
+        config["deleted_automatic_point_ids"] = []
+        config["deleted_automatic_identities"] = []
+        restored = OperatingPointAssignments(); restored.rebuild(graph, ("TKS 1", "TKS 2"), (), config)
+        self.assertTrue(restored.points)
+
+    def test_bulk_delete_preserves_hidden_manual_definition(self):
+        model = OperatingPointAssignments(); model.rebuild(automatic("TKS 1"), ("TKS 1",), ())
+        manual = model.add_point("Nicht rekonstruierbar")
+        model.delete_all_points()
+        self.assertFalse(model.points)
+        config = model.to_config()
+        self.assertEqual(config["operating_points"][manual]["display_name"], "Nicht rekonstruierbar")
+        self.assertIn(manual, config["hidden_manual_point_ids"])
+
+    def test_completion_only_blocks_required_raw_kinds_and_empty_entries(self):
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='Aalen' enr='1'/></wege>"))
+        entry_id = next(iter(entries)); graph = automatic("TKS 1", "Optional", "Aalen")
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TKS 1", "Optional", "Aalen"), (), entry_points=entries,
+                      raw_item_kinds={"TKS 1": "platform_or_haltpunkt",
+                                      "Optional": "schedule_point", "Aalen": "entry"})
+        state = model.completeness()
+        self.assertEqual((state.unassigned_entry_count, state.empty_entry_point_count), (1, 1))
+        self.assertFalse(state.is_complete)
+        model.assign(("Aalen",), entry_id)
+        self.assertTrue(model.completeness().is_complete)
+
     def test_type_six_and_seven_create_one_lossless_entry_point(self):
         raw = parse_wege("""<wege>
             <shape type='6' name='Friedrichshafen' enr='101' extra='in'/>

@@ -101,6 +101,37 @@ class EditableTopologyTests(unittest.TestCase):
         graph.ensure_supplement_node("manual:X", "Umbenannt", "junction", "operating_point_config")
         self.assertEqual((manual.layout_x, manual.layout_y), position)
 
+    def test_supplements_are_parked_below_main_component_in_rows(self):
+        graph = graph_with_nodes(("A", "entry"), ("B", "entry"))
+        graph.nodes["A"].layout_x = 0; graph.nodes["B"].layout_x = 500
+        graph.nodes["A"].layout_y = graph.nodes["B"].layout_y = 20
+        graph.add_edge("A", "B")
+        parked = [graph.ensure_supplement_node(f"entry:{index}", str(index), "entry",
+                                               "entry_point_config") for index in range(8)]
+        self.assertTrue(all(node.layout_y > 20 for node in parked))
+        self.assertGreater(len({node.layout_x for node in parked}), 1)
+        self.assertGreater(len({node.layout_y for node in parked}), 1)
+
+    def test_connected_entry_prevents_and_cleans_automatic_supplement_duplicate(self):
+        graph = graph_with_nodes(("automatic-aalen", "entry"), ("X", "line"))
+        graph.nodes["automatic-aalen"].display_name = "Aalen"
+        graph.nodes["automatic-aalen"].source = "automatic"
+        graph.add_edge("automatic-aalen", "X")
+        self.assertEqual(graph.represented_node("Aalen").id, "automatic-aalen")
+        duplicate = graph.ensure_supplement_node("entry:aalen", "Aalen", "entry",
+                                                 "entry_point_config")
+        self.assertIn(duplicate.id, graph.nodes)
+        self.assertEqual(graph.remove_redundant_entry_supplements(), 1)
+        self.assertNotIn(duplicate.id, graph.nodes)
+
+    def test_manual_equal_name_is_not_removed_as_entry_duplicate(self):
+        graph = graph_with_nodes(("manual-aalen", "entry"))
+        graph.nodes["manual-aalen"].display_name = "Aalen"
+        supplement = graph.ensure_supplement_node("entry:aalen", "Aalen", "entry",
+                                                  "entry_point_config")
+        self.assertEqual(graph.remove_redundant_entry_supplements(), 0)
+        self.assertIn(supplement.id, graph.nodes)
+
     def test_simple_path_enumeration_is_complete_sorted_and_bounded(self):
         graph = graph_with_nodes(("A", "entry"), ("X", "junction"), ("B", "line"),
                                  ("C", "line"), ("E", "line"), ("F", "line"), ("D", "entry"))

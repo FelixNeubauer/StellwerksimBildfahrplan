@@ -158,7 +158,10 @@ class OperatingPointsTab(QtWidgets.QWidget):
         self.auto_button = QtWidgets.QPushButton("Automatisch zuordnen")
         self.clear_button = QtWidgets.QPushButton("Alle Zuordnungen entfernen")
         self.group_button = QtWidgets.QPushButton("Gleiches Kürzel auswählen")
-        for widget in (self.auto_button, self.clear_button, self.group_button):
+        self.delete_points_button = QtWidgets.QPushButton("Alle Betriebsstellen löschen")
+        self.delete_entries_button = QtWidgets.QPushButton("Alle Einfahrten löschen")
+        for widget in (self.auto_button, self.clear_button, self.group_button,
+                       self.delete_points_button, self.delete_entries_button):
             toolbar.addWidget(widget)
         toolbar.addStretch(1)
         self.search = QtWidgets.QLineEdit()
@@ -205,6 +208,8 @@ class OperatingPointsTab(QtWidgets.QWidget):
         self.auto_button.clicked.connect(self._auto_assign)
         self.clear_button.clicked.connect(self._clear)
         self.group_button.clicked.connect(self._select_group)
+        self.delete_points_button.clicked.connect(self._delete_all_points)
+        self.delete_entries_button.clicked.connect(self._delete_all_entries)
         self.add_button.clicked.connect(self._add_point)
         self.points.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.points.customContextMenuRequested.connect(self._point_menu)
@@ -487,6 +492,9 @@ class OperatingPointsTab(QtWidgets.QWidget):
         if self._schedule is None:
             return
         config = self.model.to_config()
+        config["deleted_automatic_point_ids"] = []
+        config["deleted_automatic_identities"] = []
+        config["deleted_entry_point_ids"] = []
         self._rebuild_automatic(config, respect_unassigned=False)
         self._mark_dirty(); self._refresh_points(self._selected_target_id())
         self.status.setText(f"Automatische Zuordnung aktualisiert: {len(self.model.assignments)} zugeordnet, "
@@ -523,11 +531,13 @@ class OperatingPointsTab(QtWidgets.QWidget):
 
     def _point_menu(self, position) -> None:
         point_id = self._selected_target_id()
-        if not point_id or point_id not in self.model.manual_point_ids:
+        if not point_id or point_id not in self.model.points:
             return
-        menu = QtWidgets.QMenu(self); rename = menu.addAction("Umbenennen"); delete = menu.addAction("Löschen")
+        menu = QtWidgets.QMenu(self)
+        rename = menu.addAction("Umbenennen") if point_id in self.model.manual_point_ids else None
+        delete = menu.addAction("Löschen")
         action = menu.exec(self.points.mapToGlobal(position))
-        if action == rename:
+        if rename is not None and action == rename:
             value, ok = QtWidgets.QInputDialog.getText(
                 self, "Betriebsstelle umbenennen", "Name:", text=self.model.points[point_id].display_name)
             if ok and value.strip():
@@ -538,6 +548,26 @@ class OperatingPointsTab(QtWidgets.QWidget):
                     self, "Betriebsstelle löschen", f"Die Betriebsstelle besitzt noch {count} Zuordnungen.\n"
                     "Beim Löschen werden diese wieder nicht zugeordnet.") == QtWidgets.QMessageBox.StandardButton.Yes:
                 self.model.delete_point(point_id); self._mark_dirty(); self._refresh_points()
+
+    def _delete_all_points(self) -> None:
+        if QtWidgets.QMessageBox.question(
+                self, "Betriebsstellen löschen",
+                "Alle Betriebsstellen und ihre aktuellen Zuordnungen entfernen?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
+                QtWidgets.QMessageBox.StandardButton.Cancel) != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self.model.delete_all_points(); self._mark_dirty(); self._refresh_points()
+
+    def _delete_all_entries(self) -> None:
+        if QtWidgets.QMessageBox.question(
+                self, "Einfahrten löschen", "Alle Einfahrten und ihre aktuellen Zuordnungen entfernen?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
+                QtWidgets.QMessageBox.StandardButton.Cancel) != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self.model.delete_all_entry_points(); self._mark_dirty(); self._refresh_points()
+
+    def assignment_completeness(self):
+        return self.model.completeness()
 
     def _refresh_completer(self) -> None:
         entries = []

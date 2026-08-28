@@ -69,11 +69,11 @@ class InfrastructureTab(QtWidgets.QWidget):
         add_node = QtWidgets.QPushButton("+ Betriebsstelle"); add_node.clicked.connect(self._add_node)
         toolbar.addWidget(add_node)
         self.mode_group = QtWidgets.QButtonGroup(self); self.mode_group.setExclusive(True)
-        for mode, text in ((EditorMode.PAN, "✋ Umsehen"), (EditorMode.SELECT, "⌖ Auswählen"),
+        for mode, text in ((EditorMode.NAVIGATE, "✋ Umsehen"), (EditorMode.RECTANGLE, "▧ Auswahlrechteck"),
                            (EditorMode.CONNECT, "✎ Verbinden")):
             button = QtWidgets.QToolButton(); button.setText(text); button.setCheckable(True)
             button.setProperty("editor_mode", mode); self.mode_group.addButton(button); toolbar.addWidget(button)
-            if mode == EditorMode.PAN: button.setChecked(True)
+            if mode == EditorMode.NAVIGATE: button.setChecked(True)
         self.mode_group.buttonClicked.connect(lambda button: self._set_editor_mode(button.property("editor_mode")))
         delete = QtWidgets.QPushButton("Löschen"); delete.clicked.connect(self._delete_selected); toolbar.addWidget(delete)
         toolbar.addWidget(self._tool_button("Undo", self.undo_stack.undo)); toolbar.addWidget(self._tool_button("Redo", self.undo_stack.redo))
@@ -151,8 +151,8 @@ class InfrastructureTab(QtWidgets.QWidget):
             if not self._identity_ready and self.aid is not None and self.facility_name:
                 self._load_or_initialize(automatic)
             elif self._identity_ready:
-                before = len(self.graph.nodes); self._apply_supplements(self.graph)
-                if len(self.graph.nodes) != before:
+                before = self.graph.to_dict(); self._apply_supplements(self.graph)
+                if self.graph.to_dict() != before:
                     self._mark_dirty(); self._rebuild_scene()
             raw, builder, operational, platforms, schedule, operating, corridor = context
             if self.aid is not None:
@@ -213,7 +213,10 @@ class InfrastructureTab(QtWidgets.QWidget):
         return result
 
     def _apply_supplements(self, graph: EditableTopologyGraph) -> None:
+        graph.remove_redundant_entry_supplements()
         for node_id, name, node_type, source, anchor in self._supplements:
+            if source == "entry_point_config" and graph.represented_node(name, exclude_id=node_id):
+                continue
             graph.ensure_supplement_node(node_id, name, node_type, source, anchor_id=anchor)
 
     def _load_or_initialize(self, automatic) -> None:
@@ -244,8 +247,9 @@ class InfrastructureTab(QtWidgets.QWidget):
             if validation.path.exists(): archive_artifact(validation.path)
         self.graph = (EditableTopologyGraph.from_dict(data) if data else
                       EditableTopologyGraph.from_dict(automatic.to_dict()))
-        self._apply_supplements(self.graph)
-        self._identity_ready = True; self._dirty = data is None
+        before_supplements = self.graph.to_dict(); self._apply_supplements(self.graph)
+        supplements_changed = self.graph.to_dict() != before_supplements
+        self._identity_ready = True; self._dirty = data is None or supplements_changed
         self._rebuild_scene(); self._refresh_routes(); self._refresh_instances()
         if data is None: self.flush_pending_save()
         self.status.setText("Finaler gespeicherter Graph geladen." if data else "Initialgraph automatisch erzeugt und gespeichert.")
@@ -304,8 +308,8 @@ class InfrastructureTab(QtWidgets.QWidget):
 
     def _set_editor_mode(self, mode: EditorMode) -> None:
         self.view.set_editor_mode(mode)
-        self.status.setText({EditorMode.PAN: "Umsehen: Ansicht mit linker Maustaste verschieben.",
-                             EditorMode.SELECT: "Auswählen: Knoten oder Verbindung bearbeiten.",
+        self.status.setText({EditorMode.NAVIGATE: "Umsehen: Hintergrund verschieben oder ein Objekt bearbeiten.",
+                             EditorMode.RECTANGLE: "Auswahlrechteck: mehrere Graphobjekte auswählen.",
                              EditorMode.CONNECT: "Verbinden: Von einem Knoten zu einem anderen ziehen."}[mode])
 
     def _node_activated(self, node_id: str) -> None:
@@ -391,8 +395,8 @@ class InfrastructureTab(QtWidgets.QWidget):
     def _begin_endpoint_selection(self) -> None:
         self._route_endpoints = []; self._route_path = None
         select_button = next(button for button in self.mode_group.buttons()
-                             if button.property("editor_mode") == EditorMode.SELECT)
-        select_button.setChecked(True); self._set_editor_mode(EditorMode.SELECT)
+                             if button.property("editor_mode") == EditorMode.NAVIGATE)
+        select_button.setChecked(True); self._set_editor_mode(EditorMode.NAVIGATE)
         self.route_path_label.setText("Start- und Endknoten im Graph auswählen.")
         self.status.setText("Startknoten auswählen.")
 

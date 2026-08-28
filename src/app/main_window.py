@@ -19,7 +19,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(self.diagram, "Bildfahrplan")
         self.tabs.addTab(PlaceholderTab("Gleisbelegung – folgt in einer späteren Version"), "Gleisbelegung")
         self.infrastructure = InfrastructureTab(REPOSITORY_ROOT / "config")
-        self.tabs.addTab(self.infrastructure, "Strecke")
+        self.infrastructure_index = self.tabs.addTab(self.infrastructure, "Strecke")
         self.operating_points = OperatingPointsTab(REPOSITORY_ROOT / "config")
         self.tabs.addTab(self.operating_points, "Gleise / Ortszuordnung")
         self.tabs.addTab(PlaceholderTab("Allgemeine Einstellungen – folgen in einer späteren Version"), "Einstellungen")
@@ -47,7 +47,21 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.diagram.refresh(snapshot)
         self.operating_points.refresh(snapshot)
+        self._update_infrastructure_gate()
         self.infrastructure.refresh(snapshot)
+
+    def _update_infrastructure_gate(self) -> None:
+        state = self.operating_points.assignment_completeness()
+        self.tabs.setTabEnabled(self.infrastructure_index, state.is_complete)
+        if state.is_complete:
+            reason = ""
+        elif not state.initialized:
+            reason = "Strecke ist erst verfügbar, wenn Gleis- und Einfahrtsdaten vorliegen."
+        else:
+            entries = state.unassigned_entry_count + state.empty_entry_point_count
+            reason = (f"Noch {state.unassigned_platform_count} Gleise und {entries} Einfahrten "
+                      "nicht vollständig zugeordnet.")
+        self.tabs.setTabToolTip(self.infrastructure_index, reason)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
         for index in range(self.tabs.count()):

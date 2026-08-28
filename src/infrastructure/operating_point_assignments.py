@@ -115,6 +115,20 @@ class EditableOperatingPoint:
     removable: bool = False
 
 
+@dataclass(frozen=True)
+class AssignmentCompleteness:
+    unassigned_platform_count: int
+    unassigned_entry_count: int
+    empty_entry_point_count: int
+    initialized: bool = True
+
+    @property
+    def is_complete(self) -> bool:
+        return self.initialized and not (
+            self.unassigned_platform_count or self.unassigned_entry_count
+            or self.empty_entry_point_count)
+
+
 @dataclass
 class OperatingPointAssignments:
     """Ein eindeutiger Assignment-Layer ueber einem ableitbaren Auto-Graphen."""
@@ -129,6 +143,11 @@ class OperatingPointAssignments:
     entry_points: dict[str, EntryPoint] = field(default_factory=dict)
     raw_items: dict[str, AssignableRawItem] = field(default_factory=dict)
     _automatic_members: dict[str, tuple[str, ...]] = field(default_factory=dict, repr=False)
+    deleted_automatic_point_ids: set[str] = field(default_factory=set)
+    deleted_automatic_identities: set[str] = field(default_factory=set)
+    deleted_entry_point_ids: set[str] = field(default_factory=set)
+    hidden_manual_point_ids: set[str] = field(default_factory=set)
+    _hidden_manual_points: dict[str, EditableOperatingPoint] = field(default_factory=dict, repr=False)
 
     def rebuild(self, automatic: OperatingPointGraph, raw_names: Iterable[str],
                 haltpunkt_names: Iterable[str], config: dict | None = None,
@@ -154,26 +173,40 @@ class OperatingPointAssignments:
             evidence = tuple(snapshot.get("raw_items", {}).get(name, {}).get(
                 "evidence", kind_evidence.get(kind, ())))
             self.raw_items[name] = AssignableRawItem(name, kind, evidence)
-        self.entry_points = dict(entry_points or {})
+        self.deleted_automatic_point_ids = set(config.get("deleted_automatic_point_ids", ()))
+        self.deleted_automatic_identities = set(config.get("deleted_automatic_identities", ()))
+        self.deleted_entry_point_ids = set(config.get("deleted_entry_point_ids", ()))
+        self.hidden_manual_point_ids = set(config.get("hidden_manual_point_ids", ()))
+        self.entry_points = {key: value for key, value in (entry_points or {}).items()
+                             if key not in self.deleted_entry_point_ids}
         configured_entries = dict(config.get("entry_points", {}))
         configured_entries.update(snapshot.get("entry_points", {}))
         for point_id, values in configured_entries.items():
-            if point_id not in self.entry_points:
+            if point_id not in self.entry_points and point_id not in self.deleted_entry_point_ids:
                 elements = tuple(EntryInfrastructureElement(**item)
                                  for item in values.get("infrastructure_elements", ()))
                 self.entry_points[point_id] = EntryPoint(
                     point_id, values.get("display_name", point_id), values.get("source", "snapshot"),
                     elements, tuple(values.get("evidence", ())), tuple(values.get("boundary_evidence", ())))
         entry_names = {name for name, item in self.raw_items.items() if item.kind == "entry"}
-        self.points = {
+        automatic_points = {
             point.id: EditableOperatingPoint(point.id, point.display_name, station_key(point.display_name), False)
             for point in automatic.nodes.values()
             if not point.raw_names or any(name not in entry_names for name in point.raw_names)
         }
-        self._automatic_members = {point.id: point.raw_names for point in automatic.nodes.values()}
+        aliases = self._canonicalize_automatic_points(automatic_points, automatic)
+        self.points = {key: value for key, value in automatic_points.items()
+                       if aliases.get(key, key) == key and key not in self.deleted_automatic_point_ids
+                       and self._point_identity(value) not in self.deleted_automatic_identities}
+        self._automatic_members = {}
+        for point in automatic.nodes.values():
+            canonical = aliases.get(point.id, point.id)
+            self._automatic_members[canonical] = tuple(dict.fromkeys(
+                (*self._automatic_members.get(canonical, ()), *point.raw_names)))
         self.assignments = {}
         self.sources = {}
         for raw_name, point_id in automatic.raw_to_operating_point.items():
+            point_id = aliases.get(point_id, point_id)
             if raw_name not in self.all_raw_names or self.raw_items[raw_name].kind == "entry" or point_id not in self.points:
                 continue
             self.assignments[raw_name] = point_id
@@ -186,6 +219,9 @@ class OperatingPointAssignments:
                 self.assignments[raw_name] = point_id; self.sources[raw_name] = "self_entry"
 
         for point_id, values in snapshot.get("operating_points", {}).items():
+            point_id = aliases.get(point_id, point_id)
+            if point_id in self.deleted_automatic_point_ids or point_id in self.hidden_manual_point_ids:
+                continue
             automatic_point = automatic.nodes.get(point_id)
             if (automatic_point and automatic_point.raw_names
                     and all(name in entry_names for name in automatic_point.raw_names)
@@ -208,6 +244,7 @@ class OperatingPointAssignments:
                 self.sources[raw_name] = values.get("source", "automatic")
 
         point_data = config.get("operating_points", {})
+        self._hidden_manual_points = {}
         self.manual_point_ids = set(config.get("manual_point_ids", ()))
         has_manual_point_ids = "manual_point_ids" in config
         for point_id, values in point_data.items():
@@ -217,6 +254,10 @@ class OperatingPointAssignments:
             if values.get("removable", False) or (not has_manual_point_ids and source not in {
                     "automatic", "automatic_station_key", "self_haltpunkt"}):
                 self.manual_point_ids.add(point_id)
+            if point_id in self.hidden_manual_point_ids:
+                self._hidden_manual_points[point_id] = EditableOperatingPoint(
+                    point_id, values.get("display_name", point_id), values.get("station_key"), True)
+                continue
             self.points[point_id] = EditableOperatingPoint(
                 point_id, values.get("display_name", point_id), values.get("station_key"),
                 point_id in self.manual_point_ids,
@@ -247,6 +288,25 @@ class OperatingPointAssignments:
             self.sources[raw_name] = assignment_sources.get(
                 raw_name, "manual_entry" if point_id in self.entry_points else "manual")
 
+    @staticmethod
+    def _canonicalize_automatic_points(points: dict[str, EditableOperatingPoint],
+                                       automatic: OperatingPointGraph) -> dict[str, str]:
+        """Merges only automatic targets with the same established station identity."""
+        groups: dict[tuple[str, str], list[str]] = {}
+        for point_id, point in points.items():
+            keys = {station_key(name) for name in automatic.nodes[point_id].raw_names if station_key(name)}
+            identity = ("station", next(iter(keys))) if len(keys) == 1 else (
+                "name", unicodedata.normalize("NFC", point.display_name).strip().casefold())
+            groups.setdefault(identity, []).append(point_id)
+        aliases: dict[str, str] = {}
+        for identifiers in groups.values():
+            canonical = min(identifiers, key=lambda value: (
+                value.startswith("schedule:"), value.startswith("station-key:"), natural_sort_key(value)))
+            aliases.update({identifier: canonical for identifier in identifiers})
+            points[canonical].station_key = points[canonical].station_key or next(
+                (points[item].station_key for item in identifiers if points[item].station_key), None)
+        return aliases
+
     def _extend_by_station_key(self, haltpunkt_names: set[str]) -> None:
         """Erweitert nur die Editor-Ortszuordnung, nicht den Topologiegraphen."""
         names_by_key: dict[str, set[str]] = {}
@@ -257,6 +317,8 @@ class OperatingPointAssignments:
             if key and raw_name not in haltpunkt_names:
                 names_by_key.setdefault(key, set()).add(raw_name)
         for key, names in names_by_key.items():
+            if self._normalize_identity(key) in self.deleted_automatic_identities:
+                continue
             candidate_ids = {
                 self.assignments[name] for name in names if name in self.assignments
                 and self.assignments[name] in self.points
@@ -317,6 +379,18 @@ class OperatingPointAssignments:
             if self.sources.get(raw_name) not in {"self_haltpunkt", "self_entry"}:
                 self.remove_assignments((raw_name,))
 
+    def completeness(self) -> AssignmentCompleteness:
+        unassigned_platforms = sum(
+            item.kind == "platform_or_haltpunkt" and name not in self.assignments
+            for name, item in self.raw_items.items())
+        unassigned_entries = sum(
+            item.kind == "entry" and name not in self.assignments
+            for name, item in self.raw_items.items())
+        empty_entries = sum(not any(owner == point_id for owner in self.assignments.values())
+                            for point_id in self.entry_points)
+        return AssignmentCompleteness(unassigned_platforms, unassigned_entries, empty_entries,
+                                      bool(self.raw_items or self.entry_points))
+
     def add_point(self, display_name: str, key: str | None = None) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", display_name.casefold()).strip("-") or "neu"
         point_id = f"manual:{base}"
@@ -334,13 +408,51 @@ class OperatingPointAssignments:
         point.display_name = display_name
 
     def delete_point(self, point_id: str) -> None:
-        if point_id not in self.manual_point_ids:
-            raise ValueError("Nur manuelle Betriebsstellen sind loeschbar")
+        if point_id not in self.points:
+            raise KeyError(point_id)
+        self._release_target(point_id)
+        if point_id in self.manual_point_ids:
+            self.hidden_manual_point_ids.add(point_id)
+            self._hidden_manual_points[point_id] = self.points[point_id]
+        else:
+            self.deleted_automatic_point_ids.add(point_id)
+            self.deleted_automatic_identities.add(self._point_identity(self.points[point_id]))
+        self.points.pop(point_id)
+
+    def delete_entry_point(self, point_id: str) -> None:
+        if point_id not in self.entry_points:
+            raise KeyError(point_id)
+        self._release_target(point_id)
+        self.deleted_entry_point_ids.add(point_id)
+        self.entry_points.pop(point_id)
+
+    def _release_target(self, point_id: str) -> None:
         self.remove_assignments({name for name, owner in self.assignments.items() if owner == point_id})
-        self.points.pop(point_id); self.manual_point_ids.discard(point_id)
+
+    def delete_all_points(self) -> None:
+        for point_id in tuple(self.points):
+            self.delete_point(point_id)
+
+    def delete_all_entry_points(self) -> None:
+        for point_id in tuple(self.entry_points):
+            self.delete_entry_point(point_id)
+
+    def restore_automatic_targets(self) -> None:
+        self.deleted_automatic_point_ids.clear()
+        self.deleted_automatic_identities.clear()
+        self.deleted_entry_point_ids.clear()
+
+    @staticmethod
+    def _point_identity(point: EditableOperatingPoint) -> str:
+        return OperatingPointAssignments._normalize_identity(point.station_key or point.display_name)
+
+    @staticmethod
+    def _normalize_identity(value: str) -> str:
+        return unicodedata.normalize("NFC", value).strip().casefold()
 
     def to_config(self) -> dict:
         configured_ids = self.manual_point_ids | (set(self.manual_assignments.values()) & set(self.points))
+        configured_points = self.points | self._hidden_manual_points
         result = {
             "schema_version": 3,
             "entry_points": {
@@ -355,8 +467,8 @@ class OperatingPointAssignments:
             },
             "raw_item_kinds": {name: item.kind for name, item in sorted(self.raw_items.items())},
             "operating_points": {
-                point_id: {"display_name": self.points[point_id].display_name,
-                           "station_key": self.points[point_id].station_key,
+                point_id: {"display_name": configured_points[point_id].display_name,
+                           "station_key": configured_points[point_id].station_key,
                            "raw_names": sorted((name for name, owner in self.manual_assignments.items()
                                                 if owner == point_id), key=natural_sort_key),
                            "removable": point_id in self.manual_point_ids}
@@ -367,6 +479,10 @@ class OperatingPointAssignments:
             "assignment_sources": {name: self.sources.get(name, "manual")
                                    for name in sorted(self.manual_assignments, key=natural_sort_key)},
             "unassigned": sorted(self.explicitly_unassigned, key=natural_sort_key),
+            "deleted_automatic_point_ids": sorted(self.deleted_automatic_point_ids),
+            "deleted_automatic_identities": sorted(self.deleted_automatic_identities),
+            "deleted_entry_point_ids": sorted(self.deleted_entry_point_ids),
+            "hidden_manual_point_ids": sorted(self.hidden_manual_point_ids),
         }
         result["editor_snapshot"] = {
             "raw_names": sorted(self.all_raw_names, key=natural_sort_key),

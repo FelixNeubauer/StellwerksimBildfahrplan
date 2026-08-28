@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 from uuid import uuid4
+import unicodedata
 
 from .model import OperationalRouteGraph
 
@@ -140,18 +141,56 @@ class EditableTopologyGraph:
         """Ergänzt nur neue bekannte Ziele und schützt bestehende Layoutdaten."""
         if node_id in self.nodes:
             return self.nodes[node_id]
+        core_ids = {item.id for item in self.nodes.values() if not item.metadata.get("parking_area")
+                    and not item.metadata.get("parking_anchor")}
+        components = [component & core_ids for component in self.connected_components()]
+        main = max((component for component in components if component), key=lambda value: (len(value), -len(min(value))),
+                   default=core_ids)
+        core = [self.nodes[item] for item in main] or list(self.nodes.values())
+        min_x = min((item.layout_x for item in core), default=0.0)
+        max_x = max((item.layout_x for item in core), default=min_x + 900.0)
+        bottom = max((item.layout_y for item in core), default=0.0) + 140.0
+        parked = sum(bool(item.metadata.get("parking_area") or item.metadata.get("parking_anchor"))
+                     for item in self.nodes.values())
+        columns = max(1, min(6, int(max(600.0, max_x - min_x) // 170.0) + 1))
+        row, column = divmod(parked, columns)
+        x = min_x + column * max(170.0, max(600.0, max_x - min_x) / max(1, columns - 1))
         if anchor_id in self.nodes:
-            anchor = self.nodes[anchor_id]
-            same_anchor = sum(item.metadata.get("parking_anchor") == anchor_id for item in self.nodes.values())
-            position = (anchor.layout_x + 90.0, anchor.layout_y + 80.0 + same_anchor * 70.0)
-        else:
-            maximum_x = max((item.layout_x for item in self.nodes.values()), default=0.0)
-            parked = sum(item.metadata.get("parking_area") is True for item in self.nodes.values())
-            position = (maximum_x + 220.0, parked * 75.0)
+            x = self.nodes[anchor_id].layout_x
+        position = (x, bottom + row * 95.0)
         node = TopologyNode(node_id, display_name, node_type, source, *position,
-                            metadata={"parking_area": anchor_id is None, "parking_anchor": anchor_id})
+                            metadata={"parking_area": anchor_id is None, "parking_anchor": anchor_id,
+                                      "automatic_supplement": True})
         self.nodes[node_id] = node
         return node
+
+    @staticmethod
+    def logical_name(value: str) -> str:
+        return unicodedata.normalize("NFC", value).strip().casefold()
+
+    def represented_node(self, display_name: str, *, exclude_id: str | None = None) -> TopologyNode | None:
+        """Returns an established automatic node for the same conservative external identity."""
+        key = self.logical_name(display_name)
+        candidates = [node for node in self.nodes.values() if node.id != exclude_id
+                      and self.logical_name(node.display_name) == key
+                      and node.source != "manual" and node.source != "entry_point_config"]
+        return max(candidates, key=lambda node: (self.degree(node.id) > 0, node.source == "automatic", node.id),
+                   default=None)
+
+    def remove_redundant_entry_supplements(self) -> int:
+        removed = 0
+        for node in tuple(self.nodes.values()):
+            if node.source != "entry_point_config":
+                continue
+            winner = self.represented_node(node.display_name, exclude_id=node.id)
+            if winner is None:
+                continue
+            for route in self.defined_routes.values():
+                route.ordered_node_ids = [winner.id if item == node.id else item for item in route.ordered_node_ids]
+                if route.endpoint_a == node.id: route.endpoint_a = winner.id
+                if route.endpoint_b == node.id: route.endpoint_b = winner.id
+            self.delete_node(node.id); removed += 1
+        return removed
 
     def add_edge(self, node_a: str, node_b: str, *, source: str = "manual") -> TopologyEdge:
         if node_a == node_b: raise ValueError("Eine Betriebsstelle kann nicht mit sich selbst verbunden werden.")
