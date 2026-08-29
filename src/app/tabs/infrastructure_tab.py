@@ -91,8 +91,7 @@ class KilometrageDialog(QtWidgets.QDialog):
             for column, text in enumerate((str(row + 1), node.display_name,
                                            "Einfahrt" if node.node_type == "entry" else "Betriebsstelle")):
                 item = QtWidgets.QTableWidgetItem(text)
-                item.setFlags(item.flags() & ~(QtCore.Qt.ItemFlag.ItemIsEditable |
-                                               QtCore.Qt.ItemFlag.ItemIsFocusable))
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row, column, item)
             value = initial_values.get(node_id)
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem("" if value is None else f"{value:.3f}"))

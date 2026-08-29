@@ -35,6 +35,12 @@ class UiLogicTests(unittest.TestCase):
         self.assertIn('(EditorMode.RECTANGLE, "▧ Auswahl")', tab)
         self.assertIn("Mehrere Elemente mit einem Auswahlrechteck markieren", tab)
 
+    def test_kilometrage_read_only_cells_only_remove_supported_editable_flag(self):
+        """Regression: QTableWidgetItem besitzt kein Qt ItemIsFocusable-Flag."""
+        tab = (ROOT / "src/app/tabs/infrastructure_tab.py").read_text(encoding="utf-8")
+        self.assertNotIn("ItemIsFocusable", tab)
+        self.assertIn("item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)", tab)
+
     def test_axis_contract_and_hard_time_limits(self):
         self.assertEqual(ROUTE_AXIS_POSITION, "top")
         self.assertFalse(X_INTERACTION_ENABLED); self.assertTrue(Y_INTERACTION_ENABLED)

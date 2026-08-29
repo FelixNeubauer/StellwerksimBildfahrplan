@@ -59,5 +59,8 @@ def test_tab_and_backtab_only_visit_kilometres_and_wrap_with_selected_text():
     assert (dialog.table.currentRow(), dialog.table.currentColumn()) == (2, KILOMETRE_COLUMN)
     for row in range(dialog.table.rowCount()):
         for column in range(KILOMETRE_COLUMN):
-            assert not dialog.table.item(row, column).flags() & QtCore.Qt.ItemFlag.ItemIsFocusable
+            item = dialog.table.item(row, column)
+            assert item.flags() & QtCore.Qt.ItemFlag.ItemIsEnabled
+            assert item.flags() & QtCore.Qt.ItemFlag.ItemIsSelectable
+            assert not item.flags() & QtCore.Qt.ItemFlag.ItemIsEditable
     dialog.close()
