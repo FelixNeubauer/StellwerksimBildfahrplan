@@ -6,6 +6,7 @@ from pathlib import Path
 from infrastructure import (
     EditableTopologyGraph, EditableTopologyGraphStore, OperationalRouteEdge,
     OperationalRouteGraph, OperationalRouteNode, TopologySupplementCandidate,
+    TopologyTarget, TopologyTargetRegistry,
 )
 
 
@@ -18,6 +19,68 @@ def graph_with_nodes(*values):
 
 
 class EditableTopologyTests(unittest.TestCase):
+    def test_registry_projection_uses_only_targets_and_unions_edges(self):
+        registry = TopologyTargetRegistry(
+            targets={name: TopologyTarget(name, "operating_point", name) for name in ("THDM", "X", "Y", "Z")},
+            raw_to_target={"THDM": "THDM", "THDM 1": "THDM", "THDM 2": "THDM",
+                           "X": "X", "Y": "Y", "Z": "Z"},
+            evidence_to_target={"op:THDM": "THDM", "X": "X", "Y": "Y", "Z": "Z"})
+        nodes = {
+            "schedule:THDM": OperationalRouteNode("schedule:THDM", "THDM", ("THDM",), (), "inferred"),
+            "axis:THDM": OperationalRouteNode("axis:THDM", "THDM", ("THDM 1",), ("op:THDM",), "inferred"),
+            "resolver:THDM": OperationalRouteNode("resolver:THDM", "THDM", ("THDM 2",), (), "inferred"),
+            **{name: OperationalRouteNode(name, name, (name,), (name,), "inferred") for name in "XYZ"},
+            "schedule:UNKNOWN": OperationalRouteNode("schedule:UNKNOWN", "UNKNOWN", ("UNKNOWN",), (), "inferred"),
+        }
+        source = OperationalRouteGraph(nodes=nodes, edges=[
+            OperationalRouteEdge("X", "schedule:THDM", 1, {}, "inferred", ()),
+            OperationalRouteEdge("axis:THDM", "Y", 1, {}, "inferred", ()),
+            OperationalRouteEdge("resolver:THDM", "Z", 1, {}, "inferred", ()),
+        ])
+        graph = EditableTopologyGraph.from_registry_projection(source, registry)
+        self.assertEqual(set(graph.nodes), {"THDM", "X", "Y", "Z"})
+        self.assertEqual(graph.neighbours("THDM"), {"X", "Y", "Z"})
+        self.assertNotIn("schedule:UNKNOWN", graph.nodes)
+        self.assertEqual(graph.nodes["THDM"].metadata["automatic_node_ids"],
+                         ["axis:THDM", "resolver:THDM", "schedule:THDM"])
+
+    def test_registry_projection_adds_one_missing_target_and_one_entry(self):
+        registry = TopologyTargetRegistry(targets={
+            "manual:X": TopologyTarget("manual:X", "operating_point", "ManualX"),
+            "entry:Aalen": TopologyTarget("entry:Aalen", "entry_point", "Aalen"),
+        }, raw_to_target={"Aalen": "entry:Aalen"})
+        source = OperationalRouteGraph(nodes={
+            "type6:Aalen": OperationalRouteNode("type6:Aalen", "Aalen", ("Aalen",), (), "inferred"),
+            "type7:Aalen": OperationalRouteNode("type7:Aalen", "Aalen", ("Aalen",), (), "inferred"),
+        })
+        graph = EditableTopologyGraph.from_registry_projection(source, registry)
+        self.assertEqual(set(graph.nodes), {"manual:X", "entry:Aalen"})
+        self.assertEqual(graph.nodes["entry:Aalen"].target_kind, "entry_point")
+        self.assertEqual(graph.degree("manual:X"), 0)
+        self.assertEqual(graph.degree("entry:Aalen"), 0)
+
+    def test_registry_migration_collapses_old_nodes_and_records_unmapped_manual(self):
+        registry = TopologyTargetRegistry(
+            targets={"TRM": TopologyTarget("TRM", "operating_point", "TRM")},
+            raw_to_target={"TRM": "TRM"},
+            evidence_to_target={"schedule:TRM": "TRM", "axis:TRM": "TRM"})
+        graph = graph_with_nodes(("schedule:TRM", "junction"), ("axis:TRM", "junction"),
+                                 ("supplement:TRM", "junction"), ("manual:orphan", "junction"))
+        graph.nodes["schedule:TRM"].source = graph.nodes["axis:TRM"].source = "automatic"
+        graph.nodes["supplement:TRM"].source = "operating_point"
+        graph.nodes["supplement:TRM"].display_name = "TRM"
+        graph.nodes["manual:orphan"].display_name = "Orphan"
+        graph.migrate_to_registry(registry)
+        self.assertEqual(set(graph.nodes), {"TRM"})
+        self.assertEqual(graph.nodes["TRM"].target_id, "TRM")
+        self.assertEqual(len(graph.metadata["unmapped_legacy_nodes"]), 1)
+        self.assertFalse(graph.duplicate_target_ids())
+
+    def test_duplicate_target_validation_reports_target(self):
+        graph = graph_with_nodes(("one", "junction"), ("two", "junction"))
+        graph.nodes["one"].target_id = graph.nodes["two"].target_id = "THDM"
+        self.assertEqual(graph.duplicate_target_ids(), ("THDM",))
+
     def test_supplement_candidates_deduplicate_by_canonical_target(self):
         candidates = (
             TopologySupplementCandidate("schedule:THDM", "THDM", "junction",

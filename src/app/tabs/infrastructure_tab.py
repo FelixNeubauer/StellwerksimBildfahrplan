@@ -12,7 +12,7 @@ from infrastructure import (
     InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
     OperatingPointAssignments, SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, entry_points_from_raw_graph,
     find_identity_candidate, parse_bahnsteigliste, parse_wege, save_generated_graph,
-    TopologySupplementCandidate,
+    TopologyTargetRegistry,
     validate_saved_stellwerk_identity,
 )
 from app.widgets.topology_graphics import (
@@ -51,10 +51,7 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.graph = EditableTopologyGraph()
         self.aid = None; self.facility_name = None
         self._last_signature = None; self._automatic_graph = None; self._automatic_source = None
-        self._supplements: list[TopologySupplementCandidate] = []
-        self._canonical_operating_by_node: dict[str, str] = {}
-        self._canonical_operating_aliases: dict[str, str] = {}
-        self._canonical_point_names: dict[str, set[str]] = {}
+        self._target_registry = TopologyTargetRegistry()
         self._dirty = False; self._identity_ready = False; self._loading = False
         self._route_path: list[str] | None = None
         self._route_endpoints: list[str] | None = None; self._editing_route_id: str | None = None
@@ -70,8 +67,6 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.regenerate.clicked.connect(self._regenerate_graph); toolbar.addWidget(self.regenerate)
         auto_layout = QtWidgets.QPushButton("Auto-Layout"); auto_layout.clicked.connect(self._auto_layout)
         toolbar.addWidget(auto_layout)
-        add_node = QtWidgets.QPushButton("+ Betriebsstelle"); add_node.clicked.connect(self._add_node)
-        toolbar.addWidget(add_node)
         self.mode_group = QtWidgets.QButtonGroup(self); self.mode_group.setExclusive(True)
         for mode, text in ((EditorMode.NAVIGATE, "✋ Umsehen"), (EditorMode.RECTANGLE, "▧ Auswahl"),
                            (EditorMode.CONNECT, "✎ Verbinden")):
@@ -191,89 +186,27 @@ class InfrastructureTab(QtWidgets.QWidget):
                 if validation.status == "match": manual = candidate
         operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
         corridor = CorridorGraphBuilder(schedule, operating, raw).build(); operational = corridor.to_operational_graph()
+        entries = entry_points_from_raw_graph(raw)
+        raw_names = set(schedule.nodes)
+        raw_kinds = {name: "schedule_point" for name in raw_names}
+        for platform in platforms:
+            raw_names.add(platform.raw_name); raw_names.update(platform.related_names)
+            raw_kinds[platform.raw_name] = "platform_or_haltpunkt"
+            raw_kinds.update({name: "platform_or_haltpunkt" for name in platform.related_names})
+        entry_assignments = {}
+        for entry in entries.values():
+            raw_names.add(entry.display_name); raw_kinds[entry.display_name] = "entry"
+            entry_assignments[entry.display_name] = entry.id
         assignments = OperatingPointAssignments()
-        assignments.rebuild(operating, schedule.nodes, (), manual)
-        self._canonical_point_names = {}
-        for point_id, point in assignments.points.items():
-            key = EditableTopologyGraph.logical_name(point.display_name)
-            self._canonical_point_names.setdefault(key, set()).add(point_id)
-        self._canonical_operating_aliases = {}
-        for operating_id, point in operating.nodes.items():
-            owners = {assignments.assignments[name] for name in point.raw_names
-                      if name in assignments.assignments and assignments.assignments[name] in assignments.points}
-            if len(owners) == 1:
-                self._canonical_operating_aliases[operating_id] = next(iter(owners))
-        self._canonical_operating_by_node = {}
-        for node_id, node in operational.nodes.items():
-            owners = {self._canonical_operating_aliases.get(value, value) for value in node.source_nodes}
-            owners.update(assignments.assignments[name] for name in node.raw_names
-                          if name in assignments.assignments and assignments.assignments[name] in assignments.points)
-            if len(owners) == 1:
-                self._canonical_operating_by_node[node_id] = next(iter(owners))
-        graph = EditableTopologyGraph.from_operational_graph(operational, self._canonical_operating_by_node)
-        self._supplements = self._topology_supplements(manual, raw)
-        supplemented = {item.canonical_target_id or item.node_id for item in self._supplements}
-        self._supplements.extend(
-            TopologySupplementCandidate(
-                self._canonical_operating_aliases.get(point.id, point.id), point.display_name,
-                "junction", "operating_point", None,
-                self._canonical_operating_aliases.get(point.id, point.id))
-            for point in sorted(operating.nodes.values(), key=lambda item: item.id)
-            if point.id not in operational.nodes
-            and self._canonical_operating_aliases.get(point.id, point.id) not in supplemented
-            and point.point_type != "entry_exit")
-        self._supplements = list(EditableTopologyGraph.deduplicate_supplement_candidates(self._supplements))
-        self._apply_supplements(graph)
+        assignments.rebuild(
+            operating, raw_names, (), manual, entry_points=entries,
+            raw_item_kinds=raw_kinds, automatic_entry_assignments=entry_assignments)
+        self._target_registry = TopologyTargetRegistry.from_assignments(assignments, operating)
+        graph = EditableTopologyGraph.from_registry_projection(operational, self._target_registry)
         return graph, (raw, builder, operational, platforms, schedule, operating, corridor)
 
-    def _topology_supplements(self, config: dict, raw: RawInfrastructureGraph):
-        result: list[tuple[str, str, str, str, str | None]] = []
-        manual_ids = set(config.get("manual_point_ids", ()))
-        for point_id in sorted(manual_ids):
-            values = config.get("operating_points", {}).get(point_id, {})
-            result.append(TopologySupplementCandidate(
-                point_id, values.get("display_name", point_id), "junction",
-                "operating_point_config", None, point_id))
-        entries = entry_points_from_raw_graph(raw)
-        configured = config.get("entry_points", {})
-        for point_id, entry in entries.items():
-            anchor = None
-            evidence = configured.get(point_id, {}).get("boundary_evidence", ())
-            for item in evidence:
-                anchor = item.get("source_node") or item.get("route_axis_node")
-                if not anchor and item.get("possible_source_nodes"):
-                    anchor = item["possible_source_nodes"][0]
-                if anchor: break
-            result.append(TopologySupplementCandidate(
-                point_id, entry.display_name, "entry", "entry_point_config", anchor, point_id))
-        return list(EditableTopologyGraph.deduplicate_supplement_candidates(result))
-
     def _apply_supplements(self, graph: EditableTopologyGraph) -> None:
-        canonical_existing = {}
-        for node_id, node in graph.nodes.items():
-            candidates = set()
-            if node.operating_point_id:
-                candidates.add(self._canonical_operating_aliases.get(node.operating_point_id,
-                                                                      node.operating_point_id))
-            candidates.update(self._canonical_operating_aliases.get(value, value)
-                              for value in node.metadata.get("operating_point_ids", ()))
-            candidates.update(self._canonical_operating_by_node.get(value)
-                              for value in node.metadata.get("automatic_node_ids", ())
-                              if self._canonical_operating_by_node.get(value))
-            if len(candidates) == 1:
-                canonical_existing[node_id] = next(iter(candidates))
-        graph.canonicalize_automatic_nodes(canonical_existing)
-        graph.remove_redundant_operating_supplements(canonical_existing, self._canonical_point_names)
-        graph.remove_redundant_entry_supplements()
-        missing = graph.missing_supplement_candidates(
-            self._supplements, canonical_existing, self._canonical_point_names)
-        for candidate in missing:
-            if (candidate.source == "entry_point_config"
-                    and graph.represented_node(candidate.display_name, exclude_id=candidate.node_id)):
-                continue
-            graph.ensure_supplement_node(
-                candidate.node_id, candidate.display_name, candidate.node_type, candidate.source,
-                anchor_id=candidate.anchor_id, canonical_target_id=candidate.canonical_target_id)
+        graph.migrate_to_registry(self._target_registry)
 
     def _load_or_initialize(self, automatic) -> None:
         current = SavedStellwerkIdentity(self.aid, self.facility_name)
@@ -308,7 +241,13 @@ class InfrastructureTab(QtWidgets.QWidget):
         self._identity_ready = True; self._dirty = data is None or supplements_changed
         self._rebuild_scene(); self._refresh_routes(); self._refresh_instances()
         if data is None: self.flush_pending_save()
-        self.status.setText("Finaler gespeicherter Graph geladen." if data else "Initialgraph automatisch erzeugt und gespeichert.")
+        unresolved = len(self.graph.metadata.get("unmapped_legacy_nodes", ()))
+        message = ("Finaler gespeicherter Graph geladen." if data
+                   else "Initialgraph automatisch erzeugt und gespeichert.")
+        if unresolved:
+            message += (f" {unresolved} alte manuelle/automatische Knoten ohne Ortszuordnungsziel "
+                        "wurden nur als Diagnose übernommen.")
+        self.status.setText(message)
 
     def _rebuild_scene(self) -> None:
         self._loading = True; self.scene.clear(); self.node_items = {}; self.edge_items = {}
@@ -348,6 +287,7 @@ class InfrastructureTab(QtWidgets.QWidget):
             automatic_ids = ", ".join(node.metadata.get("automatic_node_ids", ())) or "–"
             supplement = node.metadata.get("supplement_source") or "–"
             self.inspector_diagnostics.setText(
+                f"Target: {node.target_id or '–'} ({node.target_kind or '–'})\n"
                 f"OperatingPoint: {node.operating_point_id or '–'}\n"
                 f"Automatic IDs: {automatic_ids}\nSupplement: {supplement}")
             warning = self.graph.node_validation(node.id)
@@ -431,7 +371,7 @@ class InfrastructureTab(QtWidgets.QWidget):
             self.scene.itemsBoundingRect(), QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
     def _regenerate_graph(self) -> None:
-        if self._automatic_source is None: return
+        if self._automatic_graph is None: return
         box = QtWidgets.QMessageBox(self); box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
         box.setWindowTitle("Graph automatisch neu erzeugen")
         box.setText("Der gespeicherte Streckengraph wird durch eine neue automatische Erkennung ersetzt. "
@@ -441,8 +381,7 @@ class InfrastructureTab(QtWidgets.QWidget):
         if box.clickedButton() != regenerate: return
         self.flush_pending_save(); path = self.store.path_for(self.aid)
         if path.exists(): archive_artifact(path)
-        self.graph = EditableTopologyGraph.from_operational_graph(self._automatic_source)
-        self._apply_supplements(self.graph)
+        self.graph = EditableTopologyGraph.from_dict(self._automatic_graph.to_dict())
         self.undo_stack.clear(); self._dirty = True
         self._rebuild_scene(); self._refresh_routes(); self._refresh_instances(); self.flush_pending_save()
 

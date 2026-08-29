@@ -25,6 +25,8 @@ class TopologyNode:
     layout_x: float = 0.0
     layout_y: float = 0.0
     operating_point_id: str | None = None
+    target_id: str | None = None
+    target_kind: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -67,6 +69,66 @@ class TopologySupplementCandidate:
     source: str
     anchor_id: str | None = None
     canonical_target_id: str | None = None
+
+
+@dataclass(frozen=True)
+class TopologyTarget:
+    target_id: str
+    target_kind: str
+    display_name: str
+    raw_members: tuple[str, ...] = ()
+    station_key: str | None = None
+    evidence: tuple[str, ...] = ()
+
+
+@dataclass
+class TopologyTargetRegistry:
+    targets: dict[str, TopologyTarget] = field(default_factory=dict)
+    raw_to_target: dict[str, str] = field(default_factory=dict)
+    evidence_to_target: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_assignments(cls, assignments, operating=None) -> "TopologyTargetRegistry":
+        registry = cls()
+        members: dict[str, list[str]] = {}
+        for raw_name, target_id in assignments.assignments.items():
+            members.setdefault(target_id, []).append(raw_name)
+            registry.raw_to_target[raw_name] = target_id
+        for point_id, point in assignments.points.items():
+            registry.targets[point_id] = TopologyTarget(
+                point_id, "operating_point", point.display_name,
+                tuple(sorted(members.get(point_id, ()))), point.station_key,
+                ("operating_point_assignment",))
+            registry.evidence_to_target[point_id] = point_id
+        for point_id, point in assignments.entry_points.items():
+            registry.targets[point_id] = TopologyTarget(
+                point_id, "entry_point", point.display_name,
+                tuple(sorted(members.get(point_id, ()))), None, tuple(point.evidence))
+            registry.evidence_to_target[point_id] = point_id
+            for element in point.infrastructure_elements:
+                registry.evidence_to_target[element.node_id] = point_id
+                registry.raw_to_target.setdefault(element.raw_name, point_id)
+        if operating is not None:
+            for point_id, point in operating.nodes.items():
+                owners = {registry.raw_to_target[name] for name in point.raw_names
+                          if name in registry.raw_to_target}
+                if len(owners) == 1:
+                    registry.evidence_to_target[point_id] = next(iter(owners))
+        return registry
+
+    def resolve_operational_node(self, node) -> str | None:
+        candidates = {self.raw_to_target[name] for name in node.raw_names
+                      if name in self.raw_to_target}
+        candidates.update(self.evidence_to_target[value] for value in node.source_nodes
+                          if value in self.evidence_to_target)
+        if node.id in self.evidence_to_target:
+            candidates.add(self.evidence_to_target[node.id])
+        if not candidates:
+            by_name = {target.target_id for target in self.targets.values()
+                       if EditableTopologyGraph.logical_name(target.display_name)
+                       == EditableTopologyGraph.logical_name(node.label)}
+            candidates.update(by_name)
+        return next(iter(candidates)) if len(candidates) == 1 else None
 
 
 @dataclass
@@ -117,6 +179,123 @@ class EditableTopologyGraph:
                 graph.add_edge(left, right, source="automatic")
         graph.auto_layout()
         return graph
+
+    @classmethod
+    def from_registry_projection(cls, source: OperationalRouteGraph,
+                                 registry: TopologyTargetRegistry) -> "EditableTopologyGraph":
+        """Builds the visible node set exclusively from authoritative assignment targets."""
+        graph = cls(metadata={"initial_source": "assignment_registry_projection"})
+        projected = {node_id: registry.resolve_operational_node(node)
+                     for node_id, node in source.nodes.items()}
+        evidence: dict[str, dict[str, set[str]]] = {}
+        for node_id, target_id in projected.items():
+            if target_id is None:
+                continue
+            node = source.nodes[node_id]
+            values = evidence.setdefault(target_id, {"automatic_node_ids": set(), "raw_names": set(),
+                                                       "source_nodes": set()})
+            values["automatic_node_ids"].add(node_id)
+            values["raw_names"].update(node.raw_names)
+            values["source_nodes"].update(node.source_nodes)
+        connected_targets: set[str] = set()
+        projected_edges: list[tuple[str, str]] = []
+        for edge in source.edges:
+            left, right = projected.get(edge.source), projected.get(edge.target)
+            if left and right and left != right:
+                connected_targets.update((left, right)); projected_edges.append((left, right))
+        for target_id in sorted(connected_targets):
+            target = registry.targets[target_id]; item_evidence = evidence.get(target_id, {})
+            graph.nodes[target_id] = TopologyNode(
+                target_id, target.display_name, "entry" if target.target_kind == "entry_point" else "junction",
+                "automatic", operating_point_id=target_id if target.target_kind == "operating_point" else None,
+                target_id=target_id, target_kind=target.target_kind,
+                metadata={key: sorted(values) for key, values in item_evidence.items()})
+        for left, right in projected_edges:
+            graph.add_edge(left, right, source="automatic")
+        for node in graph.nodes.values():
+            if node.target_kind == "entry_point": node.node_type = "entry"
+            elif graph.degree(node.id) == 2: node.node_type = "line"
+            elif graph.degree(node.id) == 1: node.node_type = "entry"
+            else: node.node_type = "junction"
+        graph.auto_layout()
+        for target_id, target in sorted(registry.targets.items()):
+            if target_id not in graph.nodes:
+                node = graph.ensure_supplement_node(
+                    target_id, target.display_name,
+                    "entry" if target.target_kind == "entry_point" else "junction",
+                    "registry_supplement", canonical_target_id=target_id,
+                    target_kind=target.target_kind)
+                node.metadata.update({key: sorted(values) for key, values in evidence.get(target_id, {}).items()})
+        graph.metadata["unresolved_automatic_nodes"] = sorted(
+            node_id for node_id, target_id in projected.items() if target_id is None)
+        return graph
+
+    def migrate_to_registry(self, registry: TopologyTargetRegistry) -> int:
+        """Projects persisted nodes, edges and routes onto one node per registry target."""
+        mapping: dict[str, str] = {}
+        unresolved: list[dict[str, Any]] = []
+        names: dict[str, set[str]] = {}
+        for target in registry.targets.values():
+            names.setdefault(self.logical_name(target.display_name), set()).add(target.target_id)
+        for node_id, node in self.nodes.items():
+            candidates: set[str] = set()
+            if node_id in registry.targets: candidates.add(node_id)
+            if node_id in registry.evidence_to_target:
+                candidates.add(registry.evidence_to_target[node_id])
+            for value in (node.target_id, node.operating_point_id,
+                          node.metadata.get("canonical_target_id")):
+                if value in registry.targets: candidates.add(value)
+                elif value in registry.evidence_to_target: candidates.add(registry.evidence_to_target[value])
+            for key in ("raw_names", "source_nodes", "automatic_node_ids", "operating_point_ids"):
+                for value in node.metadata.get(key, ()):
+                    if value in registry.raw_to_target: candidates.add(registry.raw_to_target[value])
+                    if value in registry.evidence_to_target: candidates.add(registry.evidence_to_target[value])
+            if not candidates:
+                candidates.update(names.get(self.logical_name(node.display_name), ()))
+            if len(candidates) == 1:
+                mapping[node_id] = next(iter(candidates))
+            else:
+                unresolved.append(asdict(node))
+
+        migrated = EditableTopologyGraph(metadata=dict(self.metadata))
+        groups: dict[str, list[TopologyNode]] = {}
+        for node_id, target_id in mapping.items():
+            groups.setdefault(target_id, []).append(self.nodes[node_id])
+        for target_id, nodes in groups.items():
+            target = registry.targets[target_id]
+            winner = max(nodes, key=lambda node: (self.degree(node.id), node.source != "manual", node.id))
+            metadata: dict[str, Any] = dict(winner.metadata)
+            metadata["legacy_node_ids"] = sorted(node.id for node in nodes)
+            migrated.nodes[target_id] = TopologyNode(
+                target_id, target.display_name, winner.node_type, winner.source,
+                winner.layout_x, winner.layout_y,
+                target_id if target.target_kind == "operating_point" else None,
+                target_id, target.target_kind, metadata)
+        for edge in self.edges.values():
+            left, right = mapping.get(edge.node_a), mapping.get(edge.node_b)
+            if left and right and left != right and left in migrated.nodes and right in migrated.nodes:
+                migrated.add_edge(left, right, source=edge.source)
+        for route_id, route in self.defined_routes.items():
+            redirected = [mapping[item] for item in route.ordered_node_ids if item in mapping]
+            redirected = [item for index, item in enumerate(redirected)
+                          if index == 0 or item != redirected[index - 1]]
+            migrated.defined_routes[route_id] = DefinedRoute(
+                route_id, route.display_name, redirected,
+                redirected[0] if redirected else "", redirected[-1] if redirected else "")
+        migrated.bildfahrplan_routes = list(self.bildfahrplan_routes)
+        for target_id, target in sorted(registry.targets.items()):
+            if target_id not in migrated.nodes:
+                migrated.ensure_supplement_node(
+                    target_id, target.display_name,
+                    "entry" if target.target_kind == "entry_point" else "junction",
+                    "registry_supplement", canonical_target_id=target_id,
+                    target_kind=target.target_kind)
+        migrated.metadata["unmapped_legacy_nodes"] = unresolved
+        changed = int(migrated.to_dict() != self.to_dict())
+        self.nodes, self.edges = migrated.nodes, migrated.edges
+        self.defined_routes, self.bildfahrplan_routes = migrated.defined_routes, migrated.bildfahrplan_routes
+        self.metadata = migrated.metadata
+        return changed
 
     def canonicalize_automatic_nodes(self, canonical_by_node: dict[str, str]) -> int:
         """Unifies automatic representations without touching authoritative manual nodes."""
@@ -205,7 +384,8 @@ class EditableTopologyGraph:
 
     def ensure_supplement_node(self, node_id: str, display_name: str, node_type: str,
                                source: str, *, anchor_id: str | None = None,
-                               canonical_target_id: str | None = None) -> TopologyNode:
+                               canonical_target_id: str | None = None,
+                               target_kind: str | None = None) -> TopologyNode:
         """Ergänzt nur neue bekannte Ziele und schützt bestehende Layoutdaten."""
         if node_id in self.nodes:
             return self.nodes[node_id]
@@ -232,6 +412,8 @@ class EditableTopologyGraph:
                                       "canonical_target_id": canonical_target_id})
         if source in {"operating_point", "operating_point_config"}:
             node.operating_point_id = canonical_target_id
+        node.target_id = canonical_target_id
+        node.target_kind = target_kind
         self.nodes[node_id] = node
         return node
 
@@ -369,6 +551,13 @@ class EditableTopologyGraph:
         if node.node_type == "entry" and degree != 1:
             return "Einfahrt muss genau eine Verbindung besitzen."
         return None
+
+    def duplicate_target_ids(self) -> tuple[str, ...]:
+        counts: dict[str, int] = {}
+        for node in self.nodes.values():
+            if node.target_id:
+                counts[node.target_id] = counts.get(node.target_id, 0) + 1
+        return tuple(sorted(target_id for target_id, count in counts.items() if count > 1))
 
     def route_validation(self, route: DefinedRoute) -> tuple[str, ...]:
         errors: list[str] = []
