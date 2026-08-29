@@ -179,6 +179,30 @@ class AssignmentLogicTests(unittest.TestCase):
         self.assertEqual([(point.id, point.display_name) for point in model.points.values()], [("TKS", "TKS")])
         self.assertEqual(sum(owner == "TKS" for owner in model.assignments.values()), 4)
 
+    def test_schema_operating_point_shadow_is_merged_after_config_overlay(self):
+        graph = automatic("TRM", "TRM1", "TRM2")
+        config = {
+            "manual_point_ids": [],
+            "operating_points": {
+                "schedule:TRM": {"display_name": "TRM", "station_key": "TRM", "removable": False}},
+            "editor_snapshot": {
+                "raw_names": ["TRM", "TRM1", "TRM2"],
+                "operating_points": {
+                    "schedule:TRM": {"display_name": "TRM", "station_key": "TRM",
+                                     "source": "automatic"}},
+                "assignments": {"TRM": {"target": "schedule:TRM", "source": "automatic"}},
+            },
+        }
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TRM", "TRM1", "TRM2"), (), config,
+                      raw_item_kinds={name: "platform_or_haltpunkt"
+                                      for name in ("TRM", "TRM1", "TRM2")})
+        matching = [point for point in model.points.values() if point.display_name == "TRM"]
+        self.assertEqual(len(matching), 1)
+        self.assertNotIn("schedule:TRM", model.points)
+        self.assertEqual({model.assignments[name] for name in ("TRM", "TRM1", "TRM2")},
+                         {matching[0].id})
+
     def test_manual_points_with_equal_display_name_are_preserved(self):
         graph = automatic("TKS 1", "TKS 2")
         config = {"editor_snapshot": {"raw_names": ["TKS 1", "TKS 2"], "operating_points": {

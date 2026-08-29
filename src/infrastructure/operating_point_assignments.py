@@ -205,6 +205,7 @@ class OperatingPointAssignments:
         self.points = {key: value for key, value in automatic_points.items()
                        if aliases.get(key, key) == key and key not in self.deleted_automatic_point_ids
                        and self._point_identity(value) not in self.deleted_automatic_identities}
+        live_automatic_ids = set(self.points)
         self._automatic_members = {}
         for point in automatic.nodes.values():
             canonical = aliases.get(point.id, point.id)
@@ -294,6 +295,36 @@ class OperatingPointAssignments:
             self.assignments[raw_name] = point_id
             self.sources[raw_name] = assignment_sources.get(
                 raw_name, "manual_entry" if point_id in self.entry_points else "manual")
+        self._merge_loaded_automatic_shadows(live_automatic_ids)
+
+    def _merge_loaded_automatic_shadows(self, live_automatic_ids: set[str]) -> None:
+        """Removes schema/snapshot shadows reintroduced after the live automatic canonicalization."""
+        groups: dict[str, list[str]] = {}
+        for point_id, point in self.points.items():
+            if point_id in self.manual_point_ids:
+                continue
+            groups.setdefault(self._point_identity(point), []).append(point_id)
+        aliases: dict[str, str] = {}
+        for identifiers in groups.values():
+            if len(identifiers) < 2:
+                continue
+            canonical = min(identifiers, key=lambda value: (
+                value not in live_automatic_ids,
+                value.startswith("schedule:"), value.startswith("station-key:"),
+                natural_sort_key(value)))
+            for point_id in identifiers:
+                if point_id != canonical:
+                    aliases[point_id] = canonical
+                    self.points.pop(point_id, None)
+                    self._automatic_members[canonical] = tuple(dict.fromkeys((
+                        *self._automatic_members.get(canonical, ()),
+                        *self._automatic_members.get(point_id, ()))))
+                    self._automatic_members.pop(point_id, None)
+        if not aliases:
+            return
+        self.assignments = {name: aliases.get(owner, owner) for name, owner in self.assignments.items()}
+        self.manual_assignments = {
+            name: aliases.get(owner, owner) for name, owner in self.manual_assignments.items()}
 
     @staticmethod
     def _canonicalize_automatic_points(points: dict[str, EditableOperatingPoint],
