@@ -4,8 +4,10 @@ import pyqtgraph as pg
 from PySide6 import QtCore, QtWidgets
 
 from bildfahrplan.profile import RouteProfile
+from bildfahrplan.profile import OperatingPoint
 from bildfahrplan.timeline import NOW_LINE_ANGLE, build_trace, format_axis_time
 from bildfahrplan.navigation import TIME_MAX, TIME_MIN, centered_time_range, clamp_time_range, time_bounds
+from bildfahrplan.x_axis import BildfahrplanXAxisLayout, build_bildfahrplan_x_axis
 
 
 class TimeAxis(pg.AxisItem):
@@ -14,10 +16,12 @@ class TimeAxis(pg.AxisItem):
 
 
 class BildfahrplanTab(QtWidgets.QWidget):
-    def __init__(self, adapter, profile: RouteProfile, parent=None) -> None:
+    def __init__(self, adapter, profile: RouteProfile, graph_provider=lambda: None, parent=None) -> None:
         super().__init__(parent)
         self.adapter = adapter
         self.profile = profile
+        self._graph_provider = graph_provider
+        self._x_layout = BildfahrplanXAxisLayout((), ())
         self._initial_view = True
         self._last_trace_signature = None
         controls = QtWidgets.QHBoxLayout()
@@ -27,20 +31,27 @@ class BildfahrplanTab(QtWidgets.QWidget):
         center.clicked.connect(self.center_now)
         controls.addWidget(center)
         time_axis = TimeAxis(orientation="left")
+        right_time_axis = TimeAxis(orientation="right")
         route_axis = pg.AxisItem(orientation="top")
-        self.plot = pg.PlotWidget(axisItems={"left": time_axis, "top": route_axis})
+        self.plot = pg.PlotWidget(axisItems={
+            "left": time_axis, "right": right_time_axis, "top": route_axis,
+        })
         self.plot.getPlotItem().showAxis("top")
+        self.plot.getPlotItem().showAxis("right")
         self.plot.getPlotItem().hideAxis("bottom")
         self.plot.setLabel("top", "Strecke (relative Position)")
         self.plot.setLabel("left", "Simulations-/Fahrplanzeit")
         self.plot.showGrid(x=True, y=True, alpha=0.25)
-        route_axis.setTicks([list(profile.ticks.items())])
+        self.route_axis = route_axis
         # In pyqtgraph bedeutet invertY(True): groessere Fahrplanzeiten liegen unten.
         self.plot.getViewBox().invertY(True)
         self.plot.setMouseEnabled(x=False, y=True)
         self.plot.getViewBox().setLimits(yMin=TIME_MIN, yMax=TIME_MAX, minYRange=60, maxYRange=TIME_MAX - TIME_MIN)
         self.now_line = pg.InfiniteLine(angle=NOW_LINE_ANGLE, movable=False, pen=pg.mkPen("#d32f2f", width=2))
         self.plot.addItem(self.now_line)
+        self.empty_notice = pg.TextItem(
+            "Noch keine Strecken für den Bildfahrplan konfiguriert.", anchor=(0.5, 0.5), color="#666666",
+        )
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(controls)
@@ -57,22 +68,36 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self.plot.getViewBox().setLimits(
             yMin=minimum, yMax=maximum, minYRange=60, maxYRange=maximum - minimum,
         )
-        trace_signature = tuple(
+        graph = self._graph_provider()
+        x_layout = build_bildfahrplan_x_axis(graph) if graph is not None else BildfahrplanXAxisLayout((), ())
+        layout_signature = tuple(
+            (route.instance_id, route.start_x, route.end_x,
+             tuple((node.node_id, node.x, node.label) for node in route.nodes))
+            for route in x_layout.routes
+        )
+        trace_signature = (layout_signature, tuple(
             (service.zid, service.current_delay,
              tuple((p.planned_name, p.planned_arrival, p.planned_departure)
                    for p in service.original_schedule))
             for service in snapshot.services
-        )
+        ))
         if trace_signature == self._last_trace_signature:
             self._clamp_y_range()
             return
         self._last_trace_signature = trace_signature
+        self._x_layout = x_layout
         self.plot.clear()
         self.plot.addItem(self.now_line)
+        ticks = [(node.x, node.label) for route in x_layout.routes for node in route.nodes]
+        self.route_axis.setTicks([ticks])
+        display_profile = self._display_profile(graph, x_layout)
+        if not x_layout.routes:
+            self.empty_notice.setPos(0.5, sum(self.plot.getViewBox().viewRange()[1]) / 2)
+            self.plot.addItem(self.empty_notice)
         colors = ("#1565c0", "#2e7d32", "#6a1b9a", "#ef6c00", "#00838f")
         rendered = 0
         for service in snapshot.services:
-            trace = build_trace(service, self.profile, int(reference))
+            trace = build_trace(service, display_profile, int(reference))
             if trace is None:
                 continue
             color = colors[rendered % len(colors)]
@@ -98,9 +123,24 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self.plot.setYRange(start, end, padding=0)
 
     def show_route(self) -> None:
-        positions = list(self.profile.ticks)
-        if positions:
-            self.plot.setXRange(min(positions), max(positions), padding=0.08)
+        # Die normierte Geometrie füllt unabhängig von Pixelbreite und Resize
+        # stets die eine gemeinsame ViewBox; horizontal bleibt Zoom deaktiviert.
+        self.plot.setXRange(0.0, 1.0, padding=0)
+
+    @staticmethod
+    def _display_profile(graph, layout: BildfahrplanXAxisLayout) -> RouteProfile:
+        """Provisorische Brücke für bestehende Trassen, keine neue Projektion."""
+        points = []
+        if graph is not None:
+            for route in layout.routes:
+                for position in route.nodes:
+                    node = graph.nodes.get(position.node_id)
+                    metadata = node.metadata if node is not None else {}
+                    raw_names = tuple(dict.fromkeys((
+                        *metadata.get("raw_names", ()), *metadata.get("target_raw_members", ()),
+                    )))
+                    points.append(OperatingPoint(position.node_id, position.label, position.x, raw_names))
+        return RouteProfile("Konfigurierte Bildfahrplan-Strecken", tuple(points))
 
     def _clamp_y_range(self) -> None:
         start, end = clamp_time_range(

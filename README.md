@@ -67,9 +67,12 @@ Graphkomponenten verwendet werden.
 Graph, Strecken, Layout und Bildfahrplan-Reihenfolge werden gemeinsam atomar mit
 AID, Stellwerkname, Artefakttyp, Schema-Version und Speicherzeit gespeichert.
 Änderungen werden nach 30 Sekunden, beim Verlassen des Tabs und beim Beenden
-gesichert. Der eigentliche Bildfahrplan-Tab verwendet in diesem Meilenstein noch
-das bisherige lineare `RouteProfile`; das neue persistente Modell bereitet seine
-spätere Umstellung vor.
+gesichert. Der Bildfahrplan-Tab übernimmt die gespeicherten Streckeninstanzen in
+ihrer konfigurierten Reihenfolge. Ihre Kilometerdifferenzen bestimmen die
+relativen Stationsabstände; mehrere Instanzen teilen sich die normierte Breite
+proportional zu ihrer Streckenlänge und bleiben durch kleine Darstellungslücken
+getrennt. Die Zeitachse wird an beiden äußeren Seiten derselben Plotfläche
+angezeigt.
 
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.
