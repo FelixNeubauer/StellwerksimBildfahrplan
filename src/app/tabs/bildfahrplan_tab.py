@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from bildfahrplan.profile import RouteProfile
 from bildfahrplan.profile import OperatingPoint
@@ -15,13 +15,55 @@ from bildfahrplan.navigation import (
 from bildfahrplan.x_axis import (
     BildfahrplanXAxisLayout, bildfahrplan_configuration_signature, build_bildfahrplan_x_axis,
 )
-from bildfahrplan.decorations import build_route_plot_segments, build_station_label_placements
+from bildfahrplan.decorations import StationHeaderLayout, build_route_plot_segments, build_station_header_layout
 from app.settings import ApplicationSettings
 
 
 class TimeAxis(pg.AxisItem):
     def tickStrings(self, values, scale, spacing):  # noqa: N802 - Qt/pyqtgraph API
         return [format_axis_time(value, spacing < 60) for value in values]
+
+
+class StationHeaderWidget(QtWidgets.QWidget):
+    """Echte, vom Plot getrennte und dadurch nicht geclippte Label-Fläche."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.label_layout = StationHeaderLayout((), 0)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(0)
+
+    def set_label_layout(self, label_layout: StationHeaderLayout) -> None:
+        if label_layout == self.label_layout:
+            return
+        self.label_layout = label_layout
+        self.setFixedHeight(label_layout.global_header_height)
+        self.updateGeometry()
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
+        painter.setPen(self.palette().color(QtGui.QPalette.ColorRole.WindowText))
+        metrics = QtGui.QFontMetrics(self.font())
+        bottom = self.height() - 6
+        for route in self.label_layout.routes:
+            for label in route.labels:
+                if label.rotation:
+                    painter.save()
+                    painter.translate(label.pixel_x, bottom)
+                    painter.rotate(label.rotation)
+                    painter.drawText(QtCore.QRectF(0, -metrics.height() * label.anchor_x,
+                                                   metrics.horizontalAdvance(label.text), metrics.height()),
+                                     QtCore.Qt.AlignmentFlag.AlignVCenter, label.text)
+                    painter.restore()
+                else:
+                    width = metrics.horizontalAdvance(label.text)
+                    painter.drawText(QtCore.QPointF(label.pixel_x - width * label.anchor_x,
+                                                    bottom - metrics.descent()), label.text)
+                painter.drawLine(QtCore.QPointF(label.pixel_x, self.height() - 3),
+                                 QtCore.QPointF(label.pixel_x, self.height()))
 
 
 class BildfahrplanTab(QtWidgets.QWidget):
@@ -36,7 +78,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._save_live_position = save_live_position
         self._x_layout = BildfahrplanXAxisLayout((), ())
         self._decoration_items = []
-        self._station_label_items = []
+        self._station_header_signature = None
         self._now_value = 0.0
         self._initial_view = True
         self._last_trace_signature = None
@@ -62,7 +104,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self.plot = pg.PlotWidget(axisItems={
             "left": time_axis, "right": right_time_axis, "top": route_axis,
         })
-        self.plot.getPlotItem().showAxis("top")
+        self.plot.getPlotItem().hideAxis("top")
         self.plot.getPlotItem().showAxis("right")
         self.plot.getPlotItem().hideAxis("bottom")
         self.plot.setLabel("left", "Simulations-/Fahrplanzeit")
@@ -82,6 +124,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(controls)
+        self.station_header = StationHeaderWidget()
+        layout.addWidget(self.station_header)
         layout.addWidget(self.plot)
         self.plot.getViewBox().sigYRangeChanged.connect(self._y_range_changed)
 
@@ -133,9 +177,6 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._x_layout = x_layout
         self.plot.clear()
         self._decoration_items = []
-        for label in self._station_label_items:
-            self.plot.scene().removeItem(label)
-        self._station_label_items = []
         self.route_axis.setTicks([])
         display_profile = self._display_profile(graph, x_layout)
         boundary_routes = self._boundary_routes(graph, x_layout)
@@ -162,6 +203,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
             self.show_route()
             self.plot.setYRange(minimum, maximum, padding=0)
             self._initial_view = False
+        self._update_station_header()
         if self.live_follow.isChecked():
             self._apply_live_follow()
         if not self.live_follow.isChecked():
@@ -193,9 +235,6 @@ class BildfahrplanTab(QtWidgets.QWidget):
             except RuntimeError:
                 pass
         self._decoration_items = []
-        for label in self._station_label_items:
-            self.plot.scene().removeItem(label)
-        self._station_label_items = []
         if not self._x_layout.routes:
             return
         start, end = self.plot.getViewBox().viewRange()[1]
@@ -213,28 +252,31 @@ class BildfahrplanTab(QtWidgets.QWidget):
             item.setZValue(5 if segment.kind == "frame" else -10)
             self.plot.addItem(item, ignoreBounds=True)
             self._decoration_items.append(item)
-        # Labels sind normale AxisNodePositions. Randanker zeigen nach innen,
-        # ohne die fachliche X-Position des Endpunkts zu verschieben.
-        for placement in build_station_label_placements(self._x_layout, start):
-            label = pg.TextItem(
-                placement.text, color="#D0D0D0",
-                anchor=(placement.anchor_x, placement.anchor_y),
-            )
-            # Als Scene-Sibling statt ViewBox-Kind wird der Text oberhalb des
-            # ViewBox-Rahmens nicht weggeclippt. mapViewToScene erhält exakt die
-            # fachliche X-Position; nur Y bekommt einen kleinen Pixelabstand.
-            scene_position = self.plot.getViewBox().mapViewToScene(
-                QtCore.QPointF(placement.x, placement.border_y))
-            label.setPos(scene_position.x(), scene_position.y() - placement.gap_pixels)
-            label.setZValue(10)
-            self.plot.scene().addItem(label)
-            self._station_label_items.append(label)
         for route in self._x_layout.routes:
             now = pg.PlotDataItem((route.start_x, route.end_x), (self._now_value, self._now_value),
                                   pen=pg.mkPen("#D32F2F", width=2))
             now.setZValue(20)
             self.plot.addItem(now, ignoreBounds=True)
             self._decoration_items.append(now)
+
+    def _update_station_header(self) -> None:
+        font = self.station_header.font()
+        signature = (
+            self.plot.width(), font.family(), font.pointSizeF(), font.weight(),
+            tuple((route.instance_id, route.start_x, route.end_x,
+                   tuple((node.node_id, node.x, node.label) for node in route.nodes))
+                  for route in self._x_layout.routes),
+        )
+        if signature == self._station_header_signature:
+            return
+        self._station_header_signature = signature
+        metrics = QtGui.QFontMetrics(font)
+        label_layout = build_station_header_layout(
+            self._x_layout,
+            lambda x: self.plot.getViewBox().mapViewToScene(QtCore.QPointF(x, 0)).x(),
+            lambda text: (metrics.horizontalAdvance(text), metrics.height()),
+        )
+        self.station_header.set_label_layout(label_layout)
 
     def show_route(self) -> None:
         # Die normierte Geometrie füllt unabhängig von Pixelbreite und Resize
@@ -289,5 +331,13 @@ class BildfahrplanTab(QtWidgets.QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
         self.show_route()
-        self._render_decorations()
         super().resizeEvent(event)
+        self._station_header_signature = None
+        self._update_station_header()
+        self._render_decorations()
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().changeEvent(event)
+        if event.type() == QtCore.QEvent.Type.FontChange and hasattr(self, "station_header"):
+            self._station_header_signature = None
+            self._update_station_header()

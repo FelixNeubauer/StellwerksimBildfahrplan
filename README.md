@@ -97,6 +97,13 @@ Randpunkt. Die Zeit dort ist ausdrücklich eine aus dem nächsten brauchbaren
 Fahrsegment extrapolierte Darstellungszeit und keine von StellwerkSim gelieferte
 Fahrplanzeit.
 
+Eine eigene responsive Kopfzeile reserviert oberhalb der Route-Boxen Platz für
+die Stationsnamen. Ihre tatsächlichen Schriftbreiten und Pixelpositionen
+entscheiden je Route, ob alle Namen horizontal oder um 90 Grad gedreht gezeigt
+werden. Die größte benötigte Höhe gilt gemeinsam für alle sichtbaren Routen;
+bei einer Fenstergrößenänderung wird die rein visuelle Entscheidung neu
+berechnet, ohne Stations-X-Positionen oder Kilometrierung anzutasten.
+
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.
 Die Automatik verwendet robuste Medianwerte aus den unveränderten Planfahrplänen,

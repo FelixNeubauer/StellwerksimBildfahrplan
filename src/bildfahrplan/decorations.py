@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil, floor
+from typing import Callable
 
 from .x_axis import BildfahrplanXAxisLayout
 
@@ -20,12 +21,31 @@ class LineSegment:
 
 @dataclass(frozen=True)
 class StationLabelPlacement:
+    node_id: str
     text: str
     x: float
-    border_y: float
+    pixel_x: float
     anchor_x: float
-    anchor_y: float = 1.0
-    gap_pixels: float = 4.0
+    rotation: int
+
+
+@dataclass(frozen=True)
+class StationRouteLabelLayout:
+    instance_id: str
+    orientation: str
+    labels: tuple[StationLabelPlacement, ...]
+    required_header_height: int
+
+
+@dataclass(frozen=True)
+class StationHeaderLayout:
+    routes: tuple[StationRouteLabelLayout, ...]
+    global_header_height: int
+
+
+LABEL_HORIZONTAL_PADDING_PX = 6
+LABEL_FRAME_GAP_PX = 6
+LABEL_SAFETY_MARGIN_PX = 4
 
 
 def visible_hour_ticks(start: float, end: float) -> tuple[float, ...]:
@@ -51,12 +71,41 @@ def build_route_plot_segments(layout: BildfahrplanXAxisLayout, start: float, end
     return tuple(result)
 
 
-def build_station_label_placements(
-    layout: BildfahrplanXAxisLayout, top_border_y: float,
-) -> tuple[StationLabelPlacement, ...]:
-    result = []
+def build_station_header_layout(
+    layout: BildfahrplanXAxisLayout,
+    pixel_x: Callable[[float], float],
+    text_size: Callable[[str], tuple[int, int]],
+) -> StationHeaderLayout:
+    """Entscheidet pro Route anhand tatsächlicher Pixelboxen über die Drehung."""
+    routes = []
     for route in layout.routes:
+        measured = [(node, pixel_x(node.x), *text_size(node.label)) for node in route.nodes]
+        bounds = []
+        for index, (_node, x, width, _height) in enumerate(measured):
+            if index == 0:
+                bounds.append((x, x + width))
+            elif index == len(measured) - 1:
+                bounds.append((x - width, x))
+            else:
+                bounds.append((x - width / 2, x + width / 2))
+        overlaps = any(
+            left[1] + LABEL_HORIZONTAL_PADDING_PX > right[0]
+            for left, right in zip(bounds, bounds[1:])
+        )
+        orientation = "vertical" if overlaps else "horizontal"
+        rotation = -90 if overlaps else 0
+        max_width = max((width for _node, _x, width, _height in measured), default=0)
+        max_height = max((height for _node, _x, _width, height in measured), default=0)
+        labels = []
         for index, node in enumerate(route.nodes):
             anchor_x = 0.0 if index == 0 else 1.0 if index == len(route.nodes) - 1 else 0.5
-            result.append(StationLabelPlacement(node.label, node.x, top_border_y, anchor_x))
-    return tuple(result)
+            labels.append(StationLabelPlacement(
+                node.node_id, node.label, node.x, measured[index][1], anchor_x, rotation,
+            ))
+        content_height = max_width if overlaps else max_height
+        routes.append(StationRouteLabelLayout(
+            route.instance_id, orientation, tuple(labels),
+            content_height + LABEL_FRAME_GAP_PX + LABEL_SAFETY_MARGIN_PX,
+        ))
+    global_height = max((route.required_header_height for route in routes), default=0)
+    return StationHeaderLayout(tuple(routes), global_height)

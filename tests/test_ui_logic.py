@@ -54,6 +54,12 @@ class UiLogicTests(unittest.TestCase):
         tab = (ROOT / "src/app/tabs/bildfahrplan_tab.py").read_text(encoding="utf-8")
         self.assertNotIn('setLabel("top", "Strecke (relative Position)")', tab)
 
+    def test_station_header_is_not_recomputed_on_time_only_fast_refresh(self):
+        tab = (ROOT / "src/app/tabs/bildfahrplan_tab.py").read_text(encoding="utf-8")
+        fast_path = tab.split("if trace_signature == self._last_trace_signature:", 1)[1].split(
+            "self._last_trace_signature = trace_signature", 1)[0]
+        self.assertNotIn("_update_station_header", fast_path)
+
     def test_center_preserves_zoom_span_and_clamps(self):
         self.assertEqual(centered_time_range(8 * 3600, (8 * 3600, 10 * 3600)),
                          (7 * 3600, 9 * 3600))
