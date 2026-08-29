@@ -22,6 +22,10 @@ from .editable_topology import (
     TopologyEdge, TopologyNode, TopologySupplementCandidate, TopologyTarget, TopologyTargetRegistry,
 )
 from .editable_topology_persistence import EditableTopologyGraphStore
+from .kilometrage import (
+    KM_PER_MINUTE, KilometrageEstimate, KilometrageValidation,
+    estimate_kilometrage, validate_kilometrage,
+)
 from .operating_point_assignments import (
     AssignableRawItem, AssignmentCompleteness, EditableOperatingPoint, EntryInfrastructureElement, EntryPoint,
     InvalidAssignment, OperatingPointAssignments, OperatingPointConfigStore,
@@ -56,6 +60,8 @@ __all__ = [
     "BildfahrplanRouteInstance", "DefinedRoute", "EditableTopologyGraph", "NODE_TYPES", "PathEnumerationResult",
     "TopologyEdge", "TopologyNode", "TopologySupplementCandidate", "TopologyTarget",
     "TopologyTargetRegistry", "EditableTopologyGraphStore",
+    "KM_PER_MINUTE", "KilometrageEstimate", "KilometrageValidation",
+    "estimate_kilometrage", "validate_kilometrage",
     "atomic_write_json", "find_identity_candidate", "validate_saved_stellwerk_identity",
     "AssignableRawItem", "AssignmentCompleteness", "EditableOperatingPoint", "EntryInfrastructureElement", "EntryPoint",
     "TopologyEligibility",

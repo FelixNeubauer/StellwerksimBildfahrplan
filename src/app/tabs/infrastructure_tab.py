@@ -13,6 +13,7 @@ from infrastructure import (
     OperatingPointAssignments, SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, entry_points_from_raw_graph,
     find_identity_candidate, parse_bahnsteigliste, parse_wege, save_generated_graph,
     TopologyTargetRegistry,
+    estimate_kilometrage, validate_kilometrage,
     validate_saved_stellwerk_identity,
 )
 from app.widgets.topology_graphics import (
@@ -23,6 +24,68 @@ TYPE_LABELS = {
     "line": "Streckenbetriebsstelle", "entry": "Einfahrt", "junction": "Abzweigbetriebsstelle",
 }
 ID_ROLE = QtCore.Qt.ItemDataRole.UserRole
+
+
+class KilometrageDialog(QtWidgets.QDialog):
+    """Transaktionaler Editor für genau eine Bildfahrplan-Streckeninstanz."""
+
+    def __init__(self, route, nodes, ordered_node_ids, initial_values, auto_values, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Streckenkilometer – {route.display_name}")
+        self.resize(660, 480)
+        self._ordered_node_ids = tuple(ordered_node_ids)
+        self._auto_values = tuple(auto_values)
+        layout = QtWidgets.QVBoxLayout(self)
+        heading = QtWidgets.QLabel(f"<b>{route.display_name}</b><br>Links: {nodes[ordered_node_ids[0]].display_name}")
+        layout.addWidget(heading)
+        reset = QtWidgets.QPushButton("Automatisch ausfüllen")
+        reset.setToolTip("Manuelle Eingaben durch die Schätzung aus planmäßigen Fahrzeiten ersetzen")
+        reset.clicked.connect(self._fill_automatically); layout.addWidget(reset, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
+        self.table = QtWidgets.QTableWidget(len(ordered_node_ids), 4)
+        self.table.setHorizontalHeaderLabels(("Nr.", "Name", "Typ", "Kilometer"))
+        self.table.verticalHeader().hide(); self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        for row, node_id in enumerate(ordered_node_ids):
+            node = nodes[node_id]
+            for column, text in enumerate((str(row + 1), node.display_name,
+                                           "Einfahrt" if node.node_type == "entry" else "Betriebsstelle")):
+                item = QtWidgets.QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(row, column, item)
+            value = initial_values.get(node_id)
+            self.table.setItem(row, 3, QtWidgets.QTableWidgetItem("" if value is None else f"{value:.3f}"))
+        self.table.itemChanged.connect(self._validate); layout.addWidget(self.table)
+        self.validation_label = QtWidgets.QLabel(); self.validation_label.setWordWrap(True)
+        layout.addWidget(self.validation_label)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Save |
+                                             QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._accept_if_valid); buttons.rejected.connect(self.reject)
+        self.save_button = buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Save)
+        self.save_button.setText("Speichern"); buttons.button(
+            QtWidgets.QDialogButtonBox.StandardButton.Cancel).setText("Abbrechen")
+        layout.addWidget(buttons); self._validate()
+
+    def _texts(self):
+        return [self.table.item(row, 3).text() if self.table.item(row, 3) else ""
+                for row in range(self.table.rowCount())]
+
+    def _validate(self, *_args) -> None:
+        result = validate_kilometrage(self._texts(), len(self._ordered_node_ids))
+        self.save_button.setEnabled(result.valid)
+        self.validation_label.setText("✓ Gültige monotone Kilometrierung" if result.valid else f"⚠ {result.message}")
+        self.validation_label.setStyleSheet("color: #287a32" if result.valid else "color: #a03030")
+
+    def _fill_automatically(self) -> None:
+        self.table.blockSignals(True)
+        for row, value in enumerate(self._auto_values):
+            self.table.item(row, 3).setText(f"{value:.3f}")
+        self.table.blockSignals(False); self._validate()
+
+    def _accept_if_valid(self) -> None:
+        result = validate_kilometrage(self._texts(), len(self._ordered_node_ids))
+        if not result.valid:
+            QtWidgets.QMessageBox.warning(self, "Ungültige Kilometrierung", result.message); return
+        self.values = dict(zip(self._ordered_node_ids, result.values)); self.accept()
 
 
 class MoveNodeCommand(QtGui.QUndoCommand):
@@ -52,6 +115,7 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.aid = None; self.facility_name = None
         self._last_signature = None; self._automatic_graph = None; self._automatic_source = None
         self._target_registry = TopologyTargetRegistry()
+        self._services = ()
         self._dirty = False; self._identity_ready = False; self._loading = False
         self._route_path: list[str] | None = None
         self._route_endpoints: list[str] | None = None; self._editing_route_id: str | None = None
@@ -140,6 +204,7 @@ class InfrastructureTab(QtWidgets.QWidget):
         return box
 
     def refresh(self, snapshot) -> None:
+        self._services = tuple(snapshot.services)
         signature = (snapshot.aid, snapshot.facility_name, snapshot.infrastructure_documents,
                      tuple((service.zid, len(service.original_schedule), getattr(service, "origin", None),
                             getattr(service, "destination", None)) for service in snapshot.services))
@@ -501,7 +566,11 @@ class InfrastructureTab(QtWidgets.QWidget):
                                                   self._instance_endpoint_changed(iid, combo.currentData()))
             remove = QtWidgets.QPushButton("×"); remove.setMaximumWidth(30)
             remove.clicked.connect(lambda _checked=False, iid=instance.instance_id: self._remove_instance(iid))
-            layout.addWidget(routes, 3); layout.addWidget(endpoints, 2); layout.addWidget(remove)
+            kilometres = QtWidgets.QPushButton("km…"); kilometres.setMaximumWidth(48)
+            kilometres.setToolTip("Streckenkilometer bearbeiten")
+            kilometres.clicked.connect(lambda _checked=False, iid=instance.instance_id:
+                                        self._edit_instance_kilometrage(iid))
+            layout.addWidget(routes, 3); layout.addWidget(endpoints, 2); layout.addWidget(kilometres); layout.addWidget(remove)
             self.bf_list.setItemWidget(item, row)
         self.bf_list.blockSignals(False)
 
@@ -518,10 +587,42 @@ class InfrastructureTab(QtWidgets.QWidget):
     def _instance_route_changed(self, instance_id, route_id) -> None:
         if self._loading or route_id is None: return
         instance = self._instance(instance_id); instance.route_id = route_id
-        instance.left_endpoint = self.graph.defined_routes[route_id].endpoint_a; self._mark_dirty(); self._refresh_instances()
+        instance.left_endpoint = self.graph.defined_routes[route_id].endpoint_a
+        instance.kilometrage = {}
+        self._mark_dirty(); self._refresh_instances()
 
     def _instance_endpoint_changed(self, instance_id, endpoint) -> None:
         if endpoint is not None: self._instance(instance_id).left_endpoint = endpoint; self._mark_dirty()
+
+    def _edit_instance_kilometrage(self, instance_id) -> None:
+        instance = self._instance(instance_id)
+        route = self.graph.defined_routes.get(instance.route_id)
+        if route is None or not route.ordered_node_ids:
+            QtWidgets.QMessageBox.warning(self, "Ungültige Strecke", "Für diese Zeile ist kein Streckenpfad verfügbar.")
+            return
+        ordered = list(route.ordered_node_ids)
+        if instance.left_endpoint == route.endpoint_b:
+            ordered.reverse()
+        raw_to_node = dict(self._target_registry.raw_to_target)
+        # Direkte Rawnamen des Knotens sind nur explizite Import-Evidenz, keine
+        # neu erfundene Präfix-/Gleisnormalisierung.
+        for node_id in ordered:
+            node = self.graph.nodes[node_id]
+            for raw_name in node.metadata.get("raw_names", ()):
+                raw_to_node.setdefault(raw_name, node_id)
+            for raw_name in node.metadata.get("target_raw_members", ()):
+                raw_to_node.setdefault(raw_name, node_id)
+        estimate = estimate_kilometrage(
+            ordered, {node_id: self.graph.nodes[node_id].node_type for node_id in ordered},
+            self._services, raw_to_node)
+        initial = instance.kilometrage
+        if set(initial) != set(ordered):
+            initial = dict(zip(ordered, estimate.kilometres))
+        dialog = KilometrageDialog(route, self.graph.nodes, ordered, initial,
+                                   estimate.kilometres, self)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            instance.kilometrage = dialog.values
+            self._mark_dirty()
 
     def _remove_instance(self, instance_id) -> None:
         self.graph.bildfahrplan_routes = [item for item in self.graph.bildfahrplan_routes if item.instance_id != instance_id]

@@ -2,12 +2,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from infrastructure import (
     EditableTopologyGraph, EditableTopologyGraphStore, OperationalRouteEdge,
     OperationalRouteGraph, OperationalRouteNode, TopologySupplementCandidate,
     TopologyTarget, TopologyTargetRegistry,
     AssignableRawItem, EditableOperatingPoint, EntryPoint, OperatingPointAssignments,
+    KM_PER_MINUTE, estimate_kilometrage, validate_kilometrage,
 )
 
 
@@ -20,6 +22,48 @@ def graph_with_nodes(*values):
 
 
 class EditableTopologyTests(unittest.TestCase):
+    @staticmethod
+    def _timed_service(*points):
+        schedule = [SimpleNamespace(planned_name=name, raw_name=name,
+                                    planned_arrival=arrival, planned_departure=departure)
+                    for name, arrival, departure in points]
+        return SimpleNamespace(service_kind="train", original_schedule=schedule)
+
+    def test_kilometrage_estimate_uses_median_planned_travel_time(self):
+        services = [
+            self._timed_service(("A", "10:00", "10:00"), ("B", "10:06", "10:06")),
+            self._timed_service(("A", "11:00", "11:00"), ("B", "11:04", "11:04")),
+            self._timed_service(("A", "12:00", "12:00"), ("B", "12:05", "12:05")),
+        ]
+        estimate = estimate_kilometrage(["A", "B"], {}, services, {"A": "A", "B": "B"})
+        self.assertEqual(estimate.segment_minutes, (5.0,))
+        self.assertAlmostEqual(estimate.kilometres[1], 5 * KM_PER_MINUTE)
+
+    def test_kilometrage_interpolates_one_unknown_point(self):
+        service = self._timed_service(("A", "10:00", "10:00"), ("C", "10:08", "10:08"))
+        estimate = estimate_kilometrage(["A", "B", "C"], {}, [service], {"A": "A", "C": "C"})
+        self.assertEqual(estimate.segment_minutes, (4.0, 4.0))
+
+    def test_kilometrage_interpolates_multiple_unknown_points(self):
+        service = self._timed_service(("A", "10:00", "10:00"), ("D", "10:09", "10:09"))
+        estimate = estimate_kilometrage(["A", "B", "C", "D"], {}, [service], {"A": "A", "D": "D"})
+        self.assertEqual(estimate.segment_minutes, (3.0, 3.0, 3.0))
+
+    def test_kilometrage_uses_three_minutes_for_unobserved_edge_entry(self):
+        estimate = estimate_kilometrage(["entry", "B"], {"entry": "entry"}, [], {})
+        self.assertEqual(estimate.segment_minutes, (3.0,))
+        self.assertEqual(estimate.kilometres, (0.0, 5.0))
+
+    def test_kilometrage_validation_accepts_both_directions_and_ties(self):
+        self.assertTrue(validate_kilometrage([0, 2.4, 6.1], 3).valid)
+        self.assertTrue(validate_kilometrage([42, 39.6, 35.9], 3).valid)
+        self.assertTrue(validate_kilometrage([10, 10, 12.5], 3).valid)
+
+    def test_kilometrage_validation_rejects_direction_change_and_incomplete_values(self):
+        self.assertFalse(validate_kilometrage([0, 3, 2.5, 4], 4).valid)
+        self.assertFalse(validate_kilometrage([0, "", 4], 3).valid)
+        self.assertFalse(validate_kilometrage([0, "x", 4], 3).valid)
+
     def test_registry_filters_ineligible_automatic_targets_but_keeps_manual_and_entry(self):
         assignments = OperatingPointAssignments(
             points={
@@ -275,7 +319,10 @@ class EditableTopologyTests(unittest.TestCase):
         graph = graph_with_nodes(("A", "entry"), ("B", "entry"))
         graph.nodes["A"].layout_x = 42.5; graph.add_edge("A", "B")
         route = graph.add_route("A – B", ["A", "B"])
-        graph.add_bildfahrplan_instance(route.route_id); graph.add_bildfahrplan_instance(route.route_id)
+        first = graph.add_bildfahrplan_instance(route.route_id)
+        second = graph.add_bildfahrplan_instance(route.route_id)
+        first.kilometrage = {"A": 0.0, "B": 12.5}
+        second.kilometrage = {"A": 42.0, "B": 39.0}
         with tempfile.TemporaryDirectory() as directory:
             store = EditableTopologyGraphStore(directory); path = store.save(17, "Test", graph)
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -285,6 +332,10 @@ class EditableTopologyTests(unittest.TestCase):
             self.assertEqual(restored.nodes["A"].layout_x, 42.5)
             self.assertEqual(len(restored.bildfahrplan_routes), 2)
             self.assertEqual([item.order for item in restored.bildfahrplan_routes], [0, 1])
+            self.assertEqual(restored.bildfahrplan_routes[0].kilometrage, {"A": 0.0, "B": 12.5})
+            self.assertEqual(restored.bildfahrplan_routes[1].kilometrage, {"A": 42.0, "B": 39.0})
+            self.assertNotEqual(restored.bildfahrplan_routes[0].kilometrage,
+                                restored.bildfahrplan_routes[1].kilometrage)
 
     def test_supplement_nodes_are_unconnected_parked_and_not_repositioned(self):
         graph = graph_with_nodes(("A", "entry"), ("B", "entry"))

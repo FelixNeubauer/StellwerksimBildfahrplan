@@ -71,6 +71,17 @@ gesichert. Der eigentliche Bildfahrplan-Tab verwendet in diesem Meilenstein noch
 das bisherige lineare `RouteProfile`; das neue persistente Modell bereitet seine
 spätere Umstellung vor.
 
+Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
+Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.
+Die Automatik verwendet robuste Medianwerte aus den unveränderten Planfahrplänen,
+verteilt überspannte unbekannte Zwischenpunkte gleichmäßig und setzt eine
+unbeobachtete Rand-Einfahrt mit drei Minuten an. Bei der Umrechnung mit 100 km/h
+entspricht eine Minute 1,6667 km. Manuelle Werte dürfen steigen, fallen oder
+Gleichstände enthalten, müssen aber vollständig und insgesamt monoton sein.
+Die Werte werden zusammen mit der jeweiligen Instanz AID-spezifisch gespeichert;
+ein erneuter Klick auf **Automatisch ausfüllen** ersetzt bewusst alle Eingaben im
+Dialog durch die aktuelle Schätzung.
+
 ### Bedienung V0.4.1
 
 Der Graph besitzt drei exklusive Mausmodi: **Umsehen** ist der Standard und

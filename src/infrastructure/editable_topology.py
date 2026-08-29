@@ -53,6 +53,7 @@ class BildfahrplanRouteInstance:
     route_id: str
     left_endpoint: str
     order: int
+    kilometrage: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
