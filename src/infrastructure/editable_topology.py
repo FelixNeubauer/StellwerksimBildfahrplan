@@ -93,12 +93,15 @@ class TopologyTargetRegistry:
         members: dict[str, list[str]] = {}
         for raw_name, target_id in assignments.assignments.items():
             members.setdefault(target_id, []).append(raw_name)
-            registry.raw_to_target[raw_name] = target_id
         for point_id, point in assignments.points.items():
+            eligibility = assignments.topology_eligibility(point_id)
+            if not eligibility.eligible:
+                continue
             registry.targets[point_id] = TopologyTarget(
                 point_id, "operating_point", point.display_name,
                 tuple(sorted(members.get(point_id, ()))), point.station_key,
-                ("operating_point_assignment",))
+                ("operating_point_assignment", eligibility.reason,
+                 *(f"relevant_member:{name}" for name in eligibility.relevant_members)))
             registry.evidence_to_target[point_id] = point_id
         for point_id, point in assignments.entry_points.items():
             registry.targets[point_id] = TopologyTarget(
@@ -108,6 +111,9 @@ class TopologyTargetRegistry:
             for element in point.infrastructure_elements:
                 registry.evidence_to_target[element.node_id] = point_id
                 registry.raw_to_target.setdefault(element.raw_name, point_id)
+        for raw_name, target_id in assignments.assignments.items():
+            if target_id in registry.targets:
+                registry.raw_to_target[raw_name] = target_id
         if operating is not None:
             for point_id, point in operating.nodes.items():
                 owners = {registry.raw_to_target[name] for name in point.raw_names
@@ -209,7 +215,9 @@ class EditableTopologyGraph:
                 target_id, target.display_name, "entry" if target.target_kind == "entry_point" else "junction",
                 "automatic", operating_point_id=target_id if target.target_kind == "operating_point" else None,
                 target_id=target_id, target_kind=target.target_kind,
-                metadata={key: sorted(values) for key, values in item_evidence.items()})
+                metadata={**{key: sorted(values) for key, values in item_evidence.items()},
+                          "target_raw_members": list(target.raw_members),
+                          "target_evidence": list(target.evidence)})
         for left, right in projected_edges:
             graph.add_edge(left, right, source="automatic")
         for node in graph.nodes.values():
@@ -226,6 +234,8 @@ class EditableTopologyGraph:
                     "registry_supplement", canonical_target_id=target_id,
                     target_kind=target.target_kind)
                 node.metadata.update({key: sorted(values) for key, values in evidence.get(target_id, {}).items()})
+                node.metadata["target_raw_members"] = list(target.raw_members)
+                node.metadata["target_evidence"] = list(target.evidence)
         graph.metadata["unresolved_automatic_nodes"] = sorted(
             node_id for node_id, target_id in projected.items() if target_id is None)
         return graph
@@ -266,6 +276,8 @@ class EditableTopologyGraph:
             winner = max(nodes, key=lambda node: (self.degree(node.id), node.source != "manual", node.id))
             metadata: dict[str, Any] = dict(winner.metadata)
             metadata["legacy_node_ids"] = sorted(node.id for node in nodes)
+            metadata["target_raw_members"] = list(target.raw_members)
+            metadata["target_evidence"] = list(target.evidence)
             migrated.nodes[target_id] = TopologyNode(
                 target_id, target.display_name, winner.node_type, winner.source,
                 winner.layout_x, winner.layout_y,
@@ -285,11 +297,13 @@ class EditableTopologyGraph:
         migrated.bildfahrplan_routes = list(self.bildfahrplan_routes)
         for target_id, target in sorted(registry.targets.items()):
             if target_id not in migrated.nodes:
-                migrated.ensure_supplement_node(
+                node = migrated.ensure_supplement_node(
                     target_id, target.display_name,
                     "entry" if target.target_kind == "entry_point" else "junction",
                     "registry_supplement", canonical_target_id=target_id,
                     target_kind=target.target_kind)
+                node.metadata["target_raw_members"] = list(target.raw_members)
+                node.metadata["target_evidence"] = list(target.evidence)
         migrated.metadata["unmapped_legacy_nodes"] = unresolved
         changed = int(migrated.to_dict() != self.to_dict())
         self.nodes, self.edges = migrated.nodes, migrated.edges

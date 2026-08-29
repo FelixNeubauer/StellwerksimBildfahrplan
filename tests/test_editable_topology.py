@@ -7,6 +7,7 @@ from infrastructure import (
     EditableTopologyGraph, EditableTopologyGraphStore, OperationalRouteEdge,
     OperationalRouteGraph, OperationalRouteNode, TopologySupplementCandidate,
     TopologyTarget, TopologyTargetRegistry,
+    AssignableRawItem, EditableOperatingPoint, EntryPoint, OperatingPointAssignments,
 )
 
 
@@ -19,6 +20,45 @@ def graph_with_nodes(*values):
 
 
 class EditableTopologyTests(unittest.TestCase):
+    def test_registry_filters_ineligible_automatic_targets_but_keeps_manual_and_entry(self):
+        assignments = OperatingPointAssignments(
+            points={
+                "empty": EditableOperatingPoint("empty", "Empty"),
+                "optional": EditableOperatingPoint("optional", "Optional"),
+                "platform": EditableOperatingPoint("platform", "Platform"),
+                "manual:X": EditableOperatingPoint("manual:X", "ManualX", removable=True),
+            },
+            assignments={"Optional": "optional", "Platform 1": "platform", "Aalen": "entry:Aalen"},
+            sources={"Optional": "automatic", "Platform 1": "automatic", "Aalen": "self_entry"},
+            manual_point_ids={"manual:X"},
+            raw_items={
+                "Optional": AssignableRawItem("Optional", "schedule_point"),
+                "Platform 1": AssignableRawItem("Platform 1", "platform_or_haltpunkt"),
+                "Aalen": AssignableRawItem("Aalen", "entry"),
+            },
+            entry_points={"entry:Aalen": EntryPoint("entry:Aalen", "Aalen")})
+        registry = TopologyTargetRegistry.from_assignments(assignments)
+        self.assertEqual(set(registry.targets), {"platform", "manual:X", "entry:Aalen"})
+        self.assertNotIn("Optional", registry.raw_to_target)
+        self.assertEqual(registry.raw_to_target["Platform 1"], "platform")
+
+    def test_filtered_target_creates_no_parking_node_and_legacy_node_is_removed(self):
+        assignments = OperatingPointAssignments(
+            points={"shadow": EditableOperatingPoint("shadow", "Shadow")},
+            assignments={"Shadow": "shadow"}, sources={"Shadow": "automatic"},
+            raw_items={"Shadow": AssignableRawItem("Shadow", "schedule_point")})
+        registry = TopologyTargetRegistry.from_assignments(assignments)
+        source = OperationalRouteGraph(nodes={
+            "schedule:Shadow": OperationalRouteNode(
+                "schedule:Shadow", "Shadow", ("Shadow",), (), "inferred")})
+        projected = EditableTopologyGraph.from_registry_projection(source, registry)
+        self.assertFalse(projected.nodes)
+        legacy = graph_with_nodes(("schedule:Shadow", "junction"))
+        legacy.nodes["schedule:Shadow"].source = "automatic"
+        legacy.migrate_to_registry(registry)
+        self.assertFalse(legacy.nodes)
+        self.assertEqual(len(legacy.metadata["unmapped_legacy_nodes"]), 1)
+
     def test_registry_projection_uses_only_targets_and_unions_edges(self):
         registry = TopologyTargetRegistry(
             targets={name: TopologyTarget(name, "operating_point", name) for name in ("THDM", "X", "Y", "Z")},

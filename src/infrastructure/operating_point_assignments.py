@@ -129,6 +129,13 @@ class AssignmentCompleteness:
             or self.empty_entry_point_count)
 
 
+@dataclass(frozen=True)
+class TopologyEligibility:
+    eligible: bool
+    reason: str
+    relevant_members: tuple[str, ...] = ()
+
+
 @dataclass
 class OperatingPointAssignments:
     """Ein eindeutiger Assignment-Layer ueber einem ableitbaren Auto-Graphen."""
@@ -390,6 +397,36 @@ class OperatingPointAssignments:
                             for point_id in self.entry_points)
         return AssignmentCompleteness(unassigned_platforms, unassigned_entries, empty_entries,
                                       bool(self.raw_items or self.entry_points))
+
+    def topology_eligibility(self, target_id: str) -> TopologyEligibility:
+        """Decides topology visibility from explicit assignment semantics, never resolver existence alone."""
+        if target_id in self.entry_points:
+            return TopologyEligibility(True, "active_entry_point", tuple(sorted(
+                (name for name, owner in self.assignments.items() if owner == target_id),
+                key=natural_sort_key)))
+        if target_id not in self.points:
+            return TopologyEligibility(False, "unknown_target")
+        if target_id in self.manual_point_ids:
+            return TopologyEligibility(True, "manual_operating_point")
+        relevant: list[str] = []
+        for raw_name, owner in self.assignments.items():
+            if owner != target_id:
+                continue
+            item = self.raw_items.get(raw_name)
+            source = self.sources.get(raw_name, "automatic")
+            if source == "self_haltpunkt":
+                relevant.append(raw_name)
+            elif item and item.kind == "platform_or_haltpunkt":
+                relevant.append(raw_name)
+            elif item and item.kind == "entry" and source in {"manual", "manual_entry"}:
+                relevant.append(raw_name)
+            elif item and item.kind == "schedule_point" and source in {
+                    "manual", "manual_config", "imported"}:
+                relevant.append(raw_name)
+        if relevant:
+            return TopologyEligibility(True, "relevant_assignment",
+                                       tuple(sorted(relevant, key=natural_sort_key)))
+        return TopologyEligibility(False, "automatic_without_relevant_assignment")
 
     def add_point(self, display_name: str, key: str | None = None) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", display_name.casefold()).strip("-") or "neu"

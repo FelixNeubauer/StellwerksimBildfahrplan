@@ -25,6 +25,7 @@ from .editable_topology_persistence import EditableTopologyGraphStore
 from .operating_point_assignments import (
     AssignableRawItem, AssignmentCompleteness, EditableOperatingPoint, EntryInfrastructureElement, EntryPoint,
     InvalidAssignment, OperatingPointAssignments, OperatingPointConfigStore,
+    TopologyEligibility,
     can_assign_kind, entry_point_id, entry_points_from_raw_graph,
     is_unprefixed_numeric, natural_sort_key, related_selection,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "TopologyTargetRegistry", "EditableTopologyGraphStore",
     "atomic_write_json", "find_identity_candidate", "validate_saved_stellwerk_identity",
     "AssignableRawItem", "AssignmentCompleteness", "EditableOperatingPoint", "EntryInfrastructureElement", "EntryPoint",
+    "TopologyEligibility",
     "InvalidAssignment", "OperatingPointAssignments", "OperatingPointConfigStore",
     "can_assign_kind", "entry_point_id", "entry_points_from_raw_graph",
     "is_unprefixed_numeric", "natural_sort_key", "related_selection",

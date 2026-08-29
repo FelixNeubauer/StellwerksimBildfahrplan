@@ -286,10 +286,12 @@ class InfrastructureTab(QtWidgets.QWidget):
             self.inspector_source.setText(node.source)
             automatic_ids = ", ".join(node.metadata.get("automatic_node_ids", ())) or "–"
             supplement = node.metadata.get("supplement_source") or "–"
+            target_evidence = ", ".join(node.metadata.get("target_evidence", ())) or "–"
             self.inspector_diagnostics.setText(
                 f"Target: {node.target_id or '–'} ({node.target_kind or '–'})\n"
                 f"OperatingPoint: {node.operating_point_id or '–'}\n"
-                f"Automatic IDs: {automatic_ids}\nSupplement: {supplement}")
+                f"Automatic IDs: {automatic_ids}\nSupplement: {supplement}\n"
+                f"Eligibility: {target_evidence}")
             warning = self.graph.node_validation(node.id)
             self.inspector_validation.setText("⚠ " + warning if warning else "✓ gültig")
         else:

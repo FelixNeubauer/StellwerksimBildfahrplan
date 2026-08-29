@@ -36,6 +36,47 @@ def automatic(*names, platforms=()):
 
 
 class AssignmentLogicTests(unittest.TestCase):
+    def test_topology_eligibility_filters_empty_and_automatic_schedule_only_targets(self):
+        empty_graph = OperatingPointGraph(nodes={
+            "empty": OperatingPoint("empty", "Empty", (), "station", "inferred", {})})
+        empty = OperatingPointAssignments(); empty.rebuild(empty_graph, (), ())
+        self.assertFalse(empty.topology_eligibility("empty").eligible)
+
+        schedule = OperatingPointAssignments(); schedule.rebuild(automatic("Optional"), ("Optional",), ())
+        target = schedule.assignments["Optional"]
+        self.assertEqual(schedule.sources["Optional"], "automatic")
+        self.assertFalse(schedule.topology_eligibility(target).eligible)
+
+    def test_topology_eligibility_accepts_platform_self_haltpunkt_and_manual_schedule(self):
+        platform = OperatingPointAssignments()
+        platform.rebuild(automatic("TRM 1"), ("TRM 1",), (),
+                         raw_item_kinds={"TRM 1": "platform_or_haltpunkt"})
+        self.assertTrue(platform.topology_eligibility(platform.assignments["TRM 1"]).eligible)
+
+        halt = OperatingPointAssignments(); halt.rebuild(
+            automatic("Martinszell"), ("Martinszell",), ("Martinszell",),
+            raw_item_kinds={"Martinszell": "platform_or_haltpunkt"})
+        self.assertEqual(halt.sources["Martinszell"], "self_haltpunkt")
+        self.assertTrue(halt.topology_eligibility(halt.assignments["Martinszell"]).eligible)
+
+        manual_schedule = OperatingPointAssignments()
+        manual_schedule.rebuild(automatic("Optional"), ("Optional",), ())
+        destination = next(iter(manual_schedule.points))
+        manual_schedule.assign(("Optional",), destination)
+        self.assertTrue(manual_schedule.topology_eligibility(destination).eligible)
+
+    def test_topology_eligibility_keeps_empty_manual_point_and_active_entry(self):
+        model = OperatingPointAssignments(); model.rebuild(automatic("X"), ("X",), ())
+        manual = model.add_point("ManualX")
+        self.assertTrue(model.topology_eligibility(manual).eligible)
+        entries = entry_points_from_raw_graph(parse_wege(
+            "<wege><shape type='6' name='Aalen' enr='1'/></wege>"))
+        entry_id = next(iter(entries)); entry_model = OperatingPointAssignments()
+        entry_model.rebuild(automatic("Aalen"), ("Aalen",), (), entry_points=entries,
+                            raw_item_kinds={"Aalen": "entry"},
+                            automatic_entry_assignments={"Aalen": entry_id})
+        self.assertTrue(entry_model.topology_eligibility(entry_id).eligible)
+
     def test_equal_automatic_targets_merge_but_manual_names_remain_distinct(self):
         graph = OperatingPointGraph(
             nodes={
