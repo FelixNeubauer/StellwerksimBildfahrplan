@@ -64,6 +64,46 @@ class EditableTopologyTests(unittest.TestCase):
         self.assertFalse(validate_kilometrage([0, "", 4], 3).valid)
         self.assertFalse(validate_kilometrage([0, "x", 4], 3).valid)
 
+    def test_route_default_is_stored_and_copied_independently_to_instances(self):
+        graph = graph_with_nodes(("A", "entry"), ("B", "line"), ("C", "entry"))
+        graph.add_edge("A", "B"); graph.add_edge("B", "C")
+        estimated = {"A": 0.0, "B": 4.0, "C": 9.0}
+        route = graph.add_route("A – C", ["A", "B", "C"], default_kilometrage=estimated)
+        first = graph.add_bildfahrplan_instance(route.route_id)
+        second = graph.add_bildfahrplan_instance(route.route_id)
+        self.assertEqual(route.default_kilometrage, estimated)
+        self.assertEqual(first.kilometrage, estimated)
+        self.assertIsNot(first.kilometrage, route.default_kilometrage)
+        self.assertIsNot(first.kilometrage, second.kilometrage)
+        first.kilometrage["B"] = 5.0
+        self.assertEqual(second.kilometrage["B"], 4.0)
+        self.assertEqual(route.default_kilometrage["B"], 4.0)
+        first.left_endpoint = route.endpoint_b
+        self.assertEqual([first.kilometrage[node] for node in reversed(route.ordered_node_ids)],
+                         [9.0, 5.0, 0.0])
+
+    def test_legacy_route_and_instance_load_with_empty_kilometrage(self):
+        payload = {
+            "graph": {"nodes": [], "edges": []},
+            "defined_routes": [{"route_id": "route", "display_name": "Legacy",
+                                "ordered_node_ids": ["A", "B"], "endpoint_a": "A", "endpoint_b": "B"}],
+            "bildfahrplan_routes": [{"instance_id": "bf", "route_id": "route",
+                                      "left_endpoint": "A", "order": 0}],
+        }
+        restored = EditableTopologyGraph.from_dict(payload)
+        self.assertEqual(restored.defined_routes["route"].default_kilometrage, {})
+        self.assertEqual(restored.bildfahrplan_routes[0].kilometrage, {})
+        self.assertFalse(restored.bildfahrplan_routes[0].kilometrage_stale)
+        changed = restored.initialize_missing_kilometrages(
+            lambda route: dict(zip(route.ordered_node_ids, (0.0, 5.0))))
+        self.assertEqual(changed, 2)
+        self.assertEqual(restored.defined_routes["route"].default_kilometrage,
+                         {"A": 0.0, "B": 5.0})
+        self.assertEqual(restored.bildfahrplan_routes[0].kilometrage,
+                         {"A": 0.0, "B": 5.0})
+        self.assertIsNot(restored.bildfahrplan_routes[0].kilometrage,
+                         restored.defined_routes["route"].default_kilometrage)
+
     def test_registry_filters_ineligible_automatic_targets_but_keeps_manual_and_entry(self):
         assignments = OperatingPointAssignments(
             points={
@@ -319,6 +359,7 @@ class EditableTopologyTests(unittest.TestCase):
         graph = graph_with_nodes(("A", "entry"), ("B", "entry"))
         graph.nodes["A"].layout_x = 42.5; graph.add_edge("A", "B")
         route = graph.add_route("A – B", ["A", "B"])
+        route.default_kilometrage = {"A": 0.0, "B": 12.5}
         first = graph.add_bildfahrplan_instance(route.route_id)
         second = graph.add_bildfahrplan_instance(route.route_id)
         first.kilometrage = {"A": 0.0, "B": 12.5}
@@ -330,6 +371,8 @@ class EditableTopologyTests(unittest.TestCase):
                              (17, "Test", "editable_topology_graph"))
             restored = EditableTopologyGraph.from_dict(payload)
             self.assertEqual(restored.nodes["A"].layout_x, 42.5)
+            self.assertEqual(restored.defined_routes[route.route_id].default_kilometrage,
+                             {"A": 0.0, "B": 12.5})
             self.assertEqual(len(restored.bildfahrplan_routes), 2)
             self.assertEqual([item.order for item in restored.bildfahrplan_routes], [0, 1])
             self.assertEqual(restored.bildfahrplan_routes[0].kilometrage, {"A": 0.0, "B": 12.5})

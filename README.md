@@ -82,6 +82,16 @@ Die Werte werden zusammen mit der jeweiligen Instanz AID-spezifisch gespeichert;
 ein erneuter Klick auf **Automatisch ausfüllen** ersetzt bewusst alle Eingaben im
 Dialog durch die aktuelle Schätzung.
 
+Schon beim Speichern einer definierten Strecke wird dieselbe Schätzung als
+node-basierte `default_kilometrage` erzeugt. Neue Bildfahrplaninstanzen erhalten
+eine unabhängige Kopie dieses Defaults. Nach einer Pfadänderung wird der Default
+neu berechnet; bestehende Instanzwerte bleiben konservativ erhalten und werden
+in der Oberfläche als prüfbedürftig markiert. Ältere Dateien ohne Default oder
+Instanzwerte werden beim Laden deterministisch ergänzt. Im Kilometereditor führt
+Tab beziehungsweise Shift+Tab ausschließlich vorwärts oder rückwärts durch die
+Kilometerzellen, inklusive Umlauf am Tabellenende und direkter Vollauswahl des
+folgenden Werts.
+
 ### Bedienung V0.4.1
 
 Der Graph besitzt drei exklusive Mausmodi: **Umsehen** ist der Standard und

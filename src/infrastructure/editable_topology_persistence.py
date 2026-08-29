@@ -10,7 +10,7 @@ from .editable_topology import EditableTopologyGraph
 
 
 class EditableTopologyGraphStore:
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
     ARTIFACT_TYPE = "editable_topology_graph"
 
     def __init__(self, config_directory: str | Path) -> None:

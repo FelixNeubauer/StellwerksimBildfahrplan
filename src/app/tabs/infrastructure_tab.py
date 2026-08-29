@@ -24,6 +24,47 @@ TYPE_LABELS = {
     "line": "Streckenbetriebsstelle", "entry": "Einfahrt", "junction": "Abzweigbetriebsstelle",
 }
 ID_ROLE = QtCore.Qt.ItemDataRole.UserRole
+KILOMETRE_COLUMN = 3
+
+
+class KilometrageTable(QtWidgets.QTableWidget):
+    """Tabelle, deren Tab-Kette ausschließlich die Kilometerspalte umfasst."""
+
+    def __init__(self, rows: int, columns: int, parent=None) -> None:
+        super().__init__(rows, columns, parent)
+        QtWidgets.QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        if (event.type() == QtCore.QEvent.Type.KeyPress
+                and event.key() in (QtCore.Qt.Key.Key_Tab, QtCore.Qt.Key.Key_Backtab)
+                and isinstance(watched, QtWidgets.QLineEdit) and self.isAncestorOf(watched)):
+            backwards = (event.key() == QtCore.Qt.Key.Key_Backtab
+                         or bool(event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier))
+            row = self.currentRow()
+            self.item(row, KILOMETRE_COLUMN).setText(watched.text())
+            self.closeEditor(watched, QtWidgets.QAbstractItemDelegate.EndEditHint.NoHint)
+            self.edit_kilometre((row + (-1 if backwards else 1)) % self.rowCount())
+            return True
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (QtCore.Qt.Key.Key_Tab, QtCore.Qt.Key.Key_Backtab) and self.rowCount():
+            backwards = (event.key() == QtCore.Qt.Key.Key_Backtab
+                         or bool(event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier))
+            row = self.currentRow() if self.currentRow() >= 0 else (0 if backwards else -1)
+            self.edit_kilometre((row + (-1 if backwards else 1)) % self.rowCount())
+            return
+        super().keyPressEvent(event)
+
+    def edit_kilometre(self, row: int) -> None:
+        self.setCurrentCell(row, KILOMETRE_COLUMN)
+        self.editItem(self.item(row, KILOMETRE_COLUMN))
+        QtCore.QTimer.singleShot(0, self._select_editor_text)
+
+    def _select_editor_text(self) -> None:
+        editor = self.focusWidget()
+        if isinstance(editor, QtWidgets.QLineEdit):
+            editor.selectAll()
 
 
 class KilometrageDialog(QtWidgets.QDialog):
@@ -41,7 +82,7 @@ class KilometrageDialog(QtWidgets.QDialog):
         reset = QtWidgets.QPushButton("Automatisch ausfüllen")
         reset.setToolTip("Manuelle Eingaben durch die Schätzung aus planmäßigen Fahrzeiten ersetzen")
         reset.clicked.connect(self._fill_automatically); layout.addWidget(reset, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
-        self.table = QtWidgets.QTableWidget(len(ordered_node_ids), 4)
+        self.table = KilometrageTable(len(ordered_node_ids), 4)
         self.table.setHorizontalHeaderLabels(("Nr.", "Name", "Typ", "Kilometer"))
         self.table.verticalHeader().hide(); self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
@@ -50,7 +91,8 @@ class KilometrageDialog(QtWidgets.QDialog):
             for column, text in enumerate((str(row + 1), node.display_name,
                                            "Einfahrt" if node.node_type == "entry" else "Betriebsstelle")):
                 item = QtWidgets.QTableWidgetItem(text)
-                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+                item.setFlags(item.flags() & ~(QtCore.Qt.ItemFlag.ItemIsEditable |
+                                               QtCore.Qt.ItemFlag.ItemIsFocusable))
                 self.table.setItem(row, column, item)
             value = initial_values.get(node_id)
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem("" if value is None else f"{value:.3f}"))
@@ -273,6 +315,29 @@ class InfrastructureTab(QtWidgets.QWidget):
     def _apply_supplements(self, graph: EditableTopologyGraph) -> None:
         graph.migrate_to_registry(self._target_registry)
 
+    def _raw_to_topology_node(self, node_ids) -> dict[str, str]:
+        result = dict(self._target_registry.raw_to_target)
+        for node_id in node_ids:
+            node = self.graph.nodes.get(node_id)
+            if node is None:
+                continue
+            for key in ("raw_names", "target_raw_members"):
+                for raw_name in node.metadata.get(key, ()):
+                    result.setdefault(raw_name, node_id)
+        return result
+
+    def _estimated_route_kilometrage(self, route) -> dict[str, float]:
+        ordered = route.ordered_node_ids
+        estimate = estimate_kilometrage(
+            ordered, {node_id: self.graph.nodes[node_id].node_type for node_id in ordered
+                      if node_id in self.graph.nodes}, self._services,
+            self._raw_to_topology_node(ordered))
+        return dict(zip(ordered, estimate.kilometres))
+
+    def _ensure_kilometrages(self) -> bool:
+        """Ergänzt Legacy-Defaults und leere Legacy-Instanzen deterministisch."""
+        return bool(self.graph.initialize_missing_kilometrages(self._estimated_route_kilometrage))
+
     def _load_or_initialize(self, automatic) -> None:
         current = SavedStellwerkIdentity(self.aid, self.facility_name)
         path = self.store.path_for(self.aid)
@@ -303,7 +368,9 @@ class InfrastructureTab(QtWidgets.QWidget):
                       EditableTopologyGraph.from_dict(automatic.to_dict()))
         before_supplements = self.graph.to_dict(); self._apply_supplements(self.graph)
         supplements_changed = self.graph.to_dict() != before_supplements
+        kilometrages_changed = self._ensure_kilometrages()
         self._identity_ready = True; self._dirty = data is None or supplements_changed
+        self._dirty = self._dirty or kilometrages_changed
         self._rebuild_scene(); self._refresh_routes(); self._refresh_instances()
         if data is None: self.flush_pending_save()
         unresolved = len(self.graph.metadata.get("unmapped_legacy_nodes", ()))
@@ -500,13 +567,18 @@ class InfrastructureTab(QtWidgets.QWidget):
         if accepted and name.strip():
             if existing:
                 old_a, old_b = existing.endpoint_a, existing.endpoint_b
+                old_path = tuple(existing.ordered_node_ids)
                 existing.display_name = name.strip(); existing.ordered_node_ids = list(path)
                 existing.endpoint_a, existing.endpoint_b = path[0], path[-1]
+                existing.default_kilometrage = self._estimated_route_kilometrage(existing)
                 for instance in self.graph.bildfahrplan_routes:
                     if instance.route_id == existing.route_id:
                         instance.left_endpoint = path[-1] if instance.left_endpoint == old_b else path[0]
+                        instance.kilometrage_stale = (old_path != tuple(path)
+                                                      or set(instance.kilometrage) != set(path))
             else:
-                self.graph.add_route(name.strip(), path)
+                route = self.graph.add_route(name.strip(), path)
+                route.default_kilometrage = self._estimated_route_kilometrage(route)
             self._mark_dirty()
         self._route_endpoints = None; self._editing_route_id = None; self._highlight_path([])
         self._refresh_routes(); self._refresh_instances()
@@ -567,7 +639,9 @@ class InfrastructureTab(QtWidgets.QWidget):
             remove = QtWidgets.QPushButton("×"); remove.setMaximumWidth(30)
             remove.clicked.connect(lambda _checked=False, iid=instance.instance_id: self._remove_instance(iid))
             kilometres = QtWidgets.QPushButton("km…"); kilometres.setMaximumWidth(48)
-            kilometres.setToolTip("Streckenkilometer bearbeiten")
+            kilometres.setToolTip("Streckenkilometer bearbeiten" +
+                                   (" (Pfad wurde geändert; bitte prüfen oder neu berechnen)"
+                                    if instance.kilometrage_stale else ""))
             kilometres.clicked.connect(lambda _checked=False, iid=instance.instance_id:
                                         self._edit_instance_kilometrage(iid))
             layout.addWidget(routes, 3); layout.addWidget(endpoints, 2); layout.addWidget(kilometres); layout.addWidget(remove)
@@ -587,8 +661,10 @@ class InfrastructureTab(QtWidgets.QWidget):
     def _instance_route_changed(self, instance_id, route_id) -> None:
         if self._loading or route_id is None: return
         instance = self._instance(instance_id); instance.route_id = route_id
-        instance.left_endpoint = self.graph.defined_routes[route_id].endpoint_a
-        instance.kilometrage = {}
+        route = self.graph.defined_routes[route_id]
+        instance.left_endpoint = route.endpoint_a
+        instance.kilometrage = dict(route.default_kilometrage)
+        instance.kilometrage_stale = False
         self._mark_dirty(); self._refresh_instances()
 
     def _instance_endpoint_changed(self, instance_id, endpoint) -> None:
@@ -603,18 +679,9 @@ class InfrastructureTab(QtWidgets.QWidget):
         ordered = list(route.ordered_node_ids)
         if instance.left_endpoint == route.endpoint_b:
             ordered.reverse()
-        raw_to_node = dict(self._target_registry.raw_to_target)
-        # Direkte Rawnamen des Knotens sind nur explizite Import-Evidenz, keine
-        # neu erfundene Präfix-/Gleisnormalisierung.
-        for node_id in ordered:
-            node = self.graph.nodes[node_id]
-            for raw_name in node.metadata.get("raw_names", ()):
-                raw_to_node.setdefault(raw_name, node_id)
-            for raw_name in node.metadata.get("target_raw_members", ()):
-                raw_to_node.setdefault(raw_name, node_id)
         estimate = estimate_kilometrage(
             ordered, {node_id: self.graph.nodes[node_id].node_type for node_id in ordered},
-            self._services, raw_to_node)
+            self._services, self._raw_to_topology_node(ordered))
         initial = instance.kilometrage
         if set(initial) != set(ordered):
             initial = dict(zip(ordered, estimate.kilometres))
@@ -622,6 +689,7 @@ class InfrastructureTab(QtWidgets.QWidget):
                                    estimate.kilometres, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             instance.kilometrage = dialog.values
+            instance.kilometrage_stale = False
             self._mark_dirty()
 
     def _remove_instance(self, instance_id) -> None:

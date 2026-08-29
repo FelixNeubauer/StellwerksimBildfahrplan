@@ -45,6 +45,7 @@ class DefinedRoute:
     ordered_node_ids: list[str]
     endpoint_a: str
     endpoint_b: str
+    default_kilometrage: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -54,6 +55,7 @@ class BildfahrplanRouteInstance:
     left_endpoint: str
     order: int
     kilometrage: dict[str, float] = field(default_factory=dict)
+    kilometrage_stale: bool = False
 
 
 @dataclass(frozen=True)
@@ -591,10 +593,12 @@ class EditableTopologyGraph:
                 errors.append(f"Endpunkt {self.nodes[endpoint].display_name} muss Einfahrt oder Abzweig sein.")
         return tuple(errors)
 
-    def add_route(self, display_name: str, ordered_node_ids: Iterable[str]) -> DefinedRoute:
+    def add_route(self, display_name: str, ordered_node_ids: Iterable[str], *,
+                  default_kilometrage: dict[str, float] | None = None) -> DefinedRoute:
         path = list(ordered_node_ids)
         if len(path) < 2: raise ValueError("Eine Strecke benötigt mindestens zwei Betriebsstellen.")
-        route = DefinedRoute(_identifier("route"), display_name, path, path[0], path[-1])
+        route = DefinedRoute(_identifier("route"), display_name, path, path[0], path[-1],
+                             dict(default_kilometrage or {}))
         errors = self.route_validation(route)
         if errors: raise ValueError("\n".join(errors))
         self.defined_routes[route.route_id] = route
@@ -608,13 +612,29 @@ class EditableTopologyGraph:
     def add_bildfahrplan_instance(self, route_id: str) -> BildfahrplanRouteInstance:
         route = self.defined_routes[route_id]
         item = BildfahrplanRouteInstance(_identifier("bf"), route_id, route.endpoint_a,
-                                         len(self.bildfahrplan_routes))
+                                         len(self.bildfahrplan_routes),
+                                         dict(route.default_kilometrage))
         self.bildfahrplan_routes.append(item)
         return item
 
     def normalize_instance_order(self) -> None:
         self.bildfahrplan_routes.sort(key=lambda item: item.order)
         for order, item in enumerate(self.bildfahrplan_routes): item.order = order
+
+    def initialize_missing_kilometrages(self, estimator) -> int:
+        """Ergänzt Legacy-Daten; ``estimator`` bleibt eine austauschbare Fachlogik."""
+        changed = 0
+        for route in self.defined_routes.values():
+            if set(route.default_kilometrage) != set(route.ordered_node_ids):
+                route.default_kilometrage = dict(estimator(route))
+                changed += 1
+        for instance in self.bildfahrplan_routes:
+            route = self.defined_routes.get(instance.route_id)
+            if route is not None and not instance.kilometrage:
+                instance.kilometrage = dict(route.default_kilometrage)
+                instance.kilometrage_stale = False
+                changed += 1
+        return changed
 
     def connected_components(self) -> tuple[set[str], ...]:
         unseen, components = set(self.nodes), []
