@@ -5,7 +5,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from bildfahrplan.x_axis import ROUTE_GAP_FRACTION, build_bildfahrplan_x_axis
+from bildfahrplan.x_axis import (
+    ROUTE_GAP_FRACTION, bildfahrplan_configuration_signature, build_bildfahrplan_x_axis,
+)
 from infrastructure.editable_topology import (
     BildfahrplanRouteInstance, DefinedRoute, EditableTopologyGraph, TopologyNode,
 )
@@ -91,6 +93,18 @@ class BildfahrplanXAxisTests(unittest.TestCase):
         route = build_bildfahrplan_x_axis(graph).routes[0]
         self.assertEqual(route.route_length, 6)
         self.assertFalse(route.diagnostics)
+
+    def test_list_reorder_is_immediately_authoritative_and_changes_signature(self):
+        graph = graph_with_route()
+        graph.bildfahrplan_routes.append(BildfahrplanRouteInstance(
+            "second", "r", "C", 1, {"A": 0, "B": 5, "C": 15}))
+        before = bildfahrplan_configuration_signature(graph)
+        graph.bildfahrplan_routes.reverse()
+        # Simuliert den Moment des rowsMoved-Signals, bevor order synchronisiert ist.
+        layout = build_bildfahrplan_x_axis(graph)
+        after = bildfahrplan_configuration_signature(graph)
+        self.assertEqual([item.instance_id for item in layout.routes], ["second", "i"])
+        self.assertNotEqual(before, after)
 
 
 if __name__ == "__main__":

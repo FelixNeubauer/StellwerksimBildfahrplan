@@ -74,6 +74,21 @@ proportional zu ihrer Streckenlänge und bleiben durch kleine Darstellungslücke
 getrennt. Die Zeitachse wird an beiden äußeren Seiten derselben Plotfläche
 angezeigt.
 
+Jede konfigurierte Instanz besitzt einen eigenen Rahmen; Zeit- und
+Stationshilfslinien enden an diesem Rahmen, sodass die Darstellungslücken frei
+bleiben. Die sichtbare Liste im Tab **Strecke** ist unmittelbar auch die
+Links-nach-rechts-Reihenfolge im Bildfahrplan. Die äußeren Endpunkte werden mit
+nach innen ausgerichteten Beschriftungen direkt auf den Rahmenpositionen
+angezeigt.
+
+Unter **Einstellungen → Zugdarstellung** kann zwischen der bisherigen bunten
+Palette und einer gemeinsamen Zugfarbe gewechselt werden. Standard ist
+`#D0D0D0`; Modus und Farbe werden in `config/settings.json` gespeichert. Im
+Bildfahrplan hält **Live mitbewegen** die interpolierte Simulationszeit optional
+an einer gespeicherten Position zwischen 0 und 100 Prozent der sichtbaren
+Zeitspanne. Der Live-Schalter selbst startet nach jedem Programmstart bewusst
+ausgeschaltet.
+
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.
 Die Automatik verwendet robuste Medianwerte aus den unveränderten Planfahrplänen,

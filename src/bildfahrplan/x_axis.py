@@ -53,7 +53,11 @@ def build_bildfahrplan_x_axis(
     """
     prepared = []
     global_diagnostics: list[str] = []
-    for instance in sorted(graph.bildfahrplan_routes, key=lambda item: item.order):
+    # Die Liste ist die sichtbare, autoritative Editor-Reihenfolge. Der Editor
+    # synchronisiert ``order`` beim Verschieben und die Persistenz normalisiert
+    # beim Laden; ein erneutes Sortieren nach eventuell noch altem ``order``
+    # würde eine gerade ausgeführte GUI-Verschiebung wieder rückgängig machen.
+    for instance in graph.bildfahrplan_routes:
         route = graph.defined_routes.get(instance.route_id)
         if route is None:
             global_diagnostics.append(f"Instanz {instance.instance_id}: Strecke {instance.route_id} fehlt.")
@@ -125,3 +129,10 @@ def build_bildfahrplan_x_axis(
             gaps.append(RouteGap(end, end + gap))
             cursor = end + gap
     return BildfahrplanXAxisLayout(tuple(spans), tuple(gaps), tuple(global_diagnostics))
+
+
+def bildfahrplan_configuration_signature(graph: EditableTopologyGraph) -> tuple:
+    """Cache-Signatur einschließlich reiner Reihenfolgeänderungen."""
+    return tuple((index, item.instance_id, item.order, item.route_id, item.left_endpoint,
+                  tuple(sorted(item.kilometrage.items())))
+                 for index, item in enumerate(graph.bildfahrplan_routes))

@@ -10,6 +10,7 @@ from app.simtime import SimTimeInterpolator
 from bildfahrplan.navigation import (
     ROUTE_AXIS_POSITION, TIME_MAX, TIME_MIN, X_INTERACTION_ENABLED, Y_INTERACTION_ENABLED,
     centered_time_range, clamp_time_range, time_bounds,
+    live_follow_time_range,
 )
 from infrastructure import entry_points_from_raw_graph
 
@@ -54,6 +55,15 @@ class UiLogicTests(unittest.TestCase):
                          (7 * 3600, 9 * 3600))
         self.assertEqual(centered_time_range(5 * 3600, (8 * 3600, 10 * 3600)),
                          (TIME_MIN, 7 * 3600))
+
+    def test_live_follow_positions_now_without_changing_duration(self):
+        self.assertEqual(live_follow_time_range(500, (0, 100), 0), (500, 600))
+        self.assertEqual(live_follow_time_range(500, (0, 100), 25), (475, 575))
+        self.assertEqual(live_follow_time_range(500, (0, 100), 50), (450, 550))
+        self.assertEqual(live_follow_time_range(500, (0, 100), 100), (400, 500))
+        self.assertEqual(live_follow_time_range(500, (0, 200), 25), (450, 650))
+        with self.assertRaises(ValueError):
+            live_follow_time_range(500, (0, 100), -1)
 
     def test_simtime_interpolates_resynchronizes_and_freezes_disconnected(self):
         now = [100.0]
