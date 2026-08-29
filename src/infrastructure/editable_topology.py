@@ -59,6 +59,16 @@ class PathEnumerationResult:
     truncated: bool = False
 
 
+@dataclass(frozen=True)
+class TopologySupplementCandidate:
+    node_id: str
+    display_name: str
+    node_type: str
+    source: str
+    anchor_id: str | None = None
+    canonical_target_id: str | None = None
+
+
 @dataclass
 class EditableTopologyGraph:
     nodes: dict[str, TopologyNode] = field(default_factory=dict)
@@ -194,7 +204,8 @@ class EditableTopologyGraph:
         return node
 
     def ensure_supplement_node(self, node_id: str, display_name: str, node_type: str,
-                               source: str, *, anchor_id: str | None = None) -> TopologyNode:
+                               source: str, *, anchor_id: str | None = None,
+                               canonical_target_id: str | None = None) -> TopologyNode:
         """Ergänzt nur neue bekannte Ziele und schützt bestehende Layoutdaten."""
         if node_id in self.nodes:
             return self.nodes[node_id]
@@ -217,9 +228,91 @@ class EditableTopologyGraph:
         position = (x, bottom + row * 95.0)
         node = TopologyNode(node_id, display_name, node_type, source, *position,
                             metadata={"parking_area": anchor_id is None, "parking_anchor": anchor_id,
-                                      "automatic_supplement": True})
+                                      "automatic_supplement": True, "supplement_source": source,
+                                      "canonical_target_id": canonical_target_id})
+        if source in {"operating_point", "operating_point_config"}:
+            node.operating_point_id = canonical_target_id
         self.nodes[node_id] = node
         return node
+
+    @staticmethod
+    def deduplicate_supplement_candidates(
+            candidates: Iterable[TopologySupplementCandidate]) -> tuple[TopologySupplementCandidate, ...]:
+        """Returns at most one candidate for each canonical logical target."""
+        result: dict[tuple[str, str], TopologySupplementCandidate] = {}
+        for candidate in candidates:
+            identity = (("target", candidate.canonical_target_id) if candidate.canonical_target_id
+                        else ("node", candidate.node_id))
+            current = result.get(identity)
+            if current is None or (candidate.source, candidate.node_id) < (current.source, current.node_id):
+                result[identity] = candidate
+        return tuple(result[key] for key in sorted(result))
+
+    def remove_redundant_operating_supplements(
+            self, canonical_by_node: dict[str, str], canonical_names: dict[str, set[str]]) -> int:
+        """Migrates only unconnected automatic supplements with an unambiguous identity."""
+        identities = dict(canonical_by_node)
+        for node_id, node in self.nodes.items():
+            if node.source == "manual" or node_id in identities:
+                continue
+            candidates: set[str] = set()
+            if node.operating_point_id:
+                candidates.add(node.operating_point_id)
+            target = node.metadata.get("canonical_target_id")
+            if target:
+                candidates.add(target)
+            for value in node.metadata.get("operating_point_ids", ()):
+                candidates.add(value)
+            if not candidates:
+                candidates.update(canonical_names.get(self.logical_name(node.display_name), ()))
+            if len(candidates) == 1:
+                identities[node_id] = next(iter(candidates))
+
+        groups: dict[str, list[str]] = {}
+        for node_id, identity in identities.items():
+            if node_id in self.nodes:
+                groups.setdefault(identity, []).append(node_id)
+        removed = 0
+        supplement_sources = {"operating_point", "operating_point_config"}
+        for identifiers in groups.values():
+            if len(identifiers) < 2:
+                continue
+            established = [node_id for node_id in identifiers
+                           if self.nodes[node_id].source not in supplement_sources
+                           or self.degree(node_id) > 0]
+            winner = max(established or identifiers, key=lambda value: (
+                self.degree(value), self.nodes[value].source not in supplement_sources, value))
+            for node_id in identifiers:
+                node = self.nodes[node_id]
+                legacy_supplement = (node.source in supplement_sources
+                                     or node.metadata.get("automatic_supplement") is True)
+                if node_id != winner and legacy_supplement and self.degree(node_id) == 0:
+                    self.delete_node(node_id); removed += 1
+        return removed
+
+    def missing_supplement_candidates(
+            self, candidates: Iterable[TopologySupplementCandidate],
+            canonical_by_node: dict[str, str],
+            canonical_names: dict[str, set[str]]) -> tuple[TopologySupplementCandidate, ...]:
+        """Filters operating-point supplements already represented by a non-manual graph node."""
+        represented = set(canonical_by_node.values())
+        for node_id, node in self.nodes.items():
+            if node.source == "manual":
+                continue
+            identities: set[str] = set()
+            if node_id in canonical_by_node:
+                identities.add(canonical_by_node[node_id])
+            if node.operating_point_id:
+                identities.add(node.operating_point_id)
+            target = node.metadata.get("canonical_target_id")
+            if target:
+                identities.add(target)
+            identities.update(canonical_names.get(self.logical_name(node.display_name), ()))
+            if len(identities) == 1:
+                represented.update(identities)
+        return tuple(candidate for candidate in self.deduplicate_supplement_candidates(candidates)
+                     if candidate.source not in {"operating_point", "operating_point_config"}
+                     or candidate.canonical_target_id not in represented)
 
     @staticmethod
     def logical_name(value: str) -> str:

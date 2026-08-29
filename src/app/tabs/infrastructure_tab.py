@@ -12,6 +12,7 @@ from infrastructure import (
     InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
     OperatingPointAssignments, SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, entry_points_from_raw_graph,
     find_identity_candidate, parse_bahnsteigliste, parse_wege, save_generated_graph,
+    TopologySupplementCandidate,
     validate_saved_stellwerk_identity,
 )
 from app.widgets.topology_graphics import (
@@ -50,9 +51,10 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.graph = EditableTopologyGraph()
         self.aid = None; self.facility_name = None
         self._last_signature = None; self._automatic_graph = None; self._automatic_source = None
-        self._supplements: list[tuple[str, str, str, str, str | None]] = []
+        self._supplements: list[TopologySupplementCandidate] = []
         self._canonical_operating_by_node: dict[str, str] = {}
         self._canonical_operating_aliases: dict[str, str] = {}
+        self._canonical_point_names: dict[str, set[str]] = {}
         self._dirty = False; self._identity_ready = False; self._loading = False
         self._route_path: list[str] | None = None
         self._route_endpoints: list[str] | None = None; self._editing_route_id: str | None = None
@@ -110,10 +112,14 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.inspector_connections = QtWidgets.QLabel("–"); self.inspector_id = QtWidgets.QLabel("–")
         self.inspector_id.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         self.inspector_source = QtWidgets.QLabel("–"); self.inspector_validation = QtWidgets.QLabel("Keine Auswahl")
+        self.inspector_diagnostics = QtWidgets.QLabel("–")
+        self.inspector_diagnostics.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.inspector_diagnostics.setWordWrap(True)
         self.inspector_validation.setWordWrap(True)
         form.addRow("Name:", self.inspector_name); form.addRow("Typ:", self.inspector_type)
         form.addRow("Verbindungen:", self.inspector_connections); form.addRow("ID:", self.inspector_id)
         form.addRow("Quelle:", self.inspector_source); form.addRow("Validierung:", self.inspector_validation)
+        form.addRow("Diagnose:", self.inspector_diagnostics)
         return box
 
     def _build_routes_panel(self):
@@ -187,6 +193,10 @@ class InfrastructureTab(QtWidgets.QWidget):
         corridor = CorridorGraphBuilder(schedule, operating, raw).build(); operational = corridor.to_operational_graph()
         assignments = OperatingPointAssignments()
         assignments.rebuild(operating, schedule.nodes, (), manual)
+        self._canonical_point_names = {}
+        for point_id, point in assignments.points.items():
+            key = EditableTopologyGraph.logical_name(point.display_name)
+            self._canonical_point_names.setdefault(key, set()).add(point_id)
         self._canonical_operating_aliases = {}
         for operating_id, point in operating.nodes.items():
             owners = {assignments.assignments[name] for name in point.raw_names
@@ -202,12 +212,17 @@ class InfrastructureTab(QtWidgets.QWidget):
                 self._canonical_operating_by_node[node_id] = next(iter(owners))
         graph = EditableTopologyGraph.from_operational_graph(operational, self._canonical_operating_by_node)
         self._supplements = self._topology_supplements(manual, raw)
-        supplemented = {item[0] for item in self._supplements}
+        supplemented = {item.canonical_target_id or item.node_id for item in self._supplements}
         self._supplements.extend(
-            (point.id, point.display_name, "junction", "operating_point", None)
+            TopologySupplementCandidate(
+                self._canonical_operating_aliases.get(point.id, point.id), point.display_name,
+                "junction", "operating_point", None,
+                self._canonical_operating_aliases.get(point.id, point.id))
             for point in sorted(operating.nodes.values(), key=lambda item: item.id)
-            if point.id not in operational.nodes and point.id not in supplemented
+            if point.id not in operational.nodes
+            and self._canonical_operating_aliases.get(point.id, point.id) not in supplemented
             and point.point_type != "entry_exit")
+        self._supplements = list(EditableTopologyGraph.deduplicate_supplement_candidates(self._supplements))
         self._apply_supplements(graph)
         return graph, (raw, builder, operational, platforms, schedule, operating, corridor)
 
@@ -216,8 +231,9 @@ class InfrastructureTab(QtWidgets.QWidget):
         manual_ids = set(config.get("manual_point_ids", ()))
         for point_id in sorted(manual_ids):
             values = config.get("operating_points", {}).get(point_id, {})
-            result.append((point_id, values.get("display_name", point_id), "junction",
-                           "operating_point_config", None))
+            result.append(TopologySupplementCandidate(
+                point_id, values.get("display_name", point_id), "junction",
+                "operating_point_config", None, point_id))
         entries = entry_points_from_raw_graph(raw)
         configured = config.get("entry_points", {})
         for point_id, entry in entries.items():
@@ -228,8 +244,9 @@ class InfrastructureTab(QtWidgets.QWidget):
                 if not anchor and item.get("possible_source_nodes"):
                     anchor = item["possible_source_nodes"][0]
                 if anchor: break
-            result.append((point_id, entry.display_name, "entry", "entry_point_config", anchor))
-        return result
+            result.append(TopologySupplementCandidate(
+                point_id, entry.display_name, "entry", "entry_point_config", anchor, point_id))
+        return list(EditableTopologyGraph.deduplicate_supplement_candidates(result))
 
     def _apply_supplements(self, graph: EditableTopologyGraph) -> None:
         canonical_existing = {}
@@ -246,11 +263,17 @@ class InfrastructureTab(QtWidgets.QWidget):
             if len(candidates) == 1:
                 canonical_existing[node_id] = next(iter(candidates))
         graph.canonicalize_automatic_nodes(canonical_existing)
+        graph.remove_redundant_operating_supplements(canonical_existing, self._canonical_point_names)
         graph.remove_redundant_entry_supplements()
-        for node_id, name, node_type, source, anchor in self._supplements:
-            if source == "entry_point_config" and graph.represented_node(name, exclude_id=node_id):
+        missing = graph.missing_supplement_candidates(
+            self._supplements, canonical_existing, self._canonical_point_names)
+        for candidate in missing:
+            if (candidate.source == "entry_point_config"
+                    and graph.represented_node(candidate.display_name, exclude_id=candidate.node_id)):
                 continue
-            graph.ensure_supplement_node(node_id, name, node_type, source, anchor_id=anchor)
+            graph.ensure_supplement_node(
+                candidate.node_id, candidate.display_name, candidate.node_type, candidate.source,
+                anchor_id=candidate.anchor_id, canonical_target_id=candidate.canonical_target_id)
 
     def _load_or_initialize(self, automatic) -> None:
         current = SavedStellwerkIdentity(self.aid, self.facility_name)
@@ -322,12 +345,18 @@ class InfrastructureTab(QtWidgets.QWidget):
             self.inspector_type.setCurrentIndex(self.inspector_type.findData(node.node_type))
             self.inspector_connections.setText(str(self.graph.degree(node.id))); self.inspector_id.setText(node.id)
             self.inspector_source.setText(node.source)
+            automatic_ids = ", ".join(node.metadata.get("automatic_node_ids", ())) or "–"
+            supplement = node.metadata.get("supplement_source") or "–"
+            self.inspector_diagnostics.setText(
+                f"OperatingPoint: {node.operating_point_id or '–'}\n"
+                f"Automatic IDs: {automatic_ids}\nSupplement: {supplement}")
             warning = self.graph.node_validation(node.id)
             self.inspector_validation.setText("⚠ " + warning if warning else "✓ gültig")
         else:
             self.inspector_name.clear(); self.inspector_connections.setText("–"); self.inspector_id.setText("–")
             self.inspector_source.setText("–"); self.inspector_validation.setText(
                 f"{len(nodes)} Betriebsstellen ausgewählt" if nodes else "Keine Auswahl")
+            self.inspector_diagnostics.setText("–")
         self._loading = False
 
     def _edit_node(self) -> None:

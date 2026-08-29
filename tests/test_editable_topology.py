@@ -5,7 +5,7 @@ from pathlib import Path
 
 from infrastructure import (
     EditableTopologyGraph, EditableTopologyGraphStore, OperationalRouteEdge,
-    OperationalRouteGraph, OperationalRouteNode,
+    OperationalRouteGraph, OperationalRouteNode, TopologySupplementCandidate,
 )
 
 
@@ -18,6 +18,50 @@ def graph_with_nodes(*values):
 
 
 class EditableTopologyTests(unittest.TestCase):
+    def test_supplement_candidates_deduplicate_by_canonical_target(self):
+        candidates = (
+            TopologySupplementCandidate("schedule:THDM", "THDM", "junction",
+                                        "operating_point", canonical_target_id="THDM"),
+            TopologySupplementCandidate("station:THDM", "THDM", "junction",
+                                        "operating_point_config", canonical_target_id="THDM"),
+        )
+        result = EditableTopologyGraph.deduplicate_supplement_candidates(candidates)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].canonical_target_id, "THDM")
+
+    def test_represented_operating_point_filters_supplement_candidate(self):
+        graph = graph_with_nodes(("THDM", "junction"), ("A", "entry"), ("B", "entry"))
+        graph.nodes["THDM"].source = graph.nodes["A"].source = graph.nodes["B"].source = "automatic"
+        graph.nodes["THDM"].operating_point_id = "THDM"
+        graph.add_edge("A", "THDM"); graph.add_edge("THDM", "B")
+        candidate = TopologySupplementCandidate(
+            "schedule:THDM", "THDM", "junction", "operating_point",
+            canonical_target_id="THDM")
+        self.assertFalse(graph.missing_supplement_candidates(
+            (candidate,), {"THDM": "THDM"}, {"thdm": {"THDM"}}))
+
+    def test_legacy_isolated_supplements_are_removed_but_manual_name_is_preserved(self):
+        graph = graph_with_nodes(("TRM", "junction"), ("A", "entry"), ("B", "entry"),
+                                 ("legacy-1", "junction"), ("legacy-2", "junction"),
+                                 ("manual", "junction"))
+        for node_id in ("TRM", "A", "B"):
+            graph.nodes[node_id].source = "automatic"
+        graph.nodes["TRM"].operating_point_id = "TRM"
+        graph.add_edge("A", "TRM"); graph.add_edge("TRM", "B")
+        for node_id in ("legacy-1", "legacy-2"):
+            graph.nodes[node_id].display_name = "TRM"
+            graph.nodes[node_id].source = "operating_point"
+        graph.nodes["manual"].display_name = "TRM"
+        removed = graph.remove_redundant_operating_supplements(
+            {"TRM": "TRM"}, {"trm": {"TRM"}})
+        self.assertEqual(removed, 2)
+        self.assertEqual(set(graph.nodes), {"TRM", "A", "B", "manual"})
+        with tempfile.TemporaryDirectory() as directory:
+            store = EditableTopologyGraphStore(directory)
+            store.save(9, "Test", graph)
+            reloaded = EditableTopologyGraph.from_dict(store.load_path(store.path_for(9)))
+            self.assertEqual(set(reloaded.nodes), {"TRM", "A", "B", "manual"})
+
     def test_operational_representations_collapse_to_canonical_operating_point(self):
         source = OperationalRouteGraph(
             nodes={

@@ -19,7 +19,7 @@ from .artifact_identity import (
 )
 from .editable_topology import (
     BildfahrplanRouteInstance, DefinedRoute, EditableTopologyGraph, NODE_TYPES, PathEnumerationResult,
-    TopologyEdge, TopologyNode,
+    TopologyEdge, TopologyNode, TopologySupplementCandidate,
 )
 from .editable_topology_persistence import EditableTopologyGraphStore
 from .operating_point_assignments import (
@@ -53,7 +53,7 @@ __all__ = [
     "parse_bahnsteigliste", "parse_wege", "save_generated_graph",
     "IdentityValidation", "SavedStellwerkIdentity", "archive_artifact", "artifact_metadata",
     "BildfahrplanRouteInstance", "DefinedRoute", "EditableTopologyGraph", "NODE_TYPES", "PathEnumerationResult",
-    "TopologyEdge", "TopologyNode", "EditableTopologyGraphStore",
+    "TopologyEdge", "TopologyNode", "TopologySupplementCandidate", "EditableTopologyGraphStore",
     "atomic_write_json", "find_identity_candidate", "validate_saved_stellwerk_identity",
     "AssignableRawItem", "AssignmentCompleteness", "EditableOperatingPoint", "EntryInfrastructureElement", "EntryPoint",
     "InvalidAssignment", "OperatingPointAssignments", "OperatingPointConfigStore",
