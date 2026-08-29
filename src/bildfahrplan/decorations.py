@@ -18,6 +18,16 @@ class LineSegment:
     instance_id: str
 
 
+@dataclass(frozen=True)
+class StationLabelPlacement:
+    text: str
+    x: float
+    border_y: float
+    anchor_x: float
+    anchor_y: float = 1.0
+    gap_pixels: float = 4.0
+
+
 def visible_hour_ticks(start: float, end: float) -> tuple[float, ...]:
     return tuple(float(value) for value in range(ceil(start / 3600) * 3600,
                                                  floor(end / 3600) * 3600 + 1, 3600))
@@ -38,4 +48,15 @@ def build_route_plot_segments(layout: BildfahrplanXAxisLayout, start: float, end
             LineSegment(route.start_x, start, route.start_x, end, "frame", route.instance_id),
             LineSegment(route.end_x, start, route.end_x, end, "frame", route.instance_id),
         ))
+    return tuple(result)
+
+
+def build_station_label_placements(
+    layout: BildfahrplanXAxisLayout, top_border_y: float,
+) -> tuple[StationLabelPlacement, ...]:
+    result = []
+    for route in layout.routes:
+        for index, node in enumerate(route.nodes):
+            anchor_x = 0.0 if index == 0 else 1.0 if index == len(route.nodes) - 1 else 0.5
+            result.append(StationLabelPlacement(node.label, node.x, top_border_y, anchor_x))
     return tuple(result)

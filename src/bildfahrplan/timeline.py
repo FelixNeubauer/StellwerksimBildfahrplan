@@ -27,6 +27,9 @@ class PlotPoint:
     raw_name: str
     kind: str
     actual: bool = False
+    source: str = "schedule"
+    node_id: str | None = None
+    direction: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,20 @@ class TrainTrace:
     label: str
     planned: tuple[PlotPoint, ...]
     projected: tuple[PlotPoint, ...]
+
+
+@dataclass(frozen=True)
+class BoundaryEndpoint:
+    node_id: str
+    position: float
+    raw_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BoundaryRouteProjection:
+    instance_id: str
+    node_positions: tuple[float, ...]
+    endpoints: tuple[BoundaryEndpoint, ...]
 
 
 def parse_clock(value: str) -> int:
@@ -107,3 +124,82 @@ def build_trace(service: object, profile: RouteProfile, reference_seconds: int) 
     projected = schedule_to_points(original, profile, reference_seconds, delay * 60)
     suffix = f" {delay:+d}" if delay else ""
     return TrainTrace(getattr(service, "zid"), f"{getattr(service, 'name', '')}{suffix}", planned, projected)
+
+
+def extend_trace_to_boundaries(
+    service: object, trace: TrainTrace, routes: Iterable[BoundaryRouteProjection],
+) -> TrainTrace:
+    """Extrapoliert ausschließlich exakt zugeordnete äußere Zuggrenzen.
+
+    Die erzeugten Punkte sind keine STS-Planzeiten. Ihre Quelle bleibt am
+    Polyline-Punkt als ``extrapolated_from_adjacent_segment`` erkennbar.
+    """
+    origin = _normal_text(getattr(service, "origin", None))
+    destination = _normal_text(getattr(service, "destination", None))
+    planned = trace.planned
+    projected = trace.projected
+    for route in routes:
+        for endpoint in route.endpoints:
+            names = {_normal_text(name) for name in endpoint.raw_names if _normal_text(name)}
+            if origin and origin in names:
+                planned = _extend_points(planned, route, endpoint, "entry")
+                projected = _extend_points(projected, route, endpoint, "entry")
+            if destination and destination in names:
+                planned = _extend_points(planned, route, endpoint, "exit")
+                projected = _extend_points(projected, route, endpoint, "exit")
+    return TrainTrace(trace.zid, trace.label, planned, projected)
+
+
+def _normal_text(value: object) -> str:
+    return str(value).strip().casefold() if value is not None else ""
+
+
+def _extend_points(points: tuple[PlotPoint, ...], route: BoundaryRouteProjection,
+                   endpoint: BoundaryEndpoint, direction: str) -> tuple[PlotPoint, ...]:
+    positions = set(route.node_positions)
+    relevant = [point for point in points if point.position in positions]
+    endpoint_names = {_normal_text(name) for name in endpoint.raw_names}
+    if not relevant or any(_normal_text(point.raw_name) in endpoint_names for point in relevant):
+        return points
+    groups: list[list[PlotPoint]] = []
+    for point in relevant:
+        if groups and groups[-1][0].raw_name == point.raw_name:
+            groups[-1].append(point)
+        else:
+            groups.append([point])
+    if len(groups) < 2:
+        return points
+    if direction == "entry":
+        boundary_group = groups[0]
+        slope = _movement_slope(groups, from_start=True)
+        join = next((point for point in boundary_group if point.kind == "arrival"), boundary_group[0])
+        sign = -1
+    else:
+        boundary_group = groups[-1]
+        slope = _movement_slope(groups, from_start=False)
+        join = next((point for point in reversed(boundary_group) if point.kind == "departure"),
+                    boundary_group[-1])
+        sign = 1
+    if slope is None:
+        return points
+    duration_per_x, inner_position = slope
+    duration = abs(endpoint.position - inner_position) * duration_per_x
+    boundary = PlotPoint(
+        int(round(join.time_seconds + sign * duration)), endpoint.position, endpoint.raw_names[0],
+        f"boundary_{direction}", source="extrapolated_from_adjacent_segment",
+        node_id=endpoint.node_id, direction=direction,
+    )
+    return (boundary, *points) if direction == "entry" else (*points, boundary)
+
+
+def _movement_slope(groups: list[list[PlotPoint]], *, from_start: bool) -> tuple[float, float] | None:
+    pairs = zip(groups, groups[1:]) if from_start else zip(reversed(groups[:-1]), reversed(groups[1:]))
+    for left, right in pairs:
+        left_departure = next((point for point in reversed(left) if point.kind == "departure"), left[-1])
+        right_arrival = next((point for point in right if point.kind == "arrival"), right[0])
+        distance = abs(right_arrival.position - left_departure.position)
+        duration = right_arrival.time_seconds - left_departure.time_seconds
+        if distance > 0 and duration >= 0:
+            inner_position = left_departure.position if from_start else right_arrival.position
+            return duration / distance, inner_position
+    return None

@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from bildfahrplan.decorations import build_route_plot_segments
+from bildfahrplan.decorations import build_route_plot_segments, build_station_label_placements
 from bildfahrplan.x_axis import build_bildfahrplan_x_axis
 from infrastructure.editable_topology import (
     BildfahrplanRouteInstance, DefinedRoute, EditableTopologyGraph, TopologyNode,
@@ -49,6 +49,17 @@ class DecorationTests(unittest.TestCase):
             route = next(item for item in layout.routes if item.instance_id == segment.instance_id)
             self.assertGreaterEqual(min(segment.x1, segment.x2), route.start_x)
             self.assertLessEqual(max(segment.x1, segment.x2), route.end_x)
+
+    def test_station_labels_are_anchored_above_box_without_moving_x(self):
+        layout = build_bildfahrplan_x_axis(two_routes())
+        labels = build_station_label_placements(layout, 100)
+        nodes = [node for route in layout.routes for node in route.nodes]
+        self.assertNotIn("Strecke (relative Position)", {item.text for item in labels})
+        self.assertEqual([item.x for item in labels], [node.x for node in nodes])
+        self.assertTrue(all(item.border_y == 100 and item.anchor_y == 1 for item in labels))
+        self.assertTrue(all(item.gap_pixels > 0 for item in labels))
+        self.assertEqual(labels[0].anchor_x, 0)
+        self.assertEqual(labels[len(layout.routes[0].nodes) - 1].anchor_x, 1)
 
 
 if __name__ == "__main__":

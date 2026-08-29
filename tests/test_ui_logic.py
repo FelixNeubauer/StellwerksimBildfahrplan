@@ -50,6 +50,10 @@ class UiLogicTests(unittest.TestCase):
         self.assertEqual(clamp_time_range(20 * 3600, 22 * 3600), (19 * 3600, TIME_MAX))
         self.assertEqual(time_bounds(86400 + 12 * 3600), (86400 + TIME_MIN, 86400 + TIME_MAX))
 
+    def test_route_axis_has_no_relative_position_heading(self):
+        tab = (ROOT / "src/app/tabs/bildfahrplan_tab.py").read_text(encoding="utf-8")
+        self.assertNotIn('setLabel("top", "Strecke (relative Position)")', tab)
+
     def test_center_preserves_zoom_span_and_clamps(self):
         self.assertEqual(centered_time_range(8 * 3600, (8 * 3600, 10 * 3600)),
                          (7 * 3600, 9 * 3600))
@@ -64,6 +68,16 @@ class UiLogicTests(unittest.TestCase):
         self.assertEqual(live_follow_time_range(500, (0, 200), 25), (450, 650))
         with self.assertRaises(ValueError):
             live_follow_time_range(500, (0, 100), -1)
+
+    def test_live_follow_final_ranges_for_two_hour_view(self):
+        now = 12 * 3600
+        duration = 120 * 60
+        self.assertEqual(live_follow_time_range(now, (0, duration), 0),
+                         (now, now + duration))
+        self.assertEqual(live_follow_time_range(now, (0, duration), 50),
+                         (now - 3600, now + 3600))
+        self.assertEqual(live_follow_time_range(now, (0, duration), 100),
+                         (now - duration, now))
 
     def test_simtime_interpolates_resynchronizes_and_freezes_disconnected(self):
         now = [100.0]

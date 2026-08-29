@@ -5,14 +5,17 @@ from PySide6 import QtCore, QtWidgets
 
 from bildfahrplan.profile import RouteProfile
 from bildfahrplan.profile import OperatingPoint
-from bildfahrplan.timeline import build_trace, format_axis_time
+from bildfahrplan.timeline import (
+    BoundaryEndpoint, BoundaryRouteProjection, build_trace, extend_trace_to_boundaries,
+    format_axis_time,
+)
 from bildfahrplan.navigation import (
     TIME_MAX, TIME_MIN, centered_time_range, clamp_time_range, live_follow_time_range, time_bounds,
 )
 from bildfahrplan.x_axis import (
     BildfahrplanXAxisLayout, bildfahrplan_configuration_signature, build_bildfahrplan_x_axis,
 )
-from bildfahrplan.decorations import build_route_plot_segments
+from bildfahrplan.decorations import build_route_plot_segments, build_station_label_placements
 from app.settings import ApplicationSettings
 
 
@@ -33,6 +36,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._save_live_position = save_live_position
         self._x_layout = BildfahrplanXAxisLayout((), ())
         self._decoration_items = []
+        self._station_label_items = []
         self._now_value = 0.0
         self._initial_view = True
         self._last_trace_signature = None
@@ -61,7 +65,6 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self.plot.getPlotItem().showAxis("top")
         self.plot.getPlotItem().showAxis("right")
         self.plot.getPlotItem().hideAxis("bottom")
-        self.plot.setLabel("top", "Strecke (relative Position)")
         self.plot.setLabel("left", "Simulations-/Fahrplanzeit")
         # Das globale pyqtgraph-Grid würde durch RouteGaps laufen. Rahmen und
         # Hilfslinien werden daher pro RouteDisplaySpan gezeichnet.
@@ -90,9 +93,18 @@ class BildfahrplanTab(QtWidgets.QWidget):
             reference = snapshot.sim_day * 86400 + (snapshot.simtime or 0) / 1000
         self._now_value = reference
         minimum, maximum = time_bounds(reference)
-        self.plot.getViewBox().setLimits(
-            yMin=minimum, yMax=maximum, minYRange=60, maxYRange=maximum - minimum,
-        )
+        if self.live_follow.isChecked():
+            # Live-Follow darf bei 0/100 % über die normalen Tagesränder
+            # hinausschieben. Andernfalls klemmt ViewBox die angeforderte Range,
+            # bevor setYRange sie anwenden kann.
+            self.plot.getViewBox().setLimits(
+                yMin=reference - 86400, yMax=reference + 86400,
+                minYRange=60, maxYRange=2 * 86400,
+            )
+        else:
+            self.plot.getViewBox().setLimits(
+                yMin=minimum, yMax=maximum, minYRange=60, maxYRange=maximum - minimum,
+            )
         graph = self._graph_provider()
         x_layout = build_bildfahrplan_x_axis(graph) if graph is not None else BildfahrplanXAxisLayout((), ())
         configuration_signature = bildfahrplan_configuration_signature(graph) if graph is not None else ()
@@ -104,7 +116,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
         settings = self._settings_provider()
         trace_signature = (configuration_signature, layout_signature,
                            settings.train_color_mode, settings.single_train_color, tuple(
-            (service.zid, service.current_delay,
+            (service.zid, service.current_delay, getattr(service, "origin", None),
+             getattr(service, "destination", None),
              tuple((p.planned_name, p.planned_arrival, p.planned_departure)
                    for p in service.original_schedule))
             for service in snapshot.services
@@ -112,15 +125,20 @@ class BildfahrplanTab(QtWidgets.QWidget):
         if trace_signature == self._last_trace_signature:
             if self.live_follow.isChecked():
                 self._apply_live_follow()
-            self._clamp_y_range()
+            else:
+                self._clamp_y_range()
             self._render_decorations()
             return
         self._last_trace_signature = trace_signature
         self._x_layout = x_layout
         self.plot.clear()
         self._decoration_items = []
+        for label in self._station_label_items:
+            self.plot.scene().removeItem(label)
+        self._station_label_items = []
         self.route_axis.setTicks([])
         display_profile = self._display_profile(graph, x_layout)
+        boundary_routes = self._boundary_routes(graph, x_layout)
         if not x_layout.routes:
             self.empty_notice.setPos(0.5, sum(self.plot.getViewBox().viewRange()[1]) / 2)
             self.plot.addItem(self.empty_notice)
@@ -129,6 +147,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
             trace = build_trace(service, display_profile, int(reference))
             if trace is None:
                 continue
+            trace = extend_trace_to_boundaries(service, trace, boundary_routes)
             color = settings.train_color(rendered)
             self.plot.plot([p.position for p in trace.planned], [p.time_seconds for p in trace.planned],
                            pen=pg.mkPen(color, width=1, style=QtCore.Qt.PenStyle.DashLine))
@@ -145,7 +164,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
             self._initial_view = False
         if self.live_follow.isChecked():
             self._apply_live_follow()
-        self._clamp_y_range()
+        if not self.live_follow.isChecked():
+            self._clamp_y_range()
         self._render_decorations()
 
     def center_now(self) -> None:
@@ -173,6 +193,9 @@ class BildfahrplanTab(QtWidgets.QWidget):
             except RuntimeError:
                 pass
         self._decoration_items = []
+        for label in self._station_label_items:
+            self.plot.scene().removeItem(label)
+        self._station_label_items = []
         if not self._x_layout.routes:
             return
         start, end = self.plot.getViewBox().viewRange()[1]
@@ -192,14 +215,20 @@ class BildfahrplanTab(QtWidgets.QWidget):
             self._decoration_items.append(item)
         # Labels sind normale AxisNodePositions. Randanker zeigen nach innen,
         # ohne die fachliche X-Position des Endpunkts zu verschieben.
-        for route in self._x_layout.routes:
-            for index, node in enumerate(route.nodes):
-                anchor_x = 0.0 if index == 0 else 1.0 if index == len(route.nodes) - 1 else 0.5
-                label = pg.TextItem(node.label, color="#D0D0D0", anchor=(anchor_x, 0.0))
-                label.setPos(node.x, start)
-                label.setZValue(10)
-                self.plot.addItem(label, ignoreBounds=True)
-                self._decoration_items.append(label)
+        for placement in build_station_label_placements(self._x_layout, start):
+            label = pg.TextItem(
+                placement.text, color="#D0D0D0",
+                anchor=(placement.anchor_x, placement.anchor_y),
+            )
+            # Als Scene-Sibling statt ViewBox-Kind wird der Text oberhalb des
+            # ViewBox-Rahmens nicht weggeclippt. mapViewToScene erhält exakt die
+            # fachliche X-Position; nur Y bekommt einen kleinen Pixelabstand.
+            scene_position = self.plot.getViewBox().mapViewToScene(
+                QtCore.QPointF(placement.x, placement.border_y))
+            label.setPos(scene_position.x(), scene_position.y() - placement.gap_pixels)
+            label.setZValue(10)
+            self.plot.scene().addItem(label)
+            self._station_label_items.append(label)
         for route in self._x_layout.routes:
             now = pg.PlotDataItem((route.start_x, route.end_x), (self._now_value, self._now_value),
                                   pen=pg.mkPen("#D32F2F", width=2))
@@ -227,6 +256,31 @@ class BildfahrplanTab(QtWidgets.QWidget):
                     points.append(OperatingPoint(position.node_id, position.label, position.x, raw_names))
         return RouteProfile("Konfigurierte Bildfahrplan-Strecken", tuple(points))
 
+    @staticmethod
+    def _boundary_routes(graph, layout: BildfahrplanXAxisLayout) -> tuple[BoundaryRouteProjection, ...]:
+        if graph is None:
+            return ()
+        result = []
+        for route_span in layout.routes:
+            endpoint_positions = (route_span.nodes[0], route_span.nodes[-1])
+            endpoints = []
+            for position in endpoint_positions:
+                node = graph.nodes.get(position.node_id)
+                if node is None or node.node_type != "entry":
+                    continue
+                metadata = node.metadata
+                names = tuple(dict.fromkeys((
+                    *metadata.get("raw_names", ()), *metadata.get("target_raw_members", ()),
+                    node.display_name,
+                )))
+                endpoints.append(BoundaryEndpoint(position.node_id, position.x, names))
+            if endpoints:
+                result.append(BoundaryRouteProjection(
+                    route_span.instance_id, tuple(item.x for item in route_span.nodes),
+                    tuple(endpoints),
+                ))
+        return tuple(result)
+
     def _clamp_y_range(self) -> None:
         start, end = clamp_time_range(
             *self.plot.getViewBox().viewRange()[1], reference=self._now_value,
@@ -235,4 +289,5 @@ class BildfahrplanTab(QtWidgets.QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
         self.show_route()
+        self._render_decorations()
         super().resizeEvent(event)

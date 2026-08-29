@@ -9,8 +9,9 @@ sys.path.insert(0, str(ROOT / "Schnittstellentest"))
 
 from bildfahrplan.profile import OperatingPoint, RouteProfile
 from bildfahrplan.timeline import (
-    DISTANCE_AXIS, NOW_LINE_ANGLE, TIME_AXIS, build_trace, format_axis_time,
-    is_renderable_service, parse_clock, schedule_to_points, unwrap_time,
+    DISTANCE_AXIS, NOW_LINE_ANGLE, TIME_AXIS, BoundaryEndpoint, BoundaryRouteProjection,
+    build_trace, extend_trace_to_boundaries, format_axis_time, is_renderable_service,
+    parse_clock, schedule_to_points, unwrap_time,
 )
 from sts_collector import SchedulePoint
 
@@ -80,6 +81,110 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual([item.raw_name for item in trace.planned], ["A 1", "A 1"])
         self.assertEqual(trace.projected[0].time_seconds - trace.planned[0].time_seconds, 300)
         self.assertIn("+5", trace.label)
+
+    def test_exit_uses_adjacent_movement_slope_after_last_departure(self):
+        profile = RouteProfile("Exit", (
+            OperatingPoint("b", "B", 10, ("B",)),
+            OperatingPoint("c", "C", 20, ("C",)),
+        ))
+        service = SimpleNamespace(
+            zid=1, name="RE", service_kind="train", current_delay=2,
+            origin="intern", destination="Exit", original_schedule=[
+                point("B", departure="10:00"), point("C", "10:06", "10:08"),
+            ],
+        )
+        trace = extend_trace_to_boundaries(
+            service, build_trace(service, profile, parse_clock("10:00")),
+            (BoundaryRouteProjection("route", (10, 20, 25), (
+                BoundaryEndpoint("entry", 10, ("Entry",)),
+                BoundaryEndpoint("exit", 25, ("Exit",)),
+            )),),
+        )
+        self.assertEqual(trace.planned[-1].time_seconds, parse_clock("10:11"))
+        self.assertEqual(trace.projected[-1].time_seconds, parse_clock("10:13"))
+        self.assertEqual(trace.planned[-2].kind, "departure")
+        self.assertEqual(trace.planned[-1].source, "extrapolated_from_adjacent_segment")
+        self.assertEqual(trace.planned[-1].direction, "exit")
+
+    def test_entry_reaches_arrival_and_preserves_halt(self):
+        profile = RouteProfile("Entry", (
+            OperatingPoint("a", "A", 5, ("A",)),
+            OperatingPoint("b", "B", 15, ("B",)),
+        ))
+        service = SimpleNamespace(
+            zid=2, name="RB", service_kind="train", current_delay=0,
+            origin="Entry", destination="intern", original_schedule=[
+                point("A", "10:03", "10:05"), point("B", "10:11"),
+            ],
+        )
+        trace = extend_trace_to_boundaries(
+            service, build_trace(service, profile, parse_clock("10:00")),
+            (BoundaryRouteProjection("route", (0, 5, 15), (
+                BoundaryEndpoint("entry", 0, ("Entry",)),
+                BoundaryEndpoint("exit", 15, ("Exit",)),
+            )),),
+        )
+        self.assertEqual(trace.planned[0].time_seconds, parse_clock("10:00"))
+        self.assertEqual([item.kind for item in trace.planned[1:3]], ["arrival", "departure"])
+        self.assertEqual([item.time_seconds for item in trace.planned[1:3]],
+                         [parse_clock("10:03"), parse_clock("10:05")])
+
+    def test_boundary_projection_is_independent_of_display_direction(self):
+        service = SimpleNamespace(origin="Entry", destination="Exit")
+        points = (
+            # Fachliche Fahrtrichtung läuft hier von großem zu kleinem X.
+            self._plot_point("10:03", 15, "A", "arrival"),
+            self._plot_point("10:05", 15, "A", "departure"),
+            self._plot_point("10:11", 5, "B", "arrival"),
+            self._plot_point("10:12", 5, "B", "departure"),
+        )
+        from bildfahrplan.timeline import TrainTrace
+        trace = extend_trace_to_boundaries(service, TrainTrace(3, "Zug", points, points), (
+            BoundaryRouteProjection("reverse", (20, 15, 5, 0), (
+                BoundaryEndpoint("entry", 20, ("Entry",)),
+                BoundaryEndpoint("exit", 0, ("Exit",)),
+            )),
+        ))
+        self.assertEqual((trace.planned[0].position, trace.planned[-1].position), (20, 0))
+        self.assertEqual((trace.planned[0].time_seconds, trace.planned[-1].time_seconds),
+                         (parse_clock("10:00"), parse_clock("10:15")))
+
+    def test_one_inner_point_has_no_boundary_extrapolation(self):
+        service = SimpleNamespace(origin="Entry", destination=None)
+        from bildfahrplan.timeline import TrainTrace
+        points = (self._plot_point("10:03", 5, "A", "arrival"),)
+        trace = TrainTrace(4, "Zug", points, points)
+        extended = extend_trace_to_boundaries(service, trace, (
+            BoundaryRouteProjection("route", (0, 5), (
+                BoundaryEndpoint("entry", 0, ("Entry",)),
+                BoundaryEndpoint("exit", 5, ("Exit",)),
+            )),
+        ))
+        self.assertEqual(extended, trace)
+
+    def test_zero_distance_segment_uses_next_movement_segment(self):
+        service = SimpleNamespace(origin="Entry", destination=None)
+        from bildfahrplan.timeline import TrainTrace
+        points = (
+            self._plot_point("10:03", 5, "A", "arrival"),
+            self._plot_point("10:04", 5, "A", "departure"),
+            self._plot_point("10:05", 5, "B", "arrival"),
+            self._plot_point("10:06", 5, "B", "departure"),
+            self._plot_point("10:12", 15, "C", "arrival"),
+        )
+        trace = TrainTrace(5, "Zug", points, points)
+        extended = extend_trace_to_boundaries(service, trace, (
+            BoundaryRouteProjection("route", (0, 5, 15), (
+                BoundaryEndpoint("entry", 0, ("Entry",)),
+                BoundaryEndpoint("exit", 15, ("Exit",)),
+            )),
+        ))
+        self.assertEqual(extended.planned[0].time_seconds, parse_clock("10:00"))
+
+    @staticmethod
+    def _plot_point(clock, position, raw_name, kind):
+        from bildfahrplan.timeline import PlotPoint
+        return PlotPoint(parse_clock(clock), position, raw_name, kind)
 
 
 if __name__ == "__main__":

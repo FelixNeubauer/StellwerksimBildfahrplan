@@ -89,6 +89,14 @@ an einer gespeicherten Position zwischen 0 und 100 Prozent der sichtbaren
 Zeitspanne. Der Live-Schalter selbst startet nach jedem Programmstart bewusst
 ausgeschaltet.
 
+Die Stationsnamen werden ohne zusätzliche Achsenüberschrift oberhalb der
+jeweiligen Route-Box gezeichnet. Stimmen die unveränderten Zugdetailfelder
+`von` beziehungsweise `nach` exakt mit einer konfigurierten äußeren Einfahrt
+überein, verlängert der Bildfahrplan Plan- und Projektionspolyline bis zu diesem
+Randpunkt. Die Zeit dort ist ausdrücklich eine aus dem nächsten brauchbaren
+Fahrsegment extrapolierte Darstellungszeit und keine von StellwerkSim gelieferte
+Fahrplanzeit.
+
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.
 Die Automatik verwendet robuste Medianwerte aus den unveränderten Planfahrplänen,
