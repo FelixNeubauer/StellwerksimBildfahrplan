@@ -104,6 +104,15 @@ werden. Die größte benötigte Höhe gilt gemeinsam für alle sichtbaren Routen
 bei einer Fenstergrößenänderung wird die rein visuelle Entscheidung neu
 berechnet, ohne Stations-X-Positionen oder Kilometrierung anzutasten.
 
+Zugtrassen werden für jede sichtbare Bildfahrplan-Streckeninstanz separat aus
+der geordneten Folge ihrer explizit zugeordneten `raw_names` beziehungsweise
+`target_raw_members` aufgebaut. Ein Achsenpunkt ist dabei durch
+`(instance_id, node_id)` identifiziert. Gemeinsame Grenzbetriebsstellen dürfen
+deshalb in beiden benachbarten Boxen erscheinen, während die getrennten
+Polylines niemals den visuellen Gap überbrücken. Die Modellliste der
+Bildfahrplaninstanzen ist zugleich die autoritative Links-nach-rechts-Reihenfolge;
+`order` wird daraus nur für die Persistenz synchronisiert.
+
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.
 Die Automatik verwendet robuste Medianwerte aus den unveränderten Planfahrplänen,

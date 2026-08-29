@@ -73,6 +73,10 @@ class BildfahrplanXAxisTests(unittest.TestCase):
         layout = build_bildfahrplan_x_axis(graph)
         self.assertEqual([route.route_length for route in layout.routes], [15, 12])
         self.assertEqual(layout.routes[1].nodes[0].node_id, "C")
+        self.assertTrue(all(node.instance_id == "i" and node.route_id == "r"
+                            for node in layout.routes[0].nodes))
+        self.assertTrue(all(node.instance_id == "reverse" and node.route_id == "r"
+                            for node in layout.routes[1].nodes))
 
     def test_zero_length_is_deterministic_and_diagnostic(self):
         route = build_bildfahrplan_x_axis(graph_with_route(kilometres=(10, 10, 10))).routes[0]

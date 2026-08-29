@@ -4,10 +4,9 @@ import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from bildfahrplan.profile import RouteProfile
-from bildfahrplan.profile import OperatingPoint
 from bildfahrplan.timeline import (
-    BoundaryEndpoint, BoundaryRouteProjection, build_trace, extend_trace_to_boundaries,
-    format_axis_time,
+    BoundaryEndpoint, RouteInstanceProjection, RouteInstanceProjectionPoint,
+    build_route_instance_train_segments, format_axis_time,
 )
 from bildfahrplan.navigation import (
     TIME_MAX, TIME_MIN, centered_time_range, clamp_time_range, live_follow_time_range, time_bounds,
@@ -178,26 +177,31 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self.plot.clear()
         self._decoration_items = []
         self.route_axis.setTicks([])
-        display_profile = self._display_profile(graph, x_layout)
-        boundary_routes = self._boundary_routes(graph, x_layout)
+        route_projections = self._route_projections(graph, x_layout)
         if not x_layout.routes:
             self.empty_notice.setPos(0.5, sum(self.plot.getViewBox().viewRange()[1]) / 2)
             self.plot.addItem(self.empty_notice)
         rendered = 0
         for service in snapshot.services:
-            trace = build_trace(service, display_profile, int(reference))
-            if trace is None:
+            segments = build_route_instance_train_segments(service, route_projections, int(reference))
+            if not segments:
                 continue
-            trace = extend_trace_to_boundaries(service, trace, boundary_routes)
             color = settings.train_color(rendered)
-            self.plot.plot([p.position for p in trace.planned], [p.time_seconds for p in trace.planned],
-                           pen=pg.mkPen(color, width=1, style=QtCore.Qt.PenStyle.DashLine))
-            self.plot.plot([p.position for p in trace.projected], [p.time_seconds for p in trace.projected],
-                           pen=pg.mkPen(color, width=2))
-            label_point = trace.projected[len(trace.projected) // 2]
-            label = pg.TextItem(trace.label, color=color, anchor=(0, 1))
-            label.setPos(label_point.position, label_point.time_seconds)
-            self.plot.addItem(label)
+            for segment in segments:
+                self.plot.plot(
+                    [p.position for p in segment.planned],
+                    [p.time_seconds for p in segment.planned],
+                    pen=pg.mkPen(color, width=1, style=QtCore.Qt.PenStyle.DashLine),
+                )
+                self.plot.plot(
+                    [p.position for p in segment.projected],
+                    [p.time_seconds for p in segment.projected],
+                    pen=pg.mkPen(color, width=2),
+                )
+                label_point = segment.projected[len(segment.projected) // 2]
+                label = pg.TextItem(segment.label, color=color, anchor=(0, 1))
+                label.setPos(label_point.position, label_point.time_seconds)
+                self.plot.addItem(label)
             rendered += 1
         if self._initial_view:
             self.show_route()
@@ -284,43 +288,31 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self.plot.setXRange(0.0, 1.0, padding=0)
 
     @staticmethod
-    def _display_profile(graph, layout: BildfahrplanXAxisLayout) -> RouteProfile:
-        """Provisorische Brücke für bestehende Trassen, keine neue Projektion."""
-        points = []
-        if graph is not None:
-            for route in layout.routes:
-                for position in route.nodes:
-                    node = graph.nodes.get(position.node_id)
-                    metadata = node.metadata if node is not None else {}
-                    raw_names = tuple(dict.fromkeys((
-                        *metadata.get("raw_names", ()), *metadata.get("target_raw_members", ()),
-                    )))
-                    points.append(OperatingPoint(position.node_id, position.label, position.x, raw_names))
-        return RouteProfile("Konfigurierte Bildfahrplan-Strecken", tuple(points))
-
-    @staticmethod
-    def _boundary_routes(graph, layout: BildfahrplanXAxisLayout) -> tuple[BoundaryRouteProjection, ...]:
+    def _route_projections(graph, layout: BildfahrplanXAxisLayout) -> tuple[RouteInstanceProjection, ...]:
         if graph is None:
             return ()
         result = []
         for route_span in layout.routes:
-            endpoint_positions = (route_span.nodes[0], route_span.nodes[-1])
+            points = []
             endpoints = []
-            for position in endpoint_positions:
+            for index, position in enumerate(route_span.nodes):
                 node = graph.nodes.get(position.node_id)
-                if node is None or node.node_type != "entry":
+                if node is None:
                     continue
                 metadata = node.metadata
                 names = tuple(dict.fromkeys((
                     *metadata.get("raw_names", ()), *metadata.get("target_raw_members", ()),
-                    node.display_name,
                 )))
-                endpoints.append(BoundaryEndpoint(position.node_id, position.x, names))
-            if endpoints:
-                result.append(BoundaryRouteProjection(
-                    route_span.instance_id, tuple(item.x for item in route_span.nodes),
-                    tuple(endpoints),
+                points.append(RouteInstanceProjectionPoint(
+                    route_span.instance_id, route_span.route_id, position.node_id,
+                    position.x, position.label, names,
                 ))
+                if index in (0, len(route_span.nodes) - 1) and node.node_type == "entry":
+                    endpoint_names = tuple(dict.fromkeys((*names, node.display_name)))
+                    endpoints.append(BoundaryEndpoint(position.node_id, position.x, endpoint_names))
+            if points:
+                result.append(RouteInstanceProjection(
+                    route_span.instance_id, route_span.route_id, tuple(points), tuple(endpoints)))
         return tuple(result)
 
     def _clamp_y_range(self) -> None:

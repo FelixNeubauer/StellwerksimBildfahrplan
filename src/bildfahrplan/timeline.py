@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Protocol
 
-from .profile import RouteProfile
+from .profile import OperatingPoint, RouteProfile
 
 DAY_SECONDS = 24 * 60 * 60
 DISTANCE_AXIS = "x"
@@ -30,6 +30,8 @@ class PlotPoint:
     source: str = "schedule"
     node_id: str | None = None
     direction: str | None = None
+    instance_id: str | None = None
+    route_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,34 @@ class BoundaryRouteProjection:
     instance_id: str
     node_positions: tuple[float, ...]
     endpoints: tuple[BoundaryEndpoint, ...]
+
+
+@dataclass(frozen=True)
+class RouteInstanceProjectionPoint:
+    instance_id: str
+    route_id: str
+    node_id: str
+    position: float
+    label: str
+    raw_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RouteInstanceProjection:
+    instance_id: str
+    route_id: str
+    points: tuple[RouteInstanceProjectionPoint, ...]
+    boundaries: tuple[BoundaryEndpoint, ...] = ()
+
+
+@dataclass(frozen=True)
+class RouteInstanceTrainSegment:
+    instance_id: str
+    route_id: str
+    zid: int
+    label: str
+    planned: tuple[PlotPoint, ...]
+    projected: tuple[PlotPoint, ...]
 
 
 def parse_clock(value: str) -> int:
@@ -100,7 +130,7 @@ def schedule_to_points(
             while previous is not None and current < previous:
                 current += DAY_SECONDS
             current += offset_seconds
-            result.append(PlotPoint(current, location.position, raw_name, kind))
+            result.append(PlotPoint(current, location.position, raw_name, kind, node_id=location.id))
             previous = current - offset_seconds
         # Eine Durchfahrt mit identischen an/ab-Zeiten braucht nur einen Punkt.
         if len(result) - point_start == 2 and result[-1].time_seconds == result[-2].time_seconds:
@@ -124,6 +154,78 @@ def build_trace(service: object, profile: RouteProfile, reference_seconds: int) 
     projected = schedule_to_points(original, profile, reference_seconds, delay * 60)
     suffix = f" {delay:+d}" if delay else ""
     return TrainTrace(getattr(service, "zid"), f"{getattr(service, 'name', '')}{suffix}", planned, projected)
+
+
+def build_route_instance_train_segments(
+    service: object, routes: Iterable[RouteInstanceProjection], reference_seconds: int,
+) -> tuple[RouteInstanceTrainSegment, ...]:
+    """Projiziert eine Fahrplanfolge unabhängig in jede passende RouteInstance."""
+    if not is_renderable_service(service):
+        return ()
+    schedule = tuple(getattr(service, "original_schedule", ()))
+    result = []
+    for route in routes:
+        selected = _matching_schedule_run(schedule, route)
+        if selected is None:
+            continue
+        profile = RouteProfile(
+            route.instance_id,
+            tuple(OperatingPoint(point.node_id, point.label, point.position, point.raw_names)
+                  for point in route.points),
+        )
+        trace = build_trace(replace_service_schedule(service, selected), profile, reference_seconds)
+        if trace is None:
+            continue
+        boundary = BoundaryRouteProjection(
+            route.instance_id, tuple(point.position for point in route.points), route.boundaries)
+        trace = extend_trace_to_boundaries(service, trace, (boundary,))
+        annotate = lambda point: replace(
+            point, instance_id=route.instance_id, route_id=route.route_id)
+        result.append(RouteInstanceTrainSegment(
+            route.instance_id, route.route_id, trace.zid, trace.label,
+            tuple(annotate(point) for point in trace.planned),
+            tuple(annotate(point) for point in trace.projected),
+        ))
+    return tuple(result)
+
+
+def replace_service_schedule(service: object, schedule: tuple[object, ...]) -> object:
+    """Kleine unveränderliche Sicht auf einen Service mit gefiltertem Plan."""
+    class ServiceView:
+        pass
+    view = ServiceView()
+    view.__dict__.update(getattr(service, "__dict__", {}))
+    for name in ("zid", "name", "service_kind", "current_delay", "origin", "destination"):
+        if hasattr(service, name):
+            setattr(view, name, getattr(service, name))
+    view.original_schedule = schedule
+    return view
+
+
+def _matching_schedule_run(
+    schedule: tuple[object, ...], route: RouteInstanceProjection,
+) -> tuple[object, ...] | None:
+    raw_to_index = {
+        raw_name: index
+        for index, point in enumerate(route.points)
+        for raw_name in point.raw_names
+    }
+    mapped = []
+    for schedule_point in schedule:
+        raw_name = getattr(schedule_point, "planned_name", None) or getattr(schedule_point, "raw_name", None)
+        if raw_name in raw_to_index:
+            mapped.append((schedule_point, raw_to_index[raw_name]))
+    distinct = []
+    for _point, index in mapped:
+        if not distinct or distinct[-1] != index:
+            distinct.append(index)
+    if len(distinct) < 2:
+        return None
+    increasing = all(left < right for left, right in zip(distinct, distinct[1:]))
+    decreasing = all(left > right for left, right in zip(distinct, distinct[1:]))
+    if not increasing and not decreasing:
+        return None
+    return tuple(point for point, _index in mapped)
 
 
 def extend_trace_to_boundaries(

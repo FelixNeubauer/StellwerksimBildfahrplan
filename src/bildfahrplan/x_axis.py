@@ -13,6 +13,8 @@ ZERO_LENGTH_DISPLAY_WEIGHT_FRACTION = 0.05
 
 @dataclass(frozen=True)
 class AxisNodePosition:
+    instance_id: str
+    route_id: str
     node_id: str
     label: str
     kilometre: float | None
@@ -119,7 +121,8 @@ def build_bildfahrplan_x_axis(
         for segment in segments:
             offsets.append(offsets[-1] + segment)
         nodes = tuple(AxisNodePosition(
-            node_id, graph.nodes[node_id].display_name if node_id in graph.nodes else node_id,
+            instance.instance_id, instance.route_id, node_id,
+            graph.nodes[node_id].display_name if node_id in graph.nodes else node_id,
             kilometre, cursor + (width * offset / display_total if display_total else 0.0),
         ) for node_id, kilometre, offset in zip(ordered, values, offsets))
         spans.append(RouteDisplaySpan(instance.instance_id, instance.route_id, cursor, end,
