@@ -1,0 +1,2812 @@
+{
+  "schema_version": 3,
+  "artifact_type": "operating_points",
+  "stellwerk": {
+    "aid": 1778,
+    "name": "Heidenheim 2024"
+  },
+  "aid": 1778,
+  "stellwerk_name": "Heidenheim 2024",
+  "saved_at": "2026-08-29T10:19:32.151656+00:00",
+  "entry_points": {
+    "entry:wege:aalen:62053fc0c9": {
+      "display_name": "Aalen",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:1",
+          "element_type": "6",
+          "enr": "1",
+          "raw_name": "Aalen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Aalen",
+            "enr": "1",
+            "type": "6"
+          }
+        },
+        {
+          "node_id": "enr:21",
+          "element_type": "7",
+          "enr": "21",
+          "raw_name": "Aalen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Aalen",
+            "enr": "21",
+            "type": "7"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "reverse_observations",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:tks:aalen",
+          "display_name": "Aalen",
+          "source_node": "TKS",
+          "external_name": "Aalen",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "reverse_observations",
+            "raw_external_connector"
+          ],
+          "confidence": "exact",
+          "raw_connector": "enr:21",
+          "directionality": "bidirectional",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "Aalen",
+          "possible_source_nodes": [
+            "TGB",
+            "THD",
+            "THDS",
+            "TKS",
+            "TLL"
+          ],
+          "trusted_incoming_count": 2,
+          "trusted_outgoing_count": 15,
+          "untrusted_incoming_count": 9,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:1",
+          "supporting_services": [
+            11078,
+            11187,
+            18071,
+            26817,
+            195098,
+            195130,
+            195131,
+            195138,
+            195166,
+            195169,
+            195170,
+            195172,
+            195173,
+            195174,
+            195175,
+            197227,
+            198975,
+            199076,
+            199078,
+            199084,
+            199085,
+            199086,
+            199093,
+            199094,
+            199099,
+            199100
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "TKS"
+        },
+        {
+          "source_node": "TKS",
+          "original_target": "Aalen",
+          "normalized_candidate": "aalen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:21",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "THDS",
+          "original_target": "Aalen",
+          "normalized_candidate": "aalen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:21",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "THD",
+          "original_target": "Aalen",
+          "normalized_candidate": "aalen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:1",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TGB",
+          "original_target": "Aalen",
+          "normalized_candidate": "aalen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:21",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TLL",
+          "original_target": "Aalen",
+          "normalized_candidate": "aalen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:21",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:bsh1:21b5a5464c": {
+      "display_name": "BSH1",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:24",
+          "element_type": "7",
+          "enr": "24",
+          "raw_name": "BSH1",
+          "metadata": {
+            "tag": "shape",
+            "name": "BSH1",
+            "enr": "24",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:4",
+          "element_type": "6",
+          "enr": "4",
+          "raw_name": "BSH1",
+          "metadata": {
+            "tag": "shape",
+            "name": "BSH1",
+            "enr": "4",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:tgb:bsh1",
+          "display_name": "BSH1",
+          "source_node": "TGB",
+          "external_name": "BSH1",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "raw_external_connector"
+          ],
+          "confidence": "inferred",
+          "raw_connector": "enr:24",
+          "directionality": "observed_outgoing",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "BSH1",
+          "possible_source_nodes": [
+            "TGB"
+          ],
+          "trusted_incoming_count": 0,
+          "trusted_outgoing_count": 1,
+          "untrusted_incoming_count": 2,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:24",
+          "supporting_services": [
+            116344,
+            198975,
+            199082
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "TGB"
+        },
+        {
+          "source_node": "TGB",
+          "original_target": "BSH1",
+          "normalized_candidate": "bsh1",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:24",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:bsh2:97d7058077": {
+      "display_name": "BSH2",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:5",
+          "element_type": "6",
+          "enr": "5",
+          "raw_name": "BSH2",
+          "metadata": {
+            "tag": "shape",
+            "name": "BSH2",
+            "enr": "5",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7"
+      ],
+      "boundary_evidence": []
+    },
+    "entry:wege:enbw:7a92e2917f": {
+      "display_name": "EnBW",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:7",
+          "element_type": "6",
+          "enr": "7",
+          "raw_name": "EnBW",
+          "metadata": {
+            "tag": "shape",
+            "name": "EnBW",
+            "enr": "7",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "TNS",
+          "original_target": "EnBW",
+          "normalized_candidate": "enbw",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:7",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:gifa:f54cb53465": {
+      "display_name": "GiFa",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:26",
+          "element_type": "7",
+          "enr": "26",
+          "raw_name": "GiFa",
+          "metadata": {
+            "tag": "shape",
+            "name": "GiFa",
+            "enr": "26",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:6",
+          "element_type": "6",
+          "enr": "6",
+          "raw_name": "GiFa",
+          "metadata": {
+            "tag": "shape",
+            "name": "GiFa",
+            "enr": "6",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:tgb:gifa",
+          "display_name": "GiFa",
+          "source_node": "TGB",
+          "external_name": "GiFa",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "raw_external_connector"
+          ],
+          "confidence": "inferred",
+          "raw_connector": "enr:26",
+          "directionality": "observed_outgoing",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "GiFa",
+          "possible_source_nodes": [
+            "TGB"
+          ],
+          "trusted_incoming_count": 0,
+          "trusted_outgoing_count": 2,
+          "untrusted_incoming_count": 2,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:26",
+          "supporting_services": [
+            116344,
+            199076,
+            199078,
+            199080
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "TGB"
+        },
+        {
+          "source_node": "TGB",
+          "original_target": "GiFa",
+          "normalized_candidate": "gifa",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:26",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:ulm-hbf:338e5b76a7": {
+      "display_name": "Ulm Hbf",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:28",
+          "element_type": "7",
+          "enr": "28",
+          "raw_name": "Ulm Hbf",
+          "metadata": {
+            "tag": "shape",
+            "name": "Ulm Hbf",
+            "enr": "28",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:8",
+          "element_type": "6",
+          "enr": "8",
+          "raw_name": "Ulm Hbf",
+          "metadata": {
+            "tag": "shape",
+            "name": "Ulm Hbf",
+            "enr": "8",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "reverse_observations",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:schedule:tuo:ulm_hbf",
+          "display_name": "Ulm Hbf",
+          "source_node": "schedule:TUO",
+          "external_name": "Ulm Hbf",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "reverse_observations",
+            "raw_external_connector"
+          ],
+          "confidence": "exact",
+          "raw_connector": "enr:28",
+          "directionality": "bidirectional",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "Ulm Hbf",
+          "possible_source_nodes": [
+            "TGB",
+            "THD",
+            "TLL",
+            "TTL",
+            "TUE",
+            "schedule:TUO"
+          ],
+          "trusted_incoming_count": 1,
+          "trusted_outgoing_count": 14,
+          "untrusted_incoming_count": 15,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:28",
+          "supporting_services": [
+            11078,
+            11187,
+            26817,
+            109523,
+            109791,
+            109795,
+            109796,
+            109797,
+            109799,
+            109800,
+            109813,
+            109828,
+            195098,
+            195130,
+            195131,
+            195138,
+            195166,
+            195169,
+            195170,
+            195172,
+            195173,
+            195174,
+            195175,
+            197227,
+            199084,
+            199085,
+            199086,
+            199093,
+            199094
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "schedule:TUO"
+        },
+        {
+          "source_node": "TLL",
+          "original_target": "Ulm Hbf",
+          "normalized_candidate": "ulm hbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:28",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "schedule:TUO",
+          "original_target": "Ulm Hbf",
+          "normalized_candidate": "ulm hbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:28",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "THD",
+          "original_target": "Ulm Hbf",
+          "normalized_candidate": "ulm hbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:28",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TTL",
+          "original_target": "Ulm Hbf",
+          "normalized_candidate": "ulm hbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:28",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TGB",
+          "original_target": "Ulm Hbf",
+          "normalized_candidate": "ulm hbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:28",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TUE",
+          "original_target": "Ulm Hbf",
+          "normalized_candidate": "ulm hbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:28",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:ulm-rbf:9d0a3057ee": {
+      "display_name": "Ulm Rbf",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:29",
+          "element_type": "7",
+          "enr": "29",
+          "raw_name": "Ulm Rbf",
+          "metadata": {
+            "tag": "shape",
+            "name": "Ulm Rbf",
+            "enr": "29",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:9",
+          "element_type": "6",
+          "enr": "9",
+          "raw_name": "Ulm Rbf",
+          "metadata": {
+            "tag": "shape",
+            "name": "Ulm Rbf",
+            "enr": "9",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:schedule:tuo:ulm_rbf",
+          "display_name": "Ulm Rbf",
+          "source_node": "schedule:TUO",
+          "external_name": "Ulm Rbf",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "raw_external_connector"
+          ],
+          "confidence": "inferred",
+          "raw_connector": "enr:29",
+          "directionality": "observed_outgoing",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "Ulm Rbf",
+          "possible_source_nodes": [
+            "THMA",
+            "TNS",
+            "schedule:TUO"
+          ],
+          "trusted_incoming_count": 0,
+          "trusted_outgoing_count": 3,
+          "untrusted_incoming_count": 2,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:29",
+          "supporting_services": [
+            24964,
+            25096,
+            199022,
+            199102
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "schedule:TUO"
+        },
+        {
+          "source_node": "TNS",
+          "original_target": "Ulm Rbf",
+          "normalized_candidate": "ulm rbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:29",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "THMA",
+          "original_target": "Ulm Rbf",
+          "normalized_candidate": "ulm rbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:29",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "schedule:TUO",
+          "original_target": "Ulm Rbf",
+          "normalized_candidate": "ulm rbf",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:29",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:vohenstein:121b533d5f": {
+      "display_name": "Vohenstein",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:3",
+          "element_type": "6",
+          "enr": "3",
+          "raw_name": "Vohenstein",
+          "metadata": {
+            "tag": "shape",
+            "name": "Vohenstein",
+            "enr": "3",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "schedule:THCV",
+          "original_target": "Vohenstein",
+          "normalized_candidate": "vohenstein",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:3",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:zementwerk:5ca8551864": {
+      "display_name": "Zementwerk",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:2",
+          "element_type": "6",
+          "enr": "2",
+          "raw_name": "Zementwerk",
+          "metadata": {
+            "tag": "shape",
+            "name": "Zementwerk",
+            "enr": "2",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "THC",
+          "original_target": "Zementwerk",
+          "normalized_candidate": "zementwerk",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:2",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "axis:THDM",
+          "original_target": "Zementwerk",
+          "normalized_candidate": "zementwerk",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:2",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    }
+  },
+  "raw_item_kinds": {
+    "Aalen": "entry",
+    "BSH1": "entry",
+    "BSH2": "entry",
+    "EnBW": "entry",
+    "GiFa": "entry",
+    "TBER": "platform_or_haltpunkt",
+    "TGB1": "platform_or_haltpunkt",
+    "TGB13": "platform_or_haltpunkt",
+    "TGB17": "platform_or_haltpunkt",
+    "TGB1G": "platform_or_haltpunkt",
+    "TGB2": "platform_or_haltpunkt",
+    "TGB27": "platform_or_haltpunkt",
+    "TGB2G": "platform_or_haltpunkt",
+    "TGB3": "platform_or_haltpunkt",
+    "TGB4": "platform_or_haltpunkt",
+    "TGB5": "platform_or_haltpunkt",
+    "TGB5a": "platform_or_haltpunkt",
+    "TGB8": "platform_or_haltpunkt",
+    "TGB8a": "platform_or_haltpunkt",
+    "THC1": "platform_or_haltpunkt",
+    "THC1G": "platform_or_haltpunkt",
+    "THC2": "platform_or_haltpunkt",
+    "THC2G": "platform_or_haltpunkt",
+    "THC3": "platform_or_haltpunkt",
+    "THCV": "platform_or_haltpunkt",
+    "THD Wende": "platform_or_haltpunkt",
+    "THD1": "platform_or_haltpunkt",
+    "THD11": "platform_or_haltpunkt",
+    "THD12": "platform_or_haltpunkt",
+    "THD13": "platform_or_haltpunkt",
+    "THD1G": "platform_or_haltpunkt",
+    "THD2": "platform_or_haltpunkt",
+    "THD2G": "platform_or_haltpunkt",
+    "THD3": "platform_or_haltpunkt",
+    "THD3G": "platform_or_haltpunkt",
+    "THD4": "platform_or_haltpunkt",
+    "THDM": "platform_or_haltpunkt",
+    "THDM1": "platform_or_haltpunkt",
+    "THDM16": "platform_or_haltpunkt",
+    "THDM2": "platform_or_haltpunkt",
+    "THDM3": "platform_or_haltpunkt",
+    "THDS1": "platform_or_haltpunkt",
+    "THDS1G": "platform_or_haltpunkt",
+    "THDS2": "platform_or_haltpunkt",
+    "THDS2G": "platform_or_haltpunkt",
+    "THDV": "platform_or_haltpunkt",
+    "THMA Wende": "platform_or_haltpunkt",
+    "THMA1": "platform_or_haltpunkt",
+    "THMA1G": "platform_or_haltpunkt",
+    "THMA2": "platform_or_haltpunkt",
+    "THMA2G": "platform_or_haltpunkt",
+    "THMA3": "platform_or_haltpunkt",
+    "TIT": "platform_or_haltpunkt",
+    "TKS1": "platform_or_haltpunkt",
+    "TKS1G": "platform_or_haltpunkt",
+    "TKS2": "platform_or_haltpunkt",
+    "TKS2G": "platform_or_haltpunkt",
+    "TLL1": "platform_or_haltpunkt",
+    "TLL1G": "platform_or_haltpunkt",
+    "TLL2": "platform_or_haltpunkt",
+    "TLL2G": "platform_or_haltpunkt",
+    "TNS1": "platform_or_haltpunkt",
+    "TNS113": "platform_or_haltpunkt",
+    "TNS1G": "platform_or_haltpunkt",
+    "TNS2": "platform_or_haltpunkt",
+    "TNS2G": "platform_or_haltpunkt",
+    "TOLC": "platform_or_haltpunkt",
+    "TRM": "platform_or_haltpunkt",
+    "TRM1": "platform_or_haltpunkt",
+    "TRM2": "platform_or_haltpunkt",
+    "TSON1": "platform_or_haltpunkt",
+    "TSON1G": "platform_or_haltpunkt",
+    "TSON2": "platform_or_haltpunkt",
+    "TSON2G": "platform_or_haltpunkt",
+    "TTL1": "platform_or_haltpunkt",
+    "TTL1G": "platform_or_haltpunkt",
+    "TTL2": "platform_or_haltpunkt",
+    "TTL2G": "platform_or_haltpunkt",
+    "TUE1": "platform_or_haltpunkt",
+    "TUE1G": "platform_or_haltpunkt",
+    "TUE2": "platform_or_haltpunkt",
+    "TUE2G": "platform_or_haltpunkt",
+    "TUO": "platform_or_haltpunkt",
+    "Ulm Hbf": "entry",
+    "Ulm Rbf": "entry",
+    "Vohenstein": "entry",
+    "Zementwerk": "entry"
+  },
+  "operating_points": {},
+  "manual_point_ids": [],
+  "assignments": {},
+  "assignment_sources": {},
+  "unassigned": [],
+  "deleted_automatic_point_ids": [],
+  "deleted_automatic_identities": [],
+  "deleted_entry_point_ids": [],
+  "hidden_manual_point_ids": [],
+  "editor_snapshot": {
+    "raw_names": [
+      "Aalen",
+      "BSH1",
+      "BSH2",
+      "EnBW",
+      "GiFa",
+      "TBER",
+      "TGB1",
+      "TGB1G",
+      "TGB2",
+      "TGB2G",
+      "TGB3",
+      "TGB4",
+      "TGB5",
+      "TGB5a",
+      "TGB8",
+      "TGB8a",
+      "TGB13",
+      "TGB17",
+      "TGB27",
+      "THC1",
+      "THC1G",
+      "THC2",
+      "THC2G",
+      "THC3",
+      "THCV",
+      "THD1",
+      "THD1G",
+      "THD2",
+      "THD2G",
+      "THD3",
+      "THD3G",
+      "THD4",
+      "THD11",
+      "THD12",
+      "THD13",
+      "THD Wende",
+      "THDM",
+      "THDM1",
+      "THDM2",
+      "THDM3",
+      "THDM16",
+      "THDS1",
+      "THDS1G",
+      "THDS2",
+      "THDS2G",
+      "THDV",
+      "THMA1",
+      "THMA1G",
+      "THMA2",
+      "THMA2G",
+      "THMA3",
+      "THMA Wende",
+      "TIT",
+      "TKS1",
+      "TKS1G",
+      "TKS2",
+      "TKS2G",
+      "TLL1",
+      "TLL1G",
+      "TLL2",
+      "TLL2G",
+      "TNS1",
+      "TNS1G",
+      "TNS2",
+      "TNS2G",
+      "TNS113",
+      "TOLC",
+      "TRM",
+      "TRM1",
+      "TRM2",
+      "TSON1",
+      "TSON1G",
+      "TSON2",
+      "TSON2G",
+      "TTL1",
+      "TTL1G",
+      "TTL2",
+      "TTL2G",
+      "TUE1",
+      "TUE1G",
+      "TUE2",
+      "TUE2G",
+      "TUO",
+      "Ulm Hbf",
+      "Ulm Rbf",
+      "Vohenstein",
+      "Zementwerk"
+    ],
+    "raw_items": {
+      "Aalen": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "BSH1": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "BSH2": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "EnBW": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "GiFa": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "TBER": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB13": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB17": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB27": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB4": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB5": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB5a": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB8": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGB8a": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THC1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THC1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THC2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THC2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THC3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THCV": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD11": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD12": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD13": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD3G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THD4": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDM": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDM1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDM16": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDM2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDM3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDS1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDS1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDS2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDS2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THDV": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THMA Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THMA1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THMA1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THMA2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THMA2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THMA3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TIT": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TKS1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TKS1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TKS2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TKS2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TLL1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TLL1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TLL2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TLL2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TNS1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TNS113": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TNS1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TNS2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TNS2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TOLC": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRM": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRM1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRM2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSON1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSON1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSON2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSON2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TTL1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TTL1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TTL2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TTL2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TUE1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TUE1G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TUE2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TUE2G": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TUO": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "Ulm Hbf": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Ulm Rbf": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Vohenstein": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Zementwerk": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      }
+    },
+    "entry_points": {
+      "entry:wege:aalen:62053fc0c9": {
+        "display_name": "Aalen",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:1",
+            "element_type": "6",
+            "enr": "1",
+            "raw_name": "Aalen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Aalen",
+              "enr": "1",
+              "type": "6"
+            }
+          },
+          {
+            "node_id": "enr:21",
+            "element_type": "7",
+            "enr": "21",
+            "raw_name": "Aalen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Aalen",
+              "enr": "21",
+              "type": "7"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "reverse_observations",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:tks:aalen",
+            "display_name": "Aalen",
+            "source_node": "TKS",
+            "external_name": "Aalen",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "reverse_observations",
+              "raw_external_connector"
+            ],
+            "confidence": "exact",
+            "raw_connector": "enr:21",
+            "directionality": "bidirectional",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "Aalen",
+            "possible_source_nodes": [
+              "TGB",
+              "THD",
+              "THDS",
+              "TKS",
+              "TLL"
+            ],
+            "trusted_incoming_count": 2,
+            "trusted_outgoing_count": 15,
+            "untrusted_incoming_count": 9,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:1",
+            "supporting_services": [
+              11078,
+              11187,
+              18071,
+              26817,
+              195098,
+              195130,
+              195131,
+              195138,
+              195166,
+              195169,
+              195170,
+              195172,
+              195173,
+              195174,
+              195175,
+              197227,
+              198975,
+              199076,
+              199078,
+              199084,
+              199085,
+              199086,
+              199093,
+              199094,
+              199099,
+              199100
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "TKS"
+          },
+          {
+            "source_node": "TKS",
+            "original_target": "Aalen",
+            "normalized_candidate": "aalen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:21",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "THDS",
+            "original_target": "Aalen",
+            "normalized_candidate": "aalen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:21",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "THD",
+            "original_target": "Aalen",
+            "normalized_candidate": "aalen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:1",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TGB",
+            "original_target": "Aalen",
+            "normalized_candidate": "aalen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:21",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TLL",
+            "original_target": "Aalen",
+            "normalized_candidate": "aalen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:21",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:bsh1:21b5a5464c": {
+        "display_name": "BSH1",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:24",
+            "element_type": "7",
+            "enr": "24",
+            "raw_name": "BSH1",
+            "metadata": {
+              "tag": "shape",
+              "name": "BSH1",
+              "enr": "24",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:4",
+            "element_type": "6",
+            "enr": "4",
+            "raw_name": "BSH1",
+            "metadata": {
+              "tag": "shape",
+              "name": "BSH1",
+              "enr": "4",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:tgb:bsh1",
+            "display_name": "BSH1",
+            "source_node": "TGB",
+            "external_name": "BSH1",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "raw_external_connector"
+            ],
+            "confidence": "inferred",
+            "raw_connector": "enr:24",
+            "directionality": "observed_outgoing",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "BSH1",
+            "possible_source_nodes": [
+              "TGB"
+            ],
+            "trusted_incoming_count": 0,
+            "trusted_outgoing_count": 1,
+            "untrusted_incoming_count": 2,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:24",
+            "supporting_services": [
+              116344,
+              198975,
+              199082
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "TGB"
+          },
+          {
+            "source_node": "TGB",
+            "original_target": "BSH1",
+            "normalized_candidate": "bsh1",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:24",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:bsh2:97d7058077": {
+        "display_name": "BSH2",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:5",
+            "element_type": "6",
+            "enr": "5",
+            "raw_name": "BSH2",
+            "metadata": {
+              "tag": "shape",
+              "name": "BSH2",
+              "enr": "5",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7"
+        ],
+        "boundary_evidence": []
+      },
+      "entry:wege:enbw:7a92e2917f": {
+        "display_name": "EnBW",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:7",
+            "element_type": "6",
+            "enr": "7",
+            "raw_name": "EnBW",
+            "metadata": {
+              "tag": "shape",
+              "name": "EnBW",
+              "enr": "7",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "TNS",
+            "original_target": "EnBW",
+            "normalized_candidate": "enbw",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:7",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:gifa:f54cb53465": {
+        "display_name": "GiFa",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:26",
+            "element_type": "7",
+            "enr": "26",
+            "raw_name": "GiFa",
+            "metadata": {
+              "tag": "shape",
+              "name": "GiFa",
+              "enr": "26",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:6",
+            "element_type": "6",
+            "enr": "6",
+            "raw_name": "GiFa",
+            "metadata": {
+              "tag": "shape",
+              "name": "GiFa",
+              "enr": "6",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:tgb:gifa",
+            "display_name": "GiFa",
+            "source_node": "TGB",
+            "external_name": "GiFa",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "raw_external_connector"
+            ],
+            "confidence": "inferred",
+            "raw_connector": "enr:26",
+            "directionality": "observed_outgoing",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "GiFa",
+            "possible_source_nodes": [
+              "TGB"
+            ],
+            "trusted_incoming_count": 0,
+            "trusted_outgoing_count": 2,
+            "untrusted_incoming_count": 2,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:26",
+            "supporting_services": [
+              116344,
+              199076,
+              199078,
+              199080
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "TGB"
+          },
+          {
+            "source_node": "TGB",
+            "original_target": "GiFa",
+            "normalized_candidate": "gifa",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:26",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:ulm-hbf:338e5b76a7": {
+        "display_name": "Ulm Hbf",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:28",
+            "element_type": "7",
+            "enr": "28",
+            "raw_name": "Ulm Hbf",
+            "metadata": {
+              "tag": "shape",
+              "name": "Ulm Hbf",
+              "enr": "28",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:8",
+            "element_type": "6",
+            "enr": "8",
+            "raw_name": "Ulm Hbf",
+            "metadata": {
+              "tag": "shape",
+              "name": "Ulm Hbf",
+              "enr": "8",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "reverse_observations",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:schedule:tuo:ulm_hbf",
+            "display_name": "Ulm Hbf",
+            "source_node": "schedule:TUO",
+            "external_name": "Ulm Hbf",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "reverse_observations",
+              "raw_external_connector"
+            ],
+            "confidence": "exact",
+            "raw_connector": "enr:28",
+            "directionality": "bidirectional",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "Ulm Hbf",
+            "possible_source_nodes": [
+              "TGB",
+              "THD",
+              "TLL",
+              "TTL",
+              "TUE",
+              "schedule:TUO"
+            ],
+            "trusted_incoming_count": 1,
+            "trusted_outgoing_count": 14,
+            "untrusted_incoming_count": 15,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:28",
+            "supporting_services": [
+              11078,
+              11187,
+              26817,
+              109523,
+              109791,
+              109795,
+              109796,
+              109797,
+              109799,
+              109800,
+              109813,
+              109828,
+              195098,
+              195130,
+              195131,
+              195138,
+              195166,
+              195169,
+              195170,
+              195172,
+              195173,
+              195174,
+              195175,
+              197227,
+              199084,
+              199085,
+              199086,
+              199093,
+              199094
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "schedule:TUO"
+          },
+          {
+            "source_node": "TLL",
+            "original_target": "Ulm Hbf",
+            "normalized_candidate": "ulm hbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:28",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "schedule:TUO",
+            "original_target": "Ulm Hbf",
+            "normalized_candidate": "ulm hbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:28",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "THD",
+            "original_target": "Ulm Hbf",
+            "normalized_candidate": "ulm hbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:28",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TTL",
+            "original_target": "Ulm Hbf",
+            "normalized_candidate": "ulm hbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:28",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TGB",
+            "original_target": "Ulm Hbf",
+            "normalized_candidate": "ulm hbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:28",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TUE",
+            "original_target": "Ulm Hbf",
+            "normalized_candidate": "ulm hbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:28",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:ulm-rbf:9d0a3057ee": {
+        "display_name": "Ulm Rbf",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:29",
+            "element_type": "7",
+            "enr": "29",
+            "raw_name": "Ulm Rbf",
+            "metadata": {
+              "tag": "shape",
+              "name": "Ulm Rbf",
+              "enr": "29",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:9",
+            "element_type": "6",
+            "enr": "9",
+            "raw_name": "Ulm Rbf",
+            "metadata": {
+              "tag": "shape",
+              "name": "Ulm Rbf",
+              "enr": "9",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:schedule:tuo:ulm_rbf",
+            "display_name": "Ulm Rbf",
+            "source_node": "schedule:TUO",
+            "external_name": "Ulm Rbf",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "raw_external_connector"
+            ],
+            "confidence": "inferred",
+            "raw_connector": "enr:29",
+            "directionality": "observed_outgoing",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "Ulm Rbf",
+            "possible_source_nodes": [
+              "THMA",
+              "TNS",
+              "schedule:TUO"
+            ],
+            "trusted_incoming_count": 0,
+            "trusted_outgoing_count": 3,
+            "untrusted_incoming_count": 2,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:29",
+            "supporting_services": [
+              24964,
+              25096,
+              199022,
+              199102
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "schedule:TUO"
+          },
+          {
+            "source_node": "TNS",
+            "original_target": "Ulm Rbf",
+            "normalized_candidate": "ulm rbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:29",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "THMA",
+            "original_target": "Ulm Rbf",
+            "normalized_candidate": "ulm rbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:29",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "schedule:TUO",
+            "original_target": "Ulm Rbf",
+            "normalized_candidate": "ulm rbf",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:29",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:vohenstein:121b533d5f": {
+        "display_name": "Vohenstein",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:3",
+            "element_type": "6",
+            "enr": "3",
+            "raw_name": "Vohenstein",
+            "metadata": {
+              "tag": "shape",
+              "name": "Vohenstein",
+              "enr": "3",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "schedule:THCV",
+            "original_target": "Vohenstein",
+            "normalized_candidate": "vohenstein",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:3",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:zementwerk:5ca8551864": {
+        "display_name": "Zementwerk",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:2",
+            "element_type": "6",
+            "enr": "2",
+            "raw_name": "Zementwerk",
+            "metadata": {
+              "tag": "shape",
+              "name": "Zementwerk",
+              "enr": "2",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "THC",
+            "original_target": "Zementwerk",
+            "normalized_candidate": "zementwerk",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:2",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "axis:THDM",
+            "original_target": "Zementwerk",
+            "normalized_candidate": "zementwerk",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:2",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      }
+    },
+    "operating_points": {
+      "TGB": {
+        "display_name": "TGB",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THC": {
+        "display_name": "THC",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THD": {
+        "display_name": "THD",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THDM": {
+        "display_name": "THDM",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THDS": {
+        "display_name": "THDS",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THMA": {
+        "display_name": "THMA",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TKS": {
+        "display_name": "TKS",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TLL": {
+        "display_name": "TLL",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TNS": {
+        "display_name": "TNS",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TRM": {
+        "display_name": "TRM",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TSON": {
+        "display_name": "TSON",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TTL": {
+        "display_name": "TTL",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TUE": {
+        "display_name": "TUE",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "schedule:TBER": {
+        "display_name": "TBER",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "schedule:THCV": {
+        "display_name": "THCV",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "schedule:THDV": {
+        "display_name": "THDV",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "schedule:TIT": {
+        "display_name": "TIT",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "schedule:TOLC": {
+        "display_name": "TOLC",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "schedule:TUO": {
+        "display_name": "TUO",
+        "station_key": null,
+        "source": "automatic"
+      }
+    },
+    "assignments": {
+      "Aalen": {
+        "target": "entry:wege:aalen:62053fc0c9",
+        "operating_point": "entry:wege:aalen:62053fc0c9",
+        "source": "self_entry"
+      },
+      "BSH1": {
+        "target": "entry:wege:bsh1:21b5a5464c",
+        "operating_point": "entry:wege:bsh1:21b5a5464c",
+        "source": "self_entry"
+      },
+      "BSH2": {
+        "target": "entry:wege:bsh2:97d7058077",
+        "operating_point": "entry:wege:bsh2:97d7058077",
+        "source": "self_entry"
+      },
+      "EnBW": {
+        "target": "entry:wege:enbw:7a92e2917f",
+        "operating_point": "entry:wege:enbw:7a92e2917f",
+        "source": "self_entry"
+      },
+      "GiFa": {
+        "target": "entry:wege:gifa:f54cb53465",
+        "operating_point": "entry:wege:gifa:f54cb53465",
+        "source": "self_entry"
+      },
+      "TBER": {
+        "target": "schedule:TBER",
+        "operating_point": "schedule:TBER",
+        "source": "self_haltpunkt"
+      },
+      "TGB1": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic"
+      },
+      "TGB1G": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic_station_key"
+      },
+      "TGB2": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic"
+      },
+      "TGB2G": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic_station_key"
+      },
+      "TGB3": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic"
+      },
+      "TGB4": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic"
+      },
+      "TGB5": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic"
+      },
+      "TGB5a": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic_station_key"
+      },
+      "TGB8": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic_station_key"
+      },
+      "TGB8a": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic_station_key"
+      },
+      "TGB13": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic"
+      },
+      "TGB17": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic_station_key"
+      },
+      "TGB27": {
+        "target": "TGB",
+        "operating_point": "TGB",
+        "source": "automatic_station_key"
+      },
+      "THC1": {
+        "target": "THC",
+        "operating_point": "THC",
+        "source": "automatic"
+      },
+      "THC1G": {
+        "target": "THC",
+        "operating_point": "THC",
+        "source": "automatic_station_key"
+      },
+      "THC2": {
+        "target": "THC",
+        "operating_point": "THC",
+        "source": "automatic"
+      },
+      "THC2G": {
+        "target": "THC",
+        "operating_point": "THC",
+        "source": "automatic"
+      },
+      "THC3": {
+        "target": "THC",
+        "operating_point": "THC",
+        "source": "automatic"
+      },
+      "THCV": {
+        "target": "schedule:THCV",
+        "operating_point": "schedule:THCV",
+        "source": "self_haltpunkt"
+      },
+      "THD1": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic"
+      },
+      "THD1G": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THD2": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic"
+      },
+      "THD2G": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THD3": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THD3G": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THD4": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THD11": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THD12": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic"
+      },
+      "THD13": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THD Wende": {
+        "target": "THD",
+        "operating_point": "THD",
+        "source": "automatic_station_key"
+      },
+      "THDM": {
+        "target": "THDM",
+        "operating_point": "THDM",
+        "source": "self_haltpunkt"
+      },
+      "THDM1": {
+        "target": "THDM",
+        "operating_point": "THDM",
+        "source": "automatic"
+      },
+      "THDM2": {
+        "target": "THDM",
+        "operating_point": "THDM",
+        "source": "automatic"
+      },
+      "THDM3": {
+        "target": "THDM",
+        "operating_point": "THDM",
+        "source": "automatic"
+      },
+      "THDM16": {
+        "target": "THDM",
+        "operating_point": "THDM",
+        "source": "automatic"
+      },
+      "THDS1": {
+        "target": "THDS",
+        "operating_point": "THDS",
+        "source": "automatic"
+      },
+      "THDS1G": {
+        "target": "THDS",
+        "operating_point": "THDS",
+        "source": "automatic_station_key"
+      },
+      "THDS2": {
+        "target": "THDS",
+        "operating_point": "THDS",
+        "source": "automatic"
+      },
+      "THDS2G": {
+        "target": "THDS",
+        "operating_point": "THDS",
+        "source": "automatic"
+      },
+      "THDV": {
+        "target": "schedule:THDV",
+        "operating_point": "schedule:THDV",
+        "source": "self_haltpunkt"
+      },
+      "THMA1": {
+        "target": "THMA",
+        "operating_point": "THMA",
+        "source": "automatic"
+      },
+      "THMA1G": {
+        "target": "THMA",
+        "operating_point": "THMA",
+        "source": "automatic_station_key"
+      },
+      "THMA2": {
+        "target": "THMA",
+        "operating_point": "THMA",
+        "source": "automatic"
+      },
+      "THMA2G": {
+        "target": "THMA",
+        "operating_point": "THMA",
+        "source": "automatic"
+      },
+      "THMA3": {
+        "target": "THMA",
+        "operating_point": "THMA",
+        "source": "automatic"
+      },
+      "THMA Wende": {
+        "target": "THMA",
+        "operating_point": "THMA",
+        "source": "automatic"
+      },
+      "TIT": {
+        "target": "schedule:TIT",
+        "operating_point": "schedule:TIT",
+        "source": "self_haltpunkt"
+      },
+      "TKS1": {
+        "target": "TKS",
+        "operating_point": "TKS",
+        "source": "automatic"
+      },
+      "TKS1G": {
+        "target": "TKS",
+        "operating_point": "TKS",
+        "source": "automatic"
+      },
+      "TKS2": {
+        "target": "TKS",
+        "operating_point": "TKS",
+        "source": "automatic"
+      },
+      "TKS2G": {
+        "target": "TKS",
+        "operating_point": "TKS",
+        "source": "automatic_station_key"
+      },
+      "TLL1": {
+        "target": "TLL",
+        "operating_point": "TLL",
+        "source": "automatic"
+      },
+      "TLL1G": {
+        "target": "TLL",
+        "operating_point": "TLL",
+        "source": "automatic_station_key"
+      },
+      "TLL2": {
+        "target": "TLL",
+        "operating_point": "TLL",
+        "source": "automatic"
+      },
+      "TLL2G": {
+        "target": "TLL",
+        "operating_point": "TLL",
+        "source": "automatic"
+      },
+      "TNS1": {
+        "target": "TNS",
+        "operating_point": "TNS",
+        "source": "automatic"
+      },
+      "TNS1G": {
+        "target": "TNS",
+        "operating_point": "TNS",
+        "source": "automatic_station_key"
+      },
+      "TNS2": {
+        "target": "TNS",
+        "operating_point": "TNS",
+        "source": "automatic"
+      },
+      "TNS2G": {
+        "target": "TNS",
+        "operating_point": "TNS",
+        "source": "automatic_station_key"
+      },
+      "TNS113": {
+        "target": "TNS",
+        "operating_point": "TNS",
+        "source": "automatic"
+      },
+      "TOLC": {
+        "target": "schedule:TOLC",
+        "operating_point": "schedule:TOLC",
+        "source": "self_haltpunkt"
+      },
+      "TRM": {
+        "target": "TRM",
+        "operating_point": "TRM",
+        "source": "self_haltpunkt"
+      },
+      "TRM1": {
+        "target": "TRM",
+        "operating_point": "TRM",
+        "source": "automatic"
+      },
+      "TRM2": {
+        "target": "TRM",
+        "operating_point": "TRM",
+        "source": "automatic"
+      },
+      "TSON1": {
+        "target": "TSON",
+        "operating_point": "TSON",
+        "source": "automatic"
+      },
+      "TSON1G": {
+        "target": "TSON",
+        "operating_point": "TSON",
+        "source": "automatic_station_key"
+      },
+      "TSON2": {
+        "target": "TSON",
+        "operating_point": "TSON",
+        "source": "automatic"
+      },
+      "TSON2G": {
+        "target": "TSON",
+        "operating_point": "TSON",
+        "source": "automatic_station_key"
+      },
+      "TTL1": {
+        "target": "TTL",
+        "operating_point": "TTL",
+        "source": "automatic"
+      },
+      "TTL1G": {
+        "target": "TTL",
+        "operating_point": "TTL",
+        "source": "automatic"
+      },
+      "TTL2": {
+        "target": "TTL",
+        "operating_point": "TTL",
+        "source": "automatic"
+      },
+      "TTL2G": {
+        "target": "TTL",
+        "operating_point": "TTL",
+        "source": "automatic_station_key"
+      },
+      "TUE1": {
+        "target": "TUE",
+        "operating_point": "TUE",
+        "source": "automatic"
+      },
+      "TUE1G": {
+        "target": "TUE",
+        "operating_point": "TUE",
+        "source": "automatic_station_key"
+      },
+      "TUE2": {
+        "target": "TUE",
+        "operating_point": "TUE",
+        "source": "automatic"
+      },
+      "TUE2G": {
+        "target": "TUE",
+        "operating_point": "TUE",
+        "source": "automatic_station_key"
+      },
+      "TUO": {
+        "target": "schedule:TUO",
+        "operating_point": "schedule:TUO",
+        "source": "self_haltpunkt"
+      },
+      "Ulm Hbf": {
+        "target": "entry:wege:ulm-hbf:338e5b76a7",
+        "operating_point": "entry:wege:ulm-hbf:338e5b76a7",
+        "source": "self_entry"
+      },
+      "Ulm Rbf": {
+        "target": "entry:wege:ulm-rbf:9d0a3057ee",
+        "operating_point": "entry:wege:ulm-rbf:9d0a3057ee",
+        "source": "self_entry"
+      },
+      "Vohenstein": {
+        "target": "entry:wege:vohenstein:121b533d5f",
+        "operating_point": "entry:wege:vohenstein:121b533d5f",
+        "source": "self_entry"
+      },
+      "Zementwerk": {
+        "target": "entry:wege:zementwerk:5ca8551864",
+        "operating_point": "entry:wege:zementwerk:5ca8551864",
+        "source": "self_entry"
+      }
+    }
+  }
+}
