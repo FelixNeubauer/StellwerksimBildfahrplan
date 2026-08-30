@@ -128,6 +128,19 @@ zur vollen Stunde stärker. Beide äußeren Zeitachsen verwenden dieselbe
 pixelabhängig gewählte Tickfolge: bevorzugt fünf Minuten, bei starkem Zoom eine
 Minute und bei weitem Zoom eine gröbere Stufe.
 
+Zug- und kleine zweistellige Ankunfts-/Abfahrts-Minutenlabels werden anhand
+ihrer tatsächlichen Pixelboxen kollisionsarm auf mehrere mögliche Seiten des
+Fahrplanpunkts verteilt. Wichtige Zuglabels haben Vorrang; wenn kein lesbarer
+Platz verbleibt, wird ein nachrangiges Minutenlabel bewusst ausgelassen.
+
+Der Farbmodus **Zuggattung** gruppiert die explizit gepflegten Kürzel in
+Nahverkehr, Fernverkehr, Güterverkehr, Rangierfahrten und Sonstiges; unbekannte
+Kürzel fallen immer unter Sonstiges. Kategorien besitzen editierbare Farben und
+wirken beim Ändern als Massenüberschreiben ihrer Gattungen. Anschließend können
+einzelne Gattungen wieder abweichend eingefärbt werden. Kategorie- und
+Gattungsfarben bleiben auch beim Wechsel zu Einfarbig oder Bunt in
+`config/settings.json` erhalten.
+
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.
 Die Automatik verwendet robuste Medianwerte aus den unveränderten Planfahrplänen,

@@ -6,8 +6,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from bildfahrplan.decorations import (
-    build_route_plot_segments, build_station_header_layout, build_time_axis_ticks,
-    build_time_grid, choose_time_tick_interval,
+    OverlayLabelCandidate, build_route_plot_segments, build_station_header_layout,
+    build_time_axis_ticks, build_time_grid, choose_time_tick_interval, place_overlay_labels,
 )
 from bildfahrplan.x_axis import build_bildfahrplan_x_axis
 from infrastructure.editable_topology import (
@@ -133,6 +133,18 @@ class DecorationTests(unittest.TestCase):
                                  12 * 3600 + 15 * 60))
         # 1-Minuten-Achsenticks ändern die unabhängige 5-Minuten-Gridfolge nicht.
         self.assertEqual(len(build_time_grid(12 * 3600, 12 * 3600 + 10 * 60)), 3)
+
+    def test_overlay_collision_placement_is_deterministic_and_suppresses_when_full(self):
+        candidates = [
+            OverlayLabelCandidate(("train",), 100, 100, 60, 16, 100, "train"),
+            *(OverlayLabelCandidate((f"minute-{index}",), 100, 100, 18, 12, 20,
+                                    "arrival" if index % 2 else "departure")
+              for index in range(6)),
+        ]
+        first = place_overlay_labels(candidates)
+        self.assertEqual(first, place_overlay_labels(reversed(candidates)))
+        self.assertIn(("train",), {item.key for item in first})
+        self.assertLess(len(first), len(candidates))
 
 
 if __name__ == "__main__":

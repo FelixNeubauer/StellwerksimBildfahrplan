@@ -84,6 +84,15 @@ class RouteInstanceTrainSegment:
     projected: tuple[PlotPoint, ...]
 
 
+@dataclass(frozen=True)
+class MinuteEventLabel:
+    index: int
+    position: float
+    time_seconds: int
+    text: str
+    kind: str
+
+
 def parse_clock(value: str) -> int:
     """Konvertiert HH:MM[:SS] in Sekunden seit Tagesbeginn."""
     parts = value.strip().split(":")
@@ -185,6 +194,24 @@ def build_route_instance_train_segments(
             route.instance_id, route.route_id, trace.zid, trace.label,
             tuple(annotate(point) for point in trace.planned),
             tuple(annotate(point) for point in trace.projected),
+        ))
+    return tuple(result)
+
+
+def build_minute_event_labels(points: Iterable[PlotPoint]) -> tuple[MinuteEventLabel, ...]:
+    """Erzeugt zweistellige Minuten aus vorhandenen Ankunfts-/Abfahrtspunkten."""
+    result = []
+    seen = set()
+    for index, point in enumerate(points):
+        if point.kind not in {"arrival", "departure"}:
+            continue
+        identity = (point.node_id or point.raw_name, point.position, point.time_seconds)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(MinuteEventLabel(
+            index, point.position, point.time_seconds,
+            f"{(point.time_seconds // 60) % 60:02d}", point.kind,
         ))
     return tuple(result)
 

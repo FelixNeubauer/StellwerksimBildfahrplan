@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil, floor
-from typing import Callable
+from typing import Callable, Iterable
 
 from .x_axis import BildfahrplanXAxisLayout
 
@@ -46,6 +46,7 @@ class StationHeaderLayout:
 LABEL_HORIZONTAL_PADDING_PX = 6
 LABEL_FRAME_GAP_PX = 6
 LABEL_SAFETY_MARGIN_PX = 4
+TRAIN_LABEL_PADDING_PX = 4
 ONE_MINUTE_TICK_MIN_SPACING_PX = 20
 TIME_TICK_INTERVALS_MINUTES = (1, 5, 10, 15, 30, 60)
 
@@ -54,6 +55,24 @@ TIME_TICK_INTERVALS_MINUTES = (1, 5, 10, 15, 30, 60)
 class TimeGridLine:
     time: float
     kind: str
+
+
+@dataclass(frozen=True)
+class OverlayLabelCandidate:
+    key: tuple
+    pixel_x: float
+    pixel_y: float
+    width: float
+    height: float
+    priority: int
+    kind: str
+
+
+@dataclass(frozen=True)
+class OverlayLabelPlacement:
+    key: tuple
+    offset_x: float
+    offset_y: float
 
 
 def visible_hour_ticks(start: float, end: float) -> tuple[float, ...]:
@@ -89,6 +108,29 @@ def build_time_axis_ticks(start: float, end: float, interval_minutes: int) -> tu
     step = interval_minutes * 60
     first = ceil(start / step) * step
     return tuple(float(value) for value in range(first, floor(end / step) * step + 1, step))
+
+
+def place_overlay_labels(candidates: Iterable[OverlayLabelCandidate]) -> tuple[OverlayLabelPlacement, ...]:
+    """Platziert wichtige Labels zuerst und unterdrückt unvermeidbare Kollisionen."""
+    occupied = []
+    result = []
+    for candidate in sorted(candidates, key=lambda item: (-item.priority, item.key)):
+        offsets = ((4, -candidate.height - 4), (-candidate.width - 4, -candidate.height - 4),
+                   (4, 4), (-candidate.width - 4, 4))
+        if candidate.kind == "departure":
+            offsets = (offsets[2], offsets[0], offsets[3], offsets[1])
+        for offset_x, offset_y in offsets:
+            rect = (candidate.pixel_x + offset_x, candidate.pixel_y + offset_y,
+                    candidate.pixel_x + offset_x + candidate.width,
+                    candidate.pixel_y + offset_y + candidate.height)
+            if all(rect[2] + TRAIN_LABEL_PADDING_PX <= other[0]
+                   or other[2] + TRAIN_LABEL_PADDING_PX <= rect[0]
+                   or rect[3] + TRAIN_LABEL_PADDING_PX <= other[1]
+                   or other[3] + TRAIN_LABEL_PADDING_PX <= rect[1] for other in occupied):
+                occupied.append(rect)
+                result.append(OverlayLabelPlacement(candidate.key, offset_x, offset_y))
+                break
+    return tuple(result)
 
 
 def build_route_plot_segments(layout: BildfahrplanXAxisLayout, start: float, end: float,

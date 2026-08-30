@@ -6,7 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from bildfahrplan.profile import RouteProfile
 from bildfahrplan.timeline import (
     BoundaryEndpoint, RouteInstanceProjection, RouteInstanceProjectionPoint,
-    build_route_instance_train_segments, format_axis_time,
+    build_minute_event_labels, build_route_instance_train_segments, format_axis_time,
 )
 from bildfahrplan.navigation import (
     TIME_MAX, TIME_MIN, centered_time_range, clamp_time_range, live_follow_time_range, time_bounds,
@@ -16,7 +16,8 @@ from bildfahrplan.x_axis import (
 )
 from bildfahrplan.decorations import (
     StationHeaderLayout, build_route_plot_segments, build_station_header_layout,
-    build_time_axis_ticks, build_time_grid, choose_time_tick_interval,
+    OverlayLabelCandidate, build_time_axis_ticks, build_time_grid, choose_time_tick_interval,
+    place_overlay_labels,
 )
 from app.settings import ApplicationSettings
 
@@ -84,6 +85,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._now_items = []
         self._train_items = {}
         self._train_labels = {}
+        self._service_label_specs = {}
         self._service_render_signatures = {}
         self._service_had_segments = {}
         self._grid_signature = None
@@ -233,6 +235,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
 
     def _y_range_changed(self, *_args) -> None:
         self._update_y_dependent_decorations()
+        self._layout_overlay_labels()
 
     def _rebuild_static_items(self) -> None:
         for item, _segment in self._static_items:
@@ -318,7 +321,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
         seen_zids = set()
         for service in services:
             seen_zids.add(service.zid)
-            color = settings.train_color(rendered)
+            color = settings.train_color(rendered, service.name)
             service_signature = (
                 self._x_source_signature, color, service.current_delay,
                 getattr(service, "origin", None), getattr(service, "destination", None),
@@ -333,6 +336,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
                 service, self._route_projections_cache, reference)
             self._service_had_segments[service.zid] = bool(segments)
             active = set()
+            label_specs = []
             for segment in segments:
                 for kind, points, pen in (
                     ("planned", segment.planned,
@@ -347,32 +351,62 @@ class BildfahrplanTab(QtWidgets.QWidget):
                         self.plot.addItem(item)
                         self._train_items[key] = item
                     item.setData([p.position for p in points], [p.time_seconds for p in points], pen=pen)
-                label_key = (segment.zid, segment.instance_id)
-                active.add((*label_key, "label"))
-                label = self._train_labels.get(label_key)
-                if label is None:
-                    label = pg.TextItem(color=color, anchor=(0, 1))
-                    self.plot.addItem(label)
-                    self._train_labels[label_key] = label
-                label.setText(segment.label, color=color)
                 point = segment.projected[len(segment.projected) // 2]
-                label.setPos(point.position, point.time_seconds)
+                label_specs.append(((segment.zid, segment.instance_id, "train"), segment.label,
+                                    point.position, point.time_seconds, color, "train", 100))
+                for minute in build_minute_event_labels(segment.projected):
+                    label_specs.append((
+                        (segment.zid, segment.instance_id, "minute", minute.index, minute.kind),
+                        minute.text, minute.position, minute.time_seconds,
+                        "#A8A8A8", minute.kind, 20,
+                    ))
+            self._service_label_specs[service.zid] = label_specs
             rendered += int(bool(segments))
             for key in tuple(self._train_items):
                 if key[0] == service.zid and key not in active:
                     self.plot.removeItem(self._train_items.pop(key))
-            for key in tuple(self._train_labels):
-                if key[0] == service.zid and (*key, "label") not in active:
-                    self.plot.removeItem(self._train_labels.pop(key))
         for zid in set(self._service_render_signatures) - seen_zids:
             self._service_render_signatures.pop(zid, None)
             self._service_had_segments.pop(zid, None)
+            self._service_label_specs.pop(zid, None)
         for key in tuple(self._train_items):
             if key[0] not in seen_zids:
                 self.plot.removeItem(self._train_items.pop(key))
+        self._layout_overlay_labels()
+
+    def _layout_overlay_labels(self) -> None:
+        specs = [spec for values in self._service_label_specs.values() for spec in values]
+        font = self.font()
+        minute_font = QtGui.QFont(font)
+        minute_font.setPointSizeF(max(6.0, font.pointSizeF() - 2.0))
+        candidates = []
+        spec_by_key = {}
+        for key, text, x, y, color, kind, priority in specs:
+            spec_by_key[key] = (text, x, y, color, kind)
+            metrics = QtGui.QFontMetrics(minute_font if kind != "train" else font)
+            scene = self.plot.getViewBox().mapViewToScene(QtCore.QPointF(x, y))
+            candidates.append(OverlayLabelCandidate(
+                key, scene.x(), scene.y(), metrics.horizontalAdvance(text), metrics.height(),
+                priority, kind,
+            ))
+        placements = {placement.key: placement for placement in place_overlay_labels(candidates)}
         for key in tuple(self._train_labels):
-            if key[0] not in seen_zids:
+            if key not in spec_by_key:
                 self.plot.removeItem(self._train_labels.pop(key))
+        for key, spec in spec_by_key.items():
+            text, x, y, color, kind = spec
+            item = self._train_labels.get(key)
+            if item is None:
+                item = pg.TextItem(anchor=(0, 0))
+                self.plot.addItem(item, ignoreBounds=True)
+                self._train_labels[key] = item
+            item.setText(text, color=color)
+            item.setFont(minute_font if kind != "train" else font)
+            item.setPos(x, y)
+            placement = placements.get(key)
+            item.setVisible(placement is not None)
+            if placement is not None:
+                item.textItem.setPos(placement.offset_x, placement.offset_y)
 
     def _update_station_header(self) -> None:
         font = self.station_header.font()
@@ -441,9 +475,11 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._update_station_header()
         self._update_live_items()
         self._update_y_dependent_decorations()
+        self._layout_overlay_labels()
 
     def changeEvent(self, event) -> None:  # noqa: N802 - Qt API
         super().changeEvent(event)
         if event.type() == QtCore.QEvent.Type.FontChange and hasattr(self, "station_header"):
             self._station_header_signature = None
             self._update_station_header()
+            self._layout_overlay_labels()

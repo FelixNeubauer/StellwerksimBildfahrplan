@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from app.settings import (
     COLORFUL_TRAIN_COLORS, DEFAULT_TRAIN_COLOR, ApplicationSettings, ApplicationSettingsStore,
-    normalize_hex_color,
+    extract_train_type, normalize_hex_color, train_type_category,
 )
 
 
@@ -43,6 +43,35 @@ class ApplicationSettingsTests(unittest.TestCase):
         self.assertEqual(settings.train_color_mode, "single")
         self.assertEqual(settings.single_train_color, DEFAULT_TRAIN_COLOR)
         self.assertEqual(settings.live_follow_position_percent, 100)
+
+    def test_train_types_are_classified_and_unknown_is_other(self):
+        self.assertEqual(extract_train_type("RE 1234"), "RE")
+        self.assertEqual(extract_train_type("Rf 7"), "RF")
+        self.assertEqual(train_type_category("RE"), "local")
+        self.assertEqual(train_type_category("ICE"), "long_distance")
+        self.assertEqual(train_type_category("DGS"), "freight")
+        self.assertEqual(train_type_category("RF"), "shunting")
+        self.assertEqual(train_type_category("unbekannt"), "other")
+
+    def test_train_type_mode_category_override_and_bulk_apply(self):
+        settings = ApplicationSettings(train_color_mode="train_type").validated()
+        local = settings.category_train_colors["local"]
+        self.assertEqual(settings.train_color(0, "RE 1"), local)
+        overridden = settings.with_train_type_color("RE", "#00FF00")
+        self.assertEqual(overridden.train_color(0, "RE 1"), "#00FF00")
+        self.assertEqual(overridden.train_color(0, "RB 2"), local)
+        bulk = overridden.apply_category_color("local", "#0000FF")
+        self.assertEqual(bulk.train_color(0, "RE 1"), "#0000FF")
+        changed = bulk.with_train_type_color("RE", "#00FF00")
+        single = ApplicationSettings("single", "#ABCDEF", 50, changed.category_train_colors,
+                                     changed.train_type_colors).validated()
+        restored = ApplicationSettings("train_type", single.single_train_color, 50,
+                                       single.category_train_colors, single.train_type_colors).validated()
+        self.assertEqual(restored.train_color(0, "RE 1"), "#00FF00")
+
+    def test_unknown_train_type_uses_other_category_color(self):
+        settings = ApplicationSettings(train_color_mode="train_type").validated()
+        self.assertEqual(settings.train_color(0, "XYZ 9"), settings.category_train_colors["other"])
 
 
 if __name__ == "__main__":

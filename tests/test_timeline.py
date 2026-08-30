@@ -10,8 +10,9 @@ sys.path.insert(0, str(ROOT / "Schnittstellentest"))
 from bildfahrplan.profile import OperatingPoint, RouteProfile
 from bildfahrplan.timeline import (
     DISTANCE_AXIS, NOW_LINE_ANGLE, TIME_AXIS, BoundaryEndpoint, BoundaryRouteProjection,
-    RouteInstanceProjection, RouteInstanceProjectionPoint, build_route_instance_train_segments,
-    build_trace, extend_trace_to_boundaries, format_axis_time, is_renderable_service,
+    RouteInstanceProjection, RouteInstanceProjectionPoint, build_minute_event_labels,
+    build_route_instance_train_segments, build_trace, extend_trace_to_boundaries,
+    format_axis_time, is_renderable_service,
     parse_clock, schedule_to_points, unwrap_time,
 )
 from sts_collector import SchedulePoint
@@ -82,6 +83,14 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual([item.raw_name for item in trace.planned], ["A 1", "A 1"])
         self.assertEqual(trace.projected[0].time_seconds - trace.planned[0].time_seconds, 300)
         self.assertIn("+5", trace.label)
+
+    def test_minute_labels_use_two_digits_and_deduplicate_equal_times(self):
+        points = schedule_to_points(
+            [point("A 1", "18:09", "18:09"), point("B", "18:24", "18:25")],
+            self.profile, parse_clock("18:00"))
+        labels = build_minute_event_labels(points)
+        self.assertEqual([item.text for item in labels], ["09", "24", "25"])
+        self.assertEqual([item.kind for item in labels], ["arrival", "arrival", "departure"])
 
     def test_exit_uses_adjacent_movement_slope_after_last_departure(self):
         profile = RouteProfile("Exit", (
