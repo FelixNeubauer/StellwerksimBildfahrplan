@@ -1,0 +1,1101 @@
+{
+  "schema_version": 3,
+  "artifact_type": "editable_topology_graph",
+  "stellwerk": {
+    "aid": 77,
+    "name": "Blaubeuren (2024)"
+  },
+  "aid": 77,
+  "stellwerk_name": "Blaubeuren (2024)",
+  "saved_at": "2026-08-30T19:07:44.797534+00:00",
+  "graph": {
+    "nodes": [
+      {
+        "id": "TALL",
+        "display_name": "TALL",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 1530.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TALL",
+        "target_id": "TALL",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TALL"
+          ],
+          "raw_names": [
+            "TALL 1",
+            "TALL 2"
+          ],
+          "source_nodes": [
+            "TALL"
+          ],
+          "target_raw_members": [
+            "TALL 1",
+            "TALL 1L",
+            "TALL 2",
+            "TALL 2L",
+            "TALL 3"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TALL 1",
+            "relevant_member:TALL 1L",
+            "relevant_member:TALL 2",
+            "relevant_member:TALL 2L",
+            "relevant_member:TALL 3"
+          ]
+        }
+      },
+      {
+        "id": "TAR",
+        "display_name": "TAR",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 2380.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TAR",
+        "target_id": "TAR",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TAR"
+          ],
+          "raw_names": [
+            "TAR 1",
+            "TAR 2"
+          ],
+          "source_nodes": [
+            "TAR"
+          ],
+          "target_raw_members": [
+            "TAR 1",
+            "TAR 2"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TAR 1",
+            "relevant_member:TAR 2"
+          ]
+        }
+      },
+      {
+        "id": "TBL",
+        "display_name": "TBL",
+        "node_type": "junction",
+        "source": "automatic",
+        "layout_x": 2040.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TBL",
+        "target_id": "TBL",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TBL"
+          ],
+          "raw_names": [
+            "TBL 1",
+            "TBL 2",
+            "TBL 3"
+          ],
+          "source_nodes": [
+            "TBL"
+          ],
+          "target_raw_members": [
+            "TBL 1",
+            "TBL 2",
+            "TBL 3",
+            "TBL 9"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TBL 1",
+            "relevant_member:TBL 2",
+            "relevant_member:TBL 3",
+            "relevant_member:TBL 9"
+          ]
+        }
+      },
+      {
+        "id": "TEH",
+        "display_name": "TEH",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 1360.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TEH",
+        "target_id": "TEH",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TEH"
+          ],
+          "raw_names": [
+            "TEH 1",
+            "TEH 2",
+            "TEH 2 Flügel",
+            "TEH 3",
+            "TEH 5 Flügel",
+            "TEH Wende"
+          ],
+          "source_nodes": [
+            "TEH"
+          ],
+          "target_raw_members": [
+            "TEH 1",
+            "TEH 2",
+            "TEH 2 Flügel",
+            "TEH 3",
+            "TEH 5",
+            "TEH 5 Flügel",
+            "TEH 9",
+            "TEH 9 Flügel",
+            "TEH Wende"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TEH 1",
+            "relevant_member:TEH 2",
+            "relevant_member:TEH 2 Flügel",
+            "relevant_member:TEH 3",
+            "relevant_member:TEH 5",
+            "relevant_member:TEH 5 Flügel",
+            "relevant_member:TEH 9",
+            "relevant_member:TEH 9 Flügel",
+            "relevant_member:TEH Wende"
+          ]
+        }
+      },
+      {
+        "id": "THT",
+        "display_name": "THT",
+        "node_type": "junction",
+        "source": "automatic",
+        "layout_x": 510.0,
+        "layout_y": 0.0,
+        "operating_point_id": "THT",
+        "target_id": "THT",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "THT"
+          ],
+          "raw_names": [
+            "THT 1",
+            "THT 2",
+            "THT 3",
+            "THT 4L"
+          ],
+          "source_nodes": [
+            "THT"
+          ],
+          "target_raw_members": [
+            "THT 1",
+            "THT 1L",
+            "THT 2",
+            "THT 2L",
+            "THT 3",
+            "THT 3L",
+            "THT 4",
+            "THT 4L",
+            "THT 9",
+            "THT Wende"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:THT 1",
+            "relevant_member:THT 1L",
+            "relevant_member:THT 2",
+            "relevant_member:THT 2L",
+            "relevant_member:THT 3",
+            "relevant_member:THT 3L",
+            "relevant_member:THT 4",
+            "relevant_member:THT 4L",
+            "relevant_member:THT 9",
+            "relevant_member:THT Wende"
+          ]
+        }
+      },
+      {
+        "id": "TMU",
+        "display_name": "TMU",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 1020.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TMU",
+        "target_id": "TMU",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TMU"
+          ],
+          "raw_names": [
+            "TMU 1",
+            "TMU 2"
+          ],
+          "source_nodes": [
+            "TMU"
+          ],
+          "target_raw_members": [
+            "TMU 1",
+            "TMU 2"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TMU 1",
+            "relevant_member:TMU 2"
+          ]
+        }
+      },
+      {
+        "id": "TRC",
+        "display_name": "TRC",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 850.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TRC",
+        "target_id": "TRC",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TRC"
+          ],
+          "raw_names": [
+            "TRC 1",
+            "TRC 2"
+          ],
+          "source_nodes": [
+            "TRC"
+          ],
+          "target_raw_members": [
+            "TRC 1",
+            "TRC 1L",
+            "TRC 2"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TRC 1",
+            "relevant_member:TRC 1L",
+            "relevant_member:TRC 2"
+          ]
+        }
+      },
+      {
+        "id": "TRI",
+        "display_name": "TRI",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 680.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TRI",
+        "target_id": "TRI",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TRI"
+          ],
+          "raw_names": [
+            "TRI 1"
+          ],
+          "source_nodes": [
+            "TRI"
+          ],
+          "target_raw_members": [
+            "TRI 1",
+            "TRI 1L",
+            "TRI 2",
+            "TRI 2L",
+            "TRI 3"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TRI 1",
+            "relevant_member:TRI 1L",
+            "relevant_member:TRI 2",
+            "relevant_member:TRI 2L",
+            "relevant_member:TRI 3"
+          ]
+        }
+      },
+      {
+        "id": "TRR",
+        "display_name": "TRR",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 1190.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TRR",
+        "target_id": "TRR",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TRR"
+          ],
+          "raw_names": [
+            "TRR 1",
+            "TRR 2",
+            "TRR Wende"
+          ],
+          "source_nodes": [
+            "TRR"
+          ],
+          "target_raw_members": [
+            "TRR 1",
+            "TRR 2",
+            "TRR Wende"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TRR 1",
+            "relevant_member:TRR 2",
+            "relevant_member:TRR Wende"
+          ]
+        }
+      },
+      {
+        "id": "TSK",
+        "display_name": "TSK",
+        "node_type": "junction",
+        "source": "automatic",
+        "layout_x": 1870.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TSK",
+        "target_id": "TSK",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TSK"
+          ],
+          "raw_names": [
+            "TSK 501",
+            "TSK 502",
+            "TSK 503",
+            "TSK 504",
+            "TSK 505",
+            "TSK 505 Flügel",
+            "TSK 580",
+            "TSK Verladung",
+            "TSK Wende"
+          ],
+          "source_nodes": [
+            "TSK"
+          ],
+          "target_raw_members": [
+            "TSK 501",
+            "TSK 501L",
+            "TSK 502",
+            "TSK 502L",
+            "TSK 503",
+            "TSK 504",
+            "TSK 504 Flügel",
+            "TSK 504 Mitte",
+            "TSK 505",
+            "TSK 505 Flügel",
+            "TSK 505 Mitte",
+            "TSK 580",
+            "TSK 91",
+            "TSK Verladung",
+            "TSK Wende"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TSK 91",
+            "relevant_member:TSK 501",
+            "relevant_member:TSK 501L",
+            "relevant_member:TSK 502",
+            "relevant_member:TSK 502L",
+            "relevant_member:TSK 503",
+            "relevant_member:TSK 504",
+            "relevant_member:TSK 504 Flügel",
+            "relevant_member:TSK 504 Mitte",
+            "relevant_member:TSK 505",
+            "relevant_member:TSK 505 Flügel",
+            "relevant_member:TSK 505 Mitte",
+            "relevant_member:TSK 580",
+            "relevant_member:TSK Verladung",
+            "relevant_member:TSK Wende"
+          ]
+        }
+      },
+      {
+        "id": "TSL",
+        "display_name": "TSL",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 170.0,
+        "layout_y": 0.0,
+        "operating_point_id": "TSL",
+        "target_id": "TSL",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "TSL"
+          ],
+          "raw_names": [
+            "TSL 1"
+          ],
+          "source_nodes": [
+            "TSL"
+          ],
+          "target_raw_members": [
+            "TSL 1",
+            "TSL 1 Wende",
+            "TSL 2",
+            "TSL 3",
+            "TSL 3 Wende",
+            "TSL 4"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TSL 1",
+            "relevant_member:TSL 1 Wende",
+            "relevant_member:TSL 2",
+            "relevant_member:TSL 3",
+            "relevant_member:TSL 3 Wende",
+            "relevant_member:TSL 4"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:altshausen:6d86c61c19",
+        "display_name": "Altshausen",
+        "node_type": "entry",
+        "source": "automatic",
+        "layout_x": 0.0,
+        "layout_y": 0.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:altshausen:6d86c61c19",
+        "target_kind": "entry_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "synthetic:external:tsl:altshausen"
+          ],
+          "raw_names": [],
+          "source_nodes": [],
+          "target_raw_members": [
+            "Altshausen"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:heidelberg-zement:d0a731dbd5",
+        "display_name": "Heidelberg Zement",
+        "node_type": "entry",
+        "source": "automatic",
+        "layout_x": 1870.0,
+        "layout_y": 100.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:heidelberg-zement:d0a731dbd5",
+        "target_kind": "entry_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "synthetic:external:tsk:heidelberg_zement"
+          ],
+          "raw_names": [],
+          "source_nodes": [],
+          "target_raw_members": [
+            "Heidelberg Zement"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:herrlingen:9f759f10fd",
+        "display_name": "Herrlingen",
+        "node_type": "entry",
+        "source": "automatic",
+        "layout_x": 2550.0,
+        "layout_y": 0.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:herrlingen:9f759f10fd",
+        "target_kind": "entry_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "synthetic:external:tar:herrlingen"
+          ],
+          "raw_names": [],
+          "source_nodes": [],
+          "target_raw_members": [
+            "Herrlingen"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:m-nsingen:0b2c924fef",
+        "display_name": "Münsingen",
+        "node_type": "entry",
+        "source": "automatic",
+        "layout_x": 1870.0,
+        "layout_y": -200.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:m-nsingen:0b2c924fef",
+        "target_kind": "entry_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "synthetic:external:tsk:m_nsingen"
+          ],
+          "raw_names": [],
+          "source_nodes": [],
+          "target_raw_members": [
+            "Münsingen"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:mengen:f45b30b588",
+        "display_name": "Mengen",
+        "node_type": "entry",
+        "source": "automatic",
+        "layout_x": 510.0,
+        "layout_y": 100.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:mengen:f45b30b588",
+        "target_kind": "entry_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "synthetic:external:tht:mengen"
+          ],
+          "raw_names": [],
+          "source_nodes": [],
+          "target_raw_members": [
+            "Mengen"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "schedule:TBLM",
+        "display_name": "TBLM",
+        "node_type": "entry",
+        "source": "automatic",
+        "layout_x": 2040.0,
+        "layout_y": 100.0,
+        "operating_point_id": "schedule:TBLM",
+        "target_id": "schedule:TBLM",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "schedule:TBLM"
+          ],
+          "raw_names": [
+            "TBLM"
+          ],
+          "source_nodes": [
+            "schedule:TBLM"
+          ],
+          "target_raw_members": [
+            "TBLM"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TBLM"
+          ]
+        }
+      },
+      {
+        "id": "schedule:TGEH",
+        "display_name": "TGEH",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 2210.0,
+        "layout_y": 0.0,
+        "operating_point_id": "schedule:TGEH",
+        "target_id": "schedule:TGEH",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "schedule:TGEH"
+          ],
+          "raw_names": [
+            "TGEH"
+          ],
+          "source_nodes": [
+            "schedule:TGEH"
+          ],
+          "target_raw_members": [
+            "TGEH"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:TGEH"
+          ]
+        }
+      },
+      {
+        "id": "schedule:THSM",
+        "display_name": "THSM",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 1700.0,
+        "layout_y": 0.0,
+        "operating_point_id": "schedule:THSM",
+        "target_id": "schedule:THSM",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "schedule:THSM"
+          ],
+          "raw_names": [
+            "THSM"
+          ],
+          "source_nodes": [
+            "schedule:THSM"
+          ],
+          "target_raw_members": [
+            "THSM"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:THSM"
+          ]
+        }
+      },
+      {
+        "id": "schedule:THTO",
+        "display_name": "THTO",
+        "node_type": "line",
+        "source": "automatic",
+        "layout_x": 340.0,
+        "layout_y": 0.0,
+        "operating_point_id": "schedule:THTO",
+        "target_id": "schedule:THTO",
+        "target_kind": "operating_point",
+        "metadata": {
+          "automatic_node_ids": [
+            "schedule:THTO"
+          ],
+          "raw_names": [
+            "THTO"
+          ],
+          "source_nodes": [
+            "schedule:THTO"
+          ],
+          "target_raw_members": [
+            "THTO"
+          ],
+          "target_evidence": [
+            "operating_point_assignment",
+            "relevant_assignment",
+            "relevant_member:THTO"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:claas:8f0d50589f",
+        "display_name": "Claas",
+        "node_type": "entry",
+        "source": "registry_supplement",
+        "layout_x": 0.0,
+        "layout_y": 240.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:claas:8f0d50589f",
+        "target_kind": "entry_point",
+        "metadata": {
+          "parking_area": true,
+          "parking_anchor": null,
+          "automatic_supplement": true,
+          "supplement_source": "registry_supplement",
+          "canonical_target_id": "entry:wege:claas:8f0d50589f",
+          "target_raw_members": [
+            "Claas"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:denkinger:47ff25ba53",
+        "display_name": "Denkinger",
+        "node_type": "entry",
+        "source": "registry_supplement",
+        "layout_x": 510.0,
+        "layout_y": 240.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:denkinger:47ff25ba53",
+        "target_kind": "entry_point",
+        "metadata": {
+          "parking_area": true,
+          "parking_anchor": null,
+          "automatic_supplement": true,
+          "supplement_source": "registry_supplement",
+          "canonical_target_id": "entry:wege:denkinger:47ff25ba53",
+          "target_raw_members": [
+            "Denkinger"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:merkle:47c2726e4b",
+        "display_name": "Merkle",
+        "node_type": "entry",
+        "source": "registry_supplement",
+        "layout_x": 1020.0,
+        "layout_y": 240.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:merkle:47c2726e4b",
+        "target_kind": "entry_point",
+        "metadata": {
+          "parking_area": true,
+          "parking_anchor": null,
+          "automatic_supplement": true,
+          "supplement_source": "registry_supplement",
+          "canonical_target_id": "entry:wege:merkle:47c2726e4b",
+          "target_raw_members": [
+            "Merkle"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:sappi:a0007555dc",
+        "display_name": "Sappi",
+        "node_type": "entry",
+        "source": "registry_supplement",
+        "layout_x": 1530.0,
+        "layout_y": 240.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:sappi:a0007555dc",
+        "target_kind": "entry_point",
+        "metadata": {
+          "parking_area": true,
+          "parking_anchor": null,
+          "automatic_supplement": true,
+          "supplement_source": "registry_supplement",
+          "canonical_target_id": "entry:wege:sappi:a0007555dc",
+          "target_raw_members": [
+            "Sappi"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:schwenk-zement:b7258c8ecd",
+        "display_name": "Schwenk Zement",
+        "node_type": "entry",
+        "source": "registry_supplement",
+        "layout_x": 2040.0,
+        "layout_y": 240.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:schwenk-zement:b7258c8ecd",
+        "target_kind": "entry_point",
+        "metadata": {
+          "parking_area": true,
+          "parking_anchor": null,
+          "automatic_supplement": true,
+          "supplement_source": "registry_supplement",
+          "canonical_target_id": "entry:wege:schwenk-zement:b7258c8ecd",
+          "target_raw_members": [
+            "Schwenk Zement"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:shredderwerk:758db4620b",
+        "display_name": "Shredderwerk",
+        "node_type": "entry",
+        "source": "registry_supplement",
+        "layout_x": 2550.0,
+        "layout_y": 240.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:shredderwerk:758db4620b",
+        "target_kind": "entry_point",
+        "metadata": {
+          "parking_area": true,
+          "parking_anchor": null,
+          "automatic_supplement": true,
+          "supplement_source": "registry_supplement",
+          "canonical_target_id": "entry:wege:shredderwerk:758db4620b",
+          "target_raw_members": [
+            "Shredderwerk"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      },
+      {
+        "id": "entry:wege:umspannwerk:35a25374ac",
+        "display_name": "Umspannwerk",
+        "node_type": "entry",
+        "source": "registry_supplement",
+        "layout_x": 0.0,
+        "layout_y": 335.0,
+        "operating_point_id": null,
+        "target_id": "entry:wege:umspannwerk:35a25374ac",
+        "target_kind": "entry_point",
+        "metadata": {
+          "parking_area": true,
+          "parking_anchor": null,
+          "automatic_supplement": true,
+          "supplement_source": "registry_supplement",
+          "canonical_target_id": "entry:wege:umspannwerk:35a25374ac",
+          "target_raw_members": [
+            "Umspannwerk"
+          ],
+          "target_evidence": [
+            "wege_type_6_or_7"
+          ]
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge:eed895ed-0a56-4d50-a264-7d5d81932a28",
+        "node_a": "THT",
+        "node_b": "TRI",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:0c0a11a2-08e1-47c4-bad9-817820dd7253",
+        "node_a": "TRI",
+        "node_b": "TRC",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:a76ae0ea-2880-4fda-a0de-4de57e95e991",
+        "node_a": "TRC",
+        "node_b": "TMU",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:88fe8bcd-95a4-4d42-90f4-6ba445a4de0d",
+        "node_a": "TMU",
+        "node_b": "TRR",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:3aecbb16-2a66-4f91-ae2a-598a9509d775",
+        "node_a": "TRR",
+        "node_b": "TEH",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:8dd6409b-f3f5-4b4c-a884-63de0ed2b903",
+        "node_a": "TEH",
+        "node_b": "TALL",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:f5d5e171-babc-4996-8b97-1e06512591d4",
+        "node_a": "TALL",
+        "node_b": "schedule:THSM",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:37f5799a-813a-4be5-bd5b-eaa245734fe3",
+        "node_a": "schedule:THSM",
+        "node_b": "TSK",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:5342cdf8-e43e-4f90-ac79-95332ef7bcd3",
+        "node_a": "TSK",
+        "node_b": "TBL",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:414a480d-973c-4d00-903d-3c0118a68070",
+        "node_a": "TBL",
+        "node_b": "schedule:TGEH",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:801d8589-ee04-4040-995f-e79dd3d8067a",
+        "node_a": "schedule:TGEH",
+        "node_b": "TAR",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:e33bdf50-33f0-4a17-aea1-90d7a7462643",
+        "node_a": "TSL",
+        "node_b": "schedule:THTO",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:d9d58e53-b13f-4fe9-bc31-264ff18afac0",
+        "node_a": "schedule:THTO",
+        "node_b": "THT",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:ce268fc9-827b-4663-9edd-60061cb38df5",
+        "node_a": "TBL",
+        "node_b": "schedule:TBLM",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:e0742f62-27bc-4fa9-89ce-5b4f6a7fe3d8",
+        "node_a": "THT",
+        "node_b": "entry:wege:mengen:f45b30b588",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:beef0d46-1d4c-4b2c-abd8-3318b00843ee",
+        "node_a": "TAR",
+        "node_b": "entry:wege:herrlingen:9f759f10fd",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:36a19596-c354-4bbe-ab71-ea06b65da89e",
+        "node_a": "TSK",
+        "node_b": "entry:wege:m-nsingen:0b2c924fef",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:1532f57f-f3ca-40c8-ae31-65a8e3fa25d2",
+        "node_a": "TSL",
+        "node_b": "entry:wege:altshausen:6d86c61c19",
+        "source": "automatic"
+      },
+      {
+        "id": "edge:36642e7b-5148-4465-b7b6-b653f8166b17",
+        "node_a": "TSK",
+        "node_b": "entry:wege:heidelberg-zement:d0a731dbd5",
+        "source": "automatic"
+      }
+    ]
+  },
+  "defined_routes": [
+    {
+      "route_id": "route:bf21837c-1758-4bb6-81cc-a6af0f10b3a4",
+      "display_name": "Herrlingen – Mengen",
+      "ordered_node_ids": [
+        "entry:wege:herrlingen:9f759f10fd",
+        "TAR",
+        "schedule:TGEH",
+        "TBL",
+        "TSK",
+        "schedule:THSM",
+        "TALL",
+        "TEH",
+        "TRR",
+        "TMU",
+        "TRC",
+        "TRI",
+        "THT",
+        "entry:wege:mengen:f45b30b588"
+      ],
+      "endpoint_a": "entry:wege:herrlingen:9f759f10fd",
+      "endpoint_b": "entry:wege:mengen:f45b30b588",
+      "default_kilometrage": {
+        "entry:wege:herrlingen:9f759f10fd": 0.0,
+        "TAR": 5.0,
+        "schedule:TGEH": 10.0,
+        "TBL": 13.333333333333334,
+        "TSK": 21.666666666666668,
+        "schedule:THSM": 25.0,
+        "TALL": 30.0,
+        "TEH": 36.666666666666664,
+        "TRR": 46.666666666666664,
+        "TMU": 52.5,
+        "TRC": 60.833333333333336,
+        "TRI": 74.16666666666667,
+        "THT": 85.83333333333334,
+        "entry:wege:mengen:f45b30b588": 90.83333333333334
+      }
+    },
+    {
+      "route_id": "route:5fa59924-3904-4099-8ce2-f5fcb6c726d4",
+      "display_name": "THT – Altshausen",
+      "ordered_node_ids": [
+        "THT",
+        "schedule:THTO",
+        "TSL",
+        "entry:wege:altshausen:6d86c61c19"
+      ],
+      "endpoint_a": "THT",
+      "endpoint_b": "entry:wege:altshausen:6d86c61c19",
+      "default_kilometrage": {
+        "THT": 0.0,
+        "schedule:THTO": 3.3333333333333335,
+        "TSL": 12.500000000000002,
+        "entry:wege:altshausen:6d86c61c19": 17.5
+      }
+    }
+  ],
+  "bildfahrplan_routes": [
+    {
+      "instance_id": "bf:dea26bfa-3fad-4b32-83ed-aebe9072f251",
+      "route_id": "route:bf21837c-1758-4bb6-81cc-a6af0f10b3a4",
+      "left_endpoint": "entry:wege:herrlingen:9f759f10fd",
+      "order": 0,
+      "kilometrage": {
+        "entry:wege:herrlingen:9f759f10fd": 0.0,
+        "TAR": 5.0,
+        "schedule:TGEH": 10.0,
+        "TBL": 13.333333333333334,
+        "TSK": 21.666666666666668,
+        "schedule:THSM": 25.0,
+        "TALL": 30.0,
+        "TEH": 36.666666666666664,
+        "TRR": 46.666666666666664,
+        "TMU": 52.5,
+        "TRC": 60.833333333333336,
+        "TRI": 74.16666666666667,
+        "THT": 85.83333333333334,
+        "entry:wege:mengen:f45b30b588": 90.83333333333334
+      },
+      "kilometrage_stale": false
+    },
+    {
+      "instance_id": "bf:41dd5cfc-0f50-4f9b-8cb8-53681c9448e3",
+      "route_id": "route:5fa59924-3904-4099-8ce2-f5fcb6c726d4",
+      "left_endpoint": "entry:wege:altshausen:6d86c61c19",
+      "order": 1,
+      "kilometrage": {
+        "THT": 0.0,
+        "schedule:THTO": 3.3333333333333335,
+        "TSL": 12.500000000000002,
+        "entry:wege:altshausen:6d86c61c19": 17.5
+      },
+      "kilometrage_stale": false
+    }
+  ],
+  "metadata": {
+    "initial_source": "assignment_registry_projection",
+    "unresolved_automatic_nodes": [
+      "schedule:Ef Aulendorf"
+    ]
+  }
+}
