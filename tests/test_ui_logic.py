@@ -59,6 +59,9 @@ class UiLogicTests(unittest.TestCase):
         fast_path = tab.split("if trace_signature == self._last_trace_signature:", 1)[1].split(
             "self._last_trace_signature = trace_signature", 1)[0]
         self.assertNotIn("_update_station_header", fast_path)
+        self.assertNotIn("_update_train_items", fast_path)
+        self.assertNotIn("build_bildfahrplan_x_axis", fast_path)
+        self.assertIn("_update_live_items", fast_path)
 
     def test_center_preserves_zoom_span_and_clamps(self):
         self.assertEqual(centered_time_range(8 * 3600, (8 * 3600, 10 * 3600)),

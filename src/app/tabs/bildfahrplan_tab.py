@@ -14,7 +14,10 @@ from bildfahrplan.navigation import (
 from bildfahrplan.x_axis import (
     BildfahrplanXAxisLayout, bildfahrplan_configuration_signature, build_bildfahrplan_x_axis,
 )
-from bildfahrplan.decorations import StationHeaderLayout, build_route_plot_segments, build_station_header_layout
+from bildfahrplan.decorations import (
+    StationHeaderLayout, build_route_plot_segments, build_station_header_layout,
+    build_time_axis_ticks, build_time_grid, choose_time_tick_interval,
+)
 from app.settings import ApplicationSettings
 
 
@@ -76,7 +79,17 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._settings_provider = settings_provider
         self._save_live_position = save_live_position
         self._x_layout = BildfahrplanXAxisLayout((), ())
-        self._decoration_items = []
+        self._static_items = []
+        self._grid_items = []
+        self._now_items = []
+        self._train_items = {}
+        self._train_labels = {}
+        self._service_render_signatures = {}
+        self._service_had_segments = {}
+        self._grid_signature = None
+        self._time_tick_signature = None
+        self._x_source_signature = None
+        self._route_projections_cache = ()
         self._station_header_signature = None
         self._now_value = 0.0
         self._initial_view = True
@@ -99,6 +112,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
         controls.addWidget(self.live_position)
         time_axis = TimeAxis(orientation="left")
         right_time_axis = TimeAxis(orientation="right")
+        self.left_time_axis = time_axis
+        self.right_time_axis = right_time_axis
         route_axis = pg.AxisItem(orientation="top")
         self.plot = pg.PlotWidget(axisItems={
             "left": time_axis, "right": right_time_axis, "top": route_axis,
@@ -149,8 +164,23 @@ class BildfahrplanTab(QtWidgets.QWidget):
                 yMin=minimum, yMax=maximum, minYRange=60, maxYRange=maximum - minimum,
             )
         graph = self._graph_provider()
-        x_layout = build_bildfahrplan_x_axis(graph) if graph is not None else BildfahrplanXAxisLayout((), ())
         configuration_signature = bildfahrplan_configuration_signature(graph) if graph is not None else ()
+        x_source_signature = (configuration_signature, tuple(
+            (node_id, graph.nodes[node_id].display_name)
+            for item in graph.bildfahrplan_routes
+            for route in (graph.defined_routes.get(item.route_id),) if route is not None
+            for node_id in route.ordered_node_ids
+            if node_id in graph.nodes
+        )) if graph is not None else ()
+        if x_source_signature != self._x_source_signature:
+            self._x_source_signature = x_source_signature
+            self._x_layout = (build_bildfahrplan_x_axis(graph) if graph is not None
+                              else BildfahrplanXAxisLayout((), ()))
+            self._route_projections_cache = self._route_projections(graph, self._x_layout)
+            self._rebuild_static_items()
+            self._station_header_signature = None
+            self._grid_signature = None
+        x_layout = self._x_layout
         layout_signature = tuple(
             (route.instance_id, route.start_x, route.end_x,
              tuple((node.node_id, node.x, node.label) for node in route.nodes))
@@ -170,39 +200,10 @@ class BildfahrplanTab(QtWidgets.QWidget):
                 self._apply_live_follow()
             else:
                 self._clamp_y_range()
-            self._render_decorations()
+            self._update_live_items()
             return
         self._last_trace_signature = trace_signature
-        self._x_layout = x_layout
-        self.plot.clear()
-        self._decoration_items = []
-        self.route_axis.setTicks([])
-        route_projections = self._route_projections(graph, x_layout)
-        if not x_layout.routes:
-            self.empty_notice.setPos(0.5, sum(self.plot.getViewBox().viewRange()[1]) / 2)
-            self.plot.addItem(self.empty_notice)
-        rendered = 0
-        for service in snapshot.services:
-            segments = build_route_instance_train_segments(service, route_projections, int(reference))
-            if not segments:
-                continue
-            color = settings.train_color(rendered)
-            for segment in segments:
-                self.plot.plot(
-                    [p.position for p in segment.planned],
-                    [p.time_seconds for p in segment.planned],
-                    pen=pg.mkPen(color, width=1, style=QtCore.Qt.PenStyle.DashLine),
-                )
-                self.plot.plot(
-                    [p.position for p in segment.projected],
-                    [p.time_seconds for p in segment.projected],
-                    pen=pg.mkPen(color, width=2),
-                )
-                label_point = segment.projected[len(segment.projected) // 2]
-                label = pg.TextItem(segment.label, color=color, anchor=(0, 1))
-                label.setPos(label_point.position, label_point.time_seconds)
-                self.plot.addItem(label)
-            rendered += 1
+        self._update_train_items(snapshot.services, settings, int(reference))
         if self._initial_view:
             self.show_route()
             self.plot.setYRange(minimum, maximum, padding=0)
@@ -212,7 +213,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
             self._apply_live_follow()
         if not self.live_follow.isChecked():
             self._clamp_y_range()
-        self._render_decorations()
+        self._update_y_dependent_decorations()
+        self._update_live_items()
 
     def center_now(self) -> None:
         value = self._now_value
@@ -230,38 +232,147 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._last_trace_signature = None
 
     def _y_range_changed(self, *_args) -> None:
-        self._render_decorations()
+        self._update_y_dependent_decorations()
 
-    def _render_decorations(self) -> None:
-        for item in self._decoration_items:
-            try:
-                self.plot.removeItem(item)
-            except RuntimeError:
-                pass
-        self._decoration_items = []
-        if not self._x_layout.routes:
-            return
-        start, end = self.plot.getViewBox().viewRange()[1]
-        axis_height = max(1.0, self.plot.getViewBox().height())
-        tick_levels = self.plot.getAxis("left").tickValues(start, end, axis_height)
-        ticks = tuple(tick_levels[0][1]) if tick_levels else ()
-        pens = {
-            "time_grid": pg.mkPen("#707070", width=1, style=QtCore.Qt.PenStyle.DotLine),
-            "station_grid": pg.mkPen("#555555", width=1),
-            "frame": pg.mkPen("#A0A0A0", width=2),
-        }
-        for segment in build_route_plot_segments(self._x_layout, start, end, ticks):
-            item = pg.PlotDataItem((segment.x1, segment.x2), (segment.y1, segment.y2),
-                                   pen=pens[segment.kind])
+    def _rebuild_static_items(self) -> None:
+        for item, _segment in self._static_items:
+            self.plot.removeItem(item)
+        self._static_items = []
+        for item in self._now_items:
+            self.plot.removeItem(item)
+        self._now_items = []
+        segments = build_route_plot_segments(self._x_layout, 0, 1, ())
+        pens = {"station_grid": pg.mkPen("#555555", width=1),
+                "frame": pg.mkPen("#A0A0A0", width=2)}
+        for segment in segments:
+            item = pg.PlotDataItem(pen=pens[segment.kind])
             item.setZValue(5 if segment.kind == "frame" else -10)
             self.plot.addItem(item, ignoreBounds=True)
-            self._decoration_items.append(item)
+            self._static_items.append((item, segment))
         for route in self._x_layout.routes:
-            now = pg.PlotDataItem((route.start_x, route.end_x), (self._now_value, self._now_value),
-                                  pen=pg.mkPen("#D32F2F", width=2))
-            now.setZValue(20)
-            self.plot.addItem(now, ignoreBounds=True)
-            self._decoration_items.append(now)
+            item = pg.PlotDataItem(pen=pg.mkPen("#D32F2F", width=2))
+            item.setZValue(20)
+            self.plot.addItem(item, ignoreBounds=True)
+            self._now_items.append(item)
+        if self._x_layout.routes:
+            if self.empty_notice.scene() is not None:
+                self.plot.removeItem(self.empty_notice)
+        elif self.empty_notice.scene() is None:
+            self.plot.addItem(self.empty_notice)
+        self._grid_signature = None
+
+    def _update_y_dependent_decorations(self) -> None:
+        start, end = self.plot.getViewBox().viewRange()[1]
+        for item, segment in self._static_items:
+            if segment.kind == "station_grid":
+                item.setData((segment.x1, segment.x2), (start, end))
+            elif segment.y1 == segment.y2:
+                y = start if segment.y1 == 0 else end
+                item.setData((segment.x1, segment.x2), (y, y))
+            else:
+                item.setData((segment.x1, segment.x2), (start, end))
+        grid = build_time_grid(start, end)
+        signature = (tuple((line.time, line.kind) for line in grid),
+                     tuple(route.instance_id for route in self._x_layout.routes))
+        if signature != self._grid_signature:
+            self._grid_signature = signature
+            for item in self._grid_items:
+                self.plot.removeItem(item)
+            self._grid_items = []
+            pens = {
+                "grid_five_minute": pg.mkPen("#606060", width=0.7, style=QtCore.Qt.PenStyle.DotLine),
+                "grid_quarter_hour": pg.mkPen("#707070", width=1.0),
+                "grid_full_hour": pg.mkPen("#858585", width=1.6),
+            }
+            for segment in build_route_plot_segments(self._x_layout, start, end, grid):
+                if not segment.kind.startswith("grid_"):
+                    continue
+                item = pg.PlotDataItem((segment.x1, segment.x2), (segment.y1, segment.y2),
+                                       pen=pens[segment.kind])
+                item.setZValue(-10)
+                self.plot.addItem(item, ignoreBounds=True)
+                self._grid_items.append(item)
+        self._update_time_axis_ticks(start, end)
+
+    def _update_time_axis_ticks(self, start: float, end: float) -> None:
+        metrics = QtGui.QFontMetrics(self.font())
+        interval = choose_time_tick_interval(
+            end - start, self.plot.getViewBox().height(), metrics.height())
+        ticks = build_time_axis_ticks(start, end, interval)
+        signature = (interval, ticks)
+        if signature == self._time_tick_signature:
+            return
+        self._time_tick_signature = signature
+        values = [(value, format_axis_time(value, False)) for value in ticks]
+        self.left_time_axis.setTicks([values])
+        self.right_time_axis.setTicks([values])
+
+    def _update_live_items(self) -> None:
+        if not self._x_layout.routes:
+            self.empty_notice.setPos(0.5, sum(self.plot.getViewBox().viewRange()[1]) / 2)
+        for item, route in zip(self._now_items, self._x_layout.routes):
+            item.setData((route.start_x, route.end_x), (self._now_value, self._now_value))
+
+    def _update_train_items(self, services, settings, reference: int) -> None:
+        rendered = 0
+        seen_zids = set()
+        for service in services:
+            seen_zids.add(service.zid)
+            color = settings.train_color(rendered)
+            service_signature = (
+                self._x_source_signature, color, service.current_delay,
+                getattr(service, "origin", None), getattr(service, "destination", None),
+                tuple((p.planned_name, p.planned_arrival, p.planned_departure)
+                      for p in service.original_schedule),
+            )
+            if self._service_render_signatures.get(service.zid) == service_signature:
+                rendered += int(self._service_had_segments.get(service.zid, False))
+                continue
+            self._service_render_signatures[service.zid] = service_signature
+            segments = build_route_instance_train_segments(
+                service, self._route_projections_cache, reference)
+            self._service_had_segments[service.zid] = bool(segments)
+            active = set()
+            for segment in segments:
+                for kind, points, pen in (
+                    ("planned", segment.planned,
+                     pg.mkPen(color, width=1, style=QtCore.Qt.PenStyle.DashLine)),
+                    ("projected", segment.projected, pg.mkPen(color, width=2)),
+                ):
+                    key = (segment.zid, segment.instance_id, kind)
+                    active.add(key)
+                    item = self._train_items.get(key)
+                    if item is None:
+                        item = pg.PlotDataItem()
+                        self.plot.addItem(item)
+                        self._train_items[key] = item
+                    item.setData([p.position for p in points], [p.time_seconds for p in points], pen=pen)
+                label_key = (segment.zid, segment.instance_id)
+                active.add((*label_key, "label"))
+                label = self._train_labels.get(label_key)
+                if label is None:
+                    label = pg.TextItem(color=color, anchor=(0, 1))
+                    self.plot.addItem(label)
+                    self._train_labels[label_key] = label
+                label.setText(segment.label, color=color)
+                point = segment.projected[len(segment.projected) // 2]
+                label.setPos(point.position, point.time_seconds)
+            rendered += int(bool(segments))
+            for key in tuple(self._train_items):
+                if key[0] == service.zid and key not in active:
+                    self.plot.removeItem(self._train_items.pop(key))
+            for key in tuple(self._train_labels):
+                if key[0] == service.zid and (*key, "label") not in active:
+                    self.plot.removeItem(self._train_labels.pop(key))
+        for zid in set(self._service_render_signatures) - seen_zids:
+            self._service_render_signatures.pop(zid, None)
+            self._service_had_segments.pop(zid, None)
+        for key in tuple(self._train_items):
+            if key[0] not in seen_zids:
+                self.plot.removeItem(self._train_items.pop(key))
+        for key in tuple(self._train_labels):
+            if key[0] not in seen_zids:
+                self.plot.removeItem(self._train_labels.pop(key))
 
     def _update_station_header(self) -> None:
         font = self.station_header.font()
@@ -319,14 +430,17 @@ class BildfahrplanTab(QtWidgets.QWidget):
         start, end = clamp_time_range(
             *self.plot.getViewBox().viewRange()[1], reference=self._now_value,
         )
-        self.plot.setYRange(start, end, padding=0)
+        current = self.plot.getViewBox().viewRange()[1]
+        if abs(current[0] - start) > 0.001 or abs(current[1] - end) > 0.001:
+            self.plot.setYRange(start, end, padding=0)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
         self.show_route()
         super().resizeEvent(event)
         self._station_header_signature = None
         self._update_station_header()
-        self._render_decorations()
+        self._update_live_items()
+        self._update_y_dependent_decorations()
 
     def changeEvent(self, event) -> None:  # noqa: N802 - Qt API
         super().changeEvent(event)

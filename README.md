@@ -36,6 +36,12 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
+Ein normaler Live-Start beginnt immer mit leerem Collector-Betriebszustand und
+übernimmt keine Züge, Fahrpläne, Ereignisse oder Simzeit aus der vorherigen
+Sitzung. `--state DATEI.json` bleibt als ausdrücklich gewählter Offline-
+Diagnosemodus erhalten. Benutzer-, Orts-, Topologie-, Strecken- und
+Kilometrierungskonfigurationen sind davon nicht betroffen.
+
 ## Visueller Streckengraph-Editor V0.4.0
 
 Der Tab **Strecke** enthält nun einen auf `QGraphicsScene` und
@@ -112,6 +118,15 @@ deshalb in beiden benachbarten Boxen erscheinen, während die getrennten
 Polylines niemals den visuellen Gap überbrücken. Die Modellliste der
 Bildfahrplaninstanzen ist zugleich die autoritative Links-nach-rechts-Reihenfolge;
 `order` wird daraus nur für die Persistenz synchronisiert.
+
+Der sekündliche Live-Tick verwendet stabile Plotobjekte und aktualisiert im
+Normalfall nur Jetzt-Linie und gegebenenfalls Live-Follow-Range. X-Layout,
+Stationsheader und Zugprojektionen werden über getrennte Signaturen nur bei
+fachlichen Änderungen neu berechnet. Das Zeitraster bleibt pro RouteBox
+segmentiert: fünfminütlich dezent gepunktet, viertelstündlich durchgezogen und
+zur vollen Stunde stärker. Beide äußeren Zeitachsen verwenden dieselbe
+pixelabhängig gewählte Tickfolge: bevorzugt fünf Minuten, bei starkem Zoom eine
+Minute und bei weitem Zoom eine gröbere Stufe.
 
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.

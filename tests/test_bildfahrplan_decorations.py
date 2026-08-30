@@ -5,7 +5,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from bildfahrplan.decorations import build_route_plot_segments, build_station_header_layout
+from bildfahrplan.decorations import (
+    build_route_plot_segments, build_station_header_layout, build_time_axis_ticks,
+    build_time_grid, choose_time_tick_interval,
+)
 from bildfahrplan.x_axis import build_bildfahrplan_x_axis
 from infrastructure.editable_topology import (
     BildfahrplanRouteInstance, DefinedRoute, EditableTopologyGraph, TopologyNode,
@@ -95,6 +98,41 @@ class DecorationTests(unittest.TestCase):
         first_route = header.routes[0]
         self.assertEqual(first_route.labels[0].anchor_x, 0)
         self.assertEqual(first_route.labels[-1].anchor_x, 1)
+
+    def test_time_grid_classifies_five_quarter_and_full_hour_once(self):
+        start, end = 12 * 3600, 12 * 3600 + 31 * 60
+        grid = build_time_grid(start, end)
+        self.assertEqual([(int(item.time), item.kind) for item in grid], [
+            (12 * 3600, "full_hour"),
+            (12 * 3600 + 5 * 60, "five_minute"),
+            (12 * 3600 + 10 * 60, "five_minute"),
+            (12 * 3600 + 15 * 60, "quarter_hour"),
+            (12 * 3600 + 20 * 60, "five_minute"),
+            (12 * 3600 + 25 * 60, "five_minute"),
+            (12 * 3600 + 30 * 60, "quarter_hour"),
+        ])
+        self.assertEqual(len({item.time for item in grid}), len(grid))
+
+    def test_time_grid_crosses_hours_and_stays_inside_route_boxes(self):
+        grid = build_time_grid(12 * 3600 + 45 * 60, 13 * 3600 + 5 * 60)
+        self.assertEqual([item.kind for item in grid],
+                         ["quarter_hour", "five_minute", "five_minute", "full_hour", "five_minute"])
+        layout = build_bildfahrplan_x_axis(two_routes())
+        segments = build_route_plot_segments(layout, grid[0].time, grid[-1].time, grid)
+        for segment in (item for item in segments if item.kind.startswith("grid_")):
+            route = next(item for item in layout.routes if item.instance_id == segment.instance_id)
+            self.assertGreaterEqual(segment.x1, route.start_x)
+            self.assertLessEqual(segment.x2, route.end_x)
+
+    def test_tick_interval_is_pixel_based_and_shared_ticks_are_deterministic(self):
+        self.assertEqual(choose_time_tick_interval(20 * 60, 500, 14), 1)
+        self.assertEqual(choose_time_tick_interval(120 * 60, 500, 14), 5)
+        self.assertEqual(choose_time_tick_interval(16 * 3600, 500, 14), 60)
+        ticks = build_time_axis_ticks(12 * 3600 + 17, 12 * 3600 + 16 * 60, 5)
+        self.assertEqual(ticks, (12 * 3600 + 5 * 60, 12 * 3600 + 10 * 60,
+                                 12 * 3600 + 15 * 60))
+        # 1-Minuten-Achsenticks ändern die unabhängige 5-Minuten-Gridfolge nicht.
+        self.assertEqual(len(build_time_grid(12 * 3600, 12 * 3600 + 10 * 60)), 3)
 
 
 if __name__ == "__main__":
