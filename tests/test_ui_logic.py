@@ -10,6 +10,7 @@ from app.simtime import SimTimeInterpolator
 from bildfahrplan.navigation import (
     ROUTE_AXIS_POSITION, TIME_MAX, TIME_MIN, X_INTERACTION_ENABLED, Y_INTERACTION_ENABLED,
     centered_time_range, clamp_time_range, time_bounds,
+    live_follow_time_range,
 )
 from infrastructure import entry_points_from_raw_graph
 
@@ -49,11 +50,43 @@ class UiLogicTests(unittest.TestCase):
         self.assertEqual(clamp_time_range(20 * 3600, 22 * 3600), (19 * 3600, TIME_MAX))
         self.assertEqual(time_bounds(86400 + 12 * 3600), (86400 + TIME_MIN, 86400 + TIME_MAX))
 
+    def test_route_axis_has_no_relative_position_heading(self):
+        tab = (ROOT / "src/app/tabs/bildfahrplan_tab.py").read_text(encoding="utf-8")
+        self.assertNotIn('setLabel("top", "Strecke (relative Position)")', tab)
+
+    def test_station_header_is_not_recomputed_on_time_only_fast_refresh(self):
+        tab = (ROOT / "src/app/tabs/bildfahrplan_tab.py").read_text(encoding="utf-8")
+        fast_path = tab.split("if trace_signature == self._last_trace_signature:", 1)[1].split(
+            "self._last_trace_signature = trace_signature", 1)[0]
+        self.assertNotIn("_update_station_header", fast_path)
+        self.assertNotIn("_update_train_items", fast_path)
+        self.assertNotIn("build_bildfahrplan_x_axis", fast_path)
+        self.assertIn("_update_live_items", fast_path)
+
     def test_center_preserves_zoom_span_and_clamps(self):
         self.assertEqual(centered_time_range(8 * 3600, (8 * 3600, 10 * 3600)),
                          (7 * 3600, 9 * 3600))
         self.assertEqual(centered_time_range(5 * 3600, (8 * 3600, 10 * 3600)),
                          (TIME_MIN, 7 * 3600))
+
+    def test_live_follow_positions_now_without_changing_duration(self):
+        self.assertEqual(live_follow_time_range(500, (0, 100), 0), (500, 600))
+        self.assertEqual(live_follow_time_range(500, (0, 100), 25), (475, 575))
+        self.assertEqual(live_follow_time_range(500, (0, 100), 50), (450, 550))
+        self.assertEqual(live_follow_time_range(500, (0, 100), 100), (400, 500))
+        self.assertEqual(live_follow_time_range(500, (0, 200), 25), (450, 650))
+        with self.assertRaises(ValueError):
+            live_follow_time_range(500, (0, 100), -1)
+
+    def test_live_follow_final_ranges_for_two_hour_view(self):
+        now = 12 * 3600
+        duration = 120 * 60
+        self.assertEqual(live_follow_time_range(now, (0, duration), 0),
+                         (now, now + duration))
+        self.assertEqual(live_follow_time_range(now, (0, duration), 50),
+                         (now - 3600, now + 3600))
+        self.assertEqual(live_follow_time_range(now, (0, duration), 100),
+                         (now - duration, now))
 
     def test_simtime_interpolates_resynchronizes_and_freezes_disconnected(self):
         now = [100.0]

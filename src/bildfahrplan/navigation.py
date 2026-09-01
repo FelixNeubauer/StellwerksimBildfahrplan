@@ -22,3 +22,12 @@ def clamp_time_range(start: float, end: float, reference: float = 0) -> tuple[fl
 def centered_time_range(now: float, current: tuple[float, float]) -> tuple[float, float]:
     span = current[1] - current[0]
     return clamp_time_range(now - span / 2, now + span / 2, now)
+
+
+def live_follow_time_range(now: float, current: tuple[float, float], percent: int) -> tuple[float, float]:
+    """Erhält die Zoomdauer und setzt ``now`` an die gewünschte relative Höhe."""
+    if not 0 <= percent <= 100:
+        raise ValueError("Die Live-Position muss zwischen 0 und 100 liegen.")
+    span = current[1] - current[0]
+    start = now - span * percent / 100
+    return start, start + span

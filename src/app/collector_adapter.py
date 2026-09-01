@@ -39,7 +39,10 @@ class CollectorAdapter:
 
     def __init__(self, state_path: str | Path, offline: bool = False) -> None:
         self._lock = threading.RLock()
-        self.collector = STSLiveCollector(state_path)
+        # Ein normaler Live-Start ist eine neue Betriebssitzung. Der optionale
+        # persistierte Diagnose-State wird ausschließlich im expliziten
+        # Offline-Modus restauriert und sonst weder geladen noch fortgeschrieben.
+        self.collector = STSLiveCollector(state_path if offline else None)
         self.offline = offline
         self.status = "Offline-State geladen" if offline else "Bereit"
         self._events: queue.Queue[ClientEvent | None] = queue.Queue()
