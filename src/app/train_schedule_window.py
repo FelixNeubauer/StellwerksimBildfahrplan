@@ -16,7 +16,12 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         self.summary = QtWidgets.QLabel()
         self.summary.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
+        self.route = QtWidgets.QLabel()
+        self.route.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self.route.setWordWrap(True)
+        layout.addWidget(self.route)
         self.notices = QtWidgets.QLabel()
         self.notices.setWordWrap(True)
         layout.addWidget(self.notices)
@@ -43,9 +48,12 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         self._signature = model.signature
         self.zid = model.zid
         self.setWindowTitle(f"Fahrplan – {model.train_name}")
-        delay = "" if model.delay is None else f" · Verspätung: {model.delay:+d} min"
+        delay = "" if model.delay is None else f"\nVerspätung: {model.delay:+d} min"
         status = "" if model.in_current_snapshot else "\nZug nicht mehr im aktuellen Stellwerk"
-        self.summary.setText(f"{model.train_name} · {model.origin or '–'} → {model.destination or '–'}{delay}{status}")
+        self.summary.setText(
+            f"Zug: {model.train_name}\nVon: {model.origin or '–'}\nNach: {model.destination or '–'}"
+            f"{delay}{status}")
+        self.route.setText("Laufweg:\n" + (" – ".join(model.route_points) or "–"))
         self.notices.setText("Allgemeine Hinweise: " + "\n".join(model.common_notices) if model.common_notices else "")
         self.notices.setVisible(bool(model.common_notices))
         if structure_changed:

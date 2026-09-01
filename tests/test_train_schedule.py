@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from bildfahrplan.train_hits import line_hit_candidates, prefer_label
 from bildfahrplan.train_schedule import (
-    build_train_schedule_view_model, format_schedule_flags, remaining_indices,
+    build_route_points, build_train_schedule_view_model, format_schedule_flags, remaining_indices,
     sequential_group_indices,
 )
 
@@ -47,6 +47,34 @@ def test_common_and_individual_notices_are_separated_conservatively():
         point("A"), point("B", notice="Lokwechsel"), point("C")]))
     assert individual.common_notices == ()
     assert [row.notice for row in individual.rows] == ["", "Lokwechsel", ""]
+
+
+def test_completed_stop_keeps_notice_from_original_schedule():
+    original = [point("A", notice="  Hinweis A\nzweite Zeile  "), point("B"), point("C")]
+    model = build_train_schedule_view_model(service(original, original[1:]))
+    assert model.rows[0].completed is True
+    assert model.rows[0].notice == "  Hinweis A\nzweite Zeile  "
+
+
+def test_route_uses_operating_points_and_only_deduplicates_consecutive_points():
+    original = [
+        point("TBL 3", operating_point="TBL"),
+        point("TSK 504", operating_point="TSK"),
+        point("TSK 580", operating_point="TSK"),
+        point("TSK 505", operating_point="TSK"),
+        point("TALL", operating_point="TALL"),
+        point("TEH 3", operating_point="TEH"),
+    ]
+    model = build_train_schedule_view_model(service(original))
+    assert model.route_points == ("Aalen", "TBL", "TSK", "TALL", "TEH", "Ulm Hbf")
+    assert build_route_points(("A", "B", "B", "C", "A")) == ("A", "B", "C", "A")
+
+
+def test_route_adds_origin_and_destination_without_boundary_duplicates():
+    assert build_route_points(("TKS", "TIT", "THD"), "Aalen", "Ulm Hbf") == (
+        "Aalen", "TKS", "TIT", "THD", "Ulm Hbf")
+    assert build_route_points(("Aalen", "TKS", "Ulm Hbf"), "Aalen", "Ulm Hbf") == (
+        "Aalen", "TKS", "Ulm Hbf")
 
 
 def test_flags_have_german_labels_and_unknown_data_survives():

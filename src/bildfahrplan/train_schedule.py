@@ -30,6 +30,7 @@ class TrainScheduleViewModel:
     origin: str
     destination: str
     delay: int | None
+    route_points: tuple[str, ...]
     common_notices: tuple[str, ...]
     rows: tuple[TrainScheduleRow, ...]
     in_current_snapshot: bool
@@ -37,7 +38,7 @@ class TrainScheduleViewModel:
     @property
     def signature(self) -> tuple[object, ...]:
         return (self.train_name, self.origin, self.destination, self.delay,
-                self.common_notices, self.rows, self.in_current_snapshot)
+                self.route_points, self.common_notices, self.rows, self.in_current_snapshot)
 
 
 # Nur fachlich im Handbuch bzw. durch die STS-Fahrplanattribute belegte Codes
@@ -88,6 +89,18 @@ def sequential_group_indices(operating_points: Iterable[str]) -> tuple[int, ...]
     return tuple(result)
 
 
+def build_route_points(
+    operating_points: Iterable[str], origin: str = "", destination: str = "",
+) -> tuple[str, ...]:
+    """Bildet den Laufweg ohne globale Deduplizierung aus belastbaren Namen."""
+    result: list[str] = []
+    for value in (origin, *operating_points, destination):
+        point = str(value or "").strip()
+        if point and (not result or point.casefold() != result[-1].casefold()):
+            result.append(point)
+    return tuple(result)
+
+
 def _identity(point: object) -> tuple[str, str | None, str | None]:
     return (str(getattr(point, "planned_name", None) or getattr(point, "raw_name", "")),
             getattr(point, "planned_arrival", None), getattr(point, "planned_departure", None))
@@ -133,7 +146,7 @@ def build_train_schedule_view_model(
     original = tuple(getattr(service, "original_schedule", ()))
     current = tuple(getattr(service, "current_schedule", ())) if in_current_snapshot else ()
     active = remaining_indices(original, current)
-    notices = tuple((str(getattr(point, "hint_text", "") or "").strip()) for point in original)
+    notices = tuple(str(getattr(point, "hint_text", "") or "") for point in original)
     nonempty = tuple(notice for notice in notices if notice)
     common = (nonempty[0],) if original and len(nonempty) == len(original) and len(set(nonempty)) == 1 else ()
     ops = []
@@ -144,6 +157,9 @@ def build_train_schedule_view_model(
             mapped = operating_point_for(raw, point)
         ops.append(str(mapped or raw))
     groups = sequential_group_indices(ops)
+    origin = str(getattr(service, "origin", "") or "")
+    destination = str(getattr(service, "destination", "") or "")
+    route_points = build_route_points(ops, origin, destination)
     rows = tuple(TrainScheduleRow(
         index, ops[index],
         str(getattr(point, "planned_name", None) or getattr(point, "raw_name", "")),
@@ -154,6 +170,6 @@ def build_train_schedule_view_model(
     ) for index, point in enumerate(original))
     return TrainScheduleViewModel(
         int(getattr(service, "zid")), str(getattr(service, "name", "")),
-        str(getattr(service, "origin", "") or ""), str(getattr(service, "destination", "") or ""),
-        getattr(service, "current_delay", None), common, rows, in_current_snapshot,
+        origin, destination, getattr(service, "current_delay", None), route_points,
+        common, rows, in_current_snapshot,
     )
