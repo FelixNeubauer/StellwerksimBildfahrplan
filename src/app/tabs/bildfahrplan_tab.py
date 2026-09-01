@@ -23,6 +23,9 @@ from bildfahrplan.decorations import (
     place_overlay_labels,
 )
 from app.settings import ApplicationSettings
+from app.train_schedule_window import TrainScheduleWindow
+from bildfahrplan.train_hits import line_hit_candidates, prefer_label
+from bildfahrplan.train_schedule import build_train_schedule_view_model
 
 
 class TimeAxis(pg.AxisItem):
@@ -101,6 +104,9 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._now_value = 0.0
         self._initial_view = True
         self._last_trace_signature = None
+        self._latest_services = {}
+        self._known_services = {}
+        self.open_train_windows = {}
         controls = QtWidgets.QHBoxLayout()
         controls.addWidget(QtWidgets.QLabel(f"Streckenprofil: {profile.name}"))
         controls.addStretch()
@@ -149,9 +155,13 @@ class BildfahrplanTab(QtWidgets.QWidget):
         layout.addWidget(self.station_header)
         layout.addWidget(self.plot)
         self.plot.getViewBox().sigYRangeChanged.connect(self._y_range_changed)
+        self.plot.scene().sigMouseClicked.connect(self._plot_clicked)
 
     @QtCore.Slot(object)
     def refresh(self, snapshot) -> None:
+        self._latest_services = {service.zid: service for service in snapshot.services}
+        self._known_services.update(self._latest_services)
+        self._refresh_train_windows()
         # Die 1-Hz-Uhr aktualisiert primaer nur Zeitlinie und Statusanzeige.
         reference = snapshot.display_simtime
         if reference is None:
@@ -448,6 +458,91 @@ class BildfahrplanTab(QtWidgets.QWidget):
             item.setVisible(placement is not None)
             if placement is not None:
                 item.textItem.setPos(placement.offset_x, placement.offset_y)
+
+    def _plot_clicked(self, event) -> None:
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
+            return
+        scene_position = event.scenePos()
+        if not self.plot.sceneBoundingRect().contains(scene_position):
+            return
+        label_zid = None
+        # Nur sichtbare, collision-aware platzierte Zuglabels sind starke Treffer.
+        for key, item in self._train_labels.items():
+            if len(key) == 3 and key[2] == "train" and item.isVisible() \
+                    and item.sceneBoundingRect().contains(scene_position):
+                label_zid = key[0]
+                break
+        lines = []
+        for key, item in self._train_items.items():
+            if not item.isVisible():
+                continue
+            x_values, y_values = item.getData()
+            scene_points = [self.plot.getViewBox().mapViewToScene(QtCore.QPointF(float(x), float(y)))
+                            for x, y in zip(x_values, y_values)]
+            service = self._latest_services.get(key[0])
+            name = getattr(service, "name", str(key[0]))
+            lines.append((key[0], name, ((point.x(), point.y()) for point in scene_points)))
+        candidates = prefer_label(line_hit_candidates(
+            (scene_position.x(), scene_position.y()), lines), label_zid)
+        if not candidates:
+            return
+        event.accept()
+        if len(candidates) == 1:
+            self.open_train_schedule(candidates[0].zid)
+            return
+        menu = QtWidgets.QMenu("Zug auswählen", self)
+        for candidate in candidates:
+            service = self._latest_services.get(candidate.zid)
+            route = ""
+            if service is not None and (getattr(service, "origin", None) or getattr(service, "destination", None)):
+                route = f"   {getattr(service, 'origin', '') or '–'} → {getattr(service, 'destination', '') or '–'}"
+            action = menu.addAction(f"{candidate.train_name}{route}")
+            action.triggered.connect(lambda _checked=False, zid=candidate.zid: self.open_train_schedule(zid))
+        menu.popup(event.screenPos().toPoint())
+
+    def _operating_point_for(self, raw_name: str, _point: object) -> str | None:
+        graph = self._graph_provider()
+        if graph is None:
+            return None
+        for node in graph.nodes.values():
+            names = (*node.metadata.get("raw_names", ()),
+                     *node.metadata.get("target_raw_members", ()))
+            if raw_name in names:
+                return node.display_name
+        return None
+
+    def open_train_schedule(self, zid: int) -> None:
+        service = self._latest_services.get(zid)
+        if service is None:
+            return
+        model = build_train_schedule_view_model(
+            service, self._operating_point_for,
+            in_current_snapshot=getattr(service, "status", "active") != "inactive_unknown")
+        window = self.open_train_windows.get(zid)
+        if window is None:
+            window = TrainScheduleWindow(model, self.window())
+            window.closed.connect(self._train_window_closed)
+            self.open_train_windows[zid] = window
+            window.show()
+        else:
+            window.update_view_model(model)
+            window.showNormal()
+        window.raise_()
+        window.activateWindow()
+
+    def _refresh_train_windows(self) -> None:
+        for zid, window in tuple(self.open_train_windows.items()):
+            service = self._known_services.get(zid)
+            if service is None:
+                continue
+            window.update_view_model(build_train_schedule_view_model(
+                service, self._operating_point_for,
+                in_current_snapshot=(zid in self._latest_services and
+                                     getattr(service, "status", "active") != "inactive_unknown")))
+
+    @QtCore.Slot(int)
+    def _train_window_closed(self, zid: int) -> None:
+        self.open_train_windows.pop(zid, None)
 
     def _update_station_header(self) -> None:
         font = self.station_header.font()
