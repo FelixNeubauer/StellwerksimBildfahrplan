@@ -36,12 +36,6 @@ Ein anderes explizites Streckenprofil wird mit `--profile DATEI.json` gewählt.
 Nur Namen aus `raw_names` werden zugeordnet. Unbekannte Namen werden ausgelassen;
 es gibt insbesondere keine automatische Interpretation von Gleis-Suffixen.
 
-Ein normaler Live-Start beginnt immer mit leerem Collector-Betriebszustand und
-übernimmt keine Züge, Fahrpläne, Ereignisse oder Simzeit aus der vorherigen
-Sitzung. `--state DATEI.json` bleibt als ausdrücklich gewählter Offline-
-Diagnosemodus erhalten. Benutzer-, Orts-, Topologie-, Strecken- und
-Kilometrierungskonfigurationen sind davon nicht betroffen.
-
 ## Visueller Streckengraph-Editor V0.4.0
 
 Der Tab **Strecke** enthält nun einen auf `QGraphicsScene` und
@@ -73,85 +67,9 @@ Graphkomponenten verwendet werden.
 Graph, Strecken, Layout und Bildfahrplan-Reihenfolge werden gemeinsam atomar mit
 AID, Stellwerkname, Artefakttyp, Schema-Version und Speicherzeit gespeichert.
 Änderungen werden nach 30 Sekunden, beim Verlassen des Tabs und beim Beenden
-gesichert. Der Bildfahrplan-Tab übernimmt die gespeicherten Streckeninstanzen in
-ihrer konfigurierten Reihenfolge. Ihre Kilometerdifferenzen bestimmen die
-relativen Stationsabstände; mehrere Instanzen teilen sich die normierte Breite
-proportional zu ihrer Streckenlänge und bleiben durch kleine Darstellungslücken
-getrennt. Die Zeitachse wird an beiden äußeren Seiten derselben Plotfläche
-angezeigt.
-
-Jede konfigurierte Instanz besitzt einen eigenen Rahmen; Zeit- und
-Stationshilfslinien enden an diesem Rahmen, sodass die Darstellungslücken frei
-bleiben. Die sichtbare Liste im Tab **Strecke** ist unmittelbar auch die
-Links-nach-rechts-Reihenfolge im Bildfahrplan. Die äußeren Endpunkte werden mit
-nach innen ausgerichteten Beschriftungen direkt auf den Rahmenpositionen
-angezeigt.
-
-Unter **Einstellungen → Zugdarstellung** kann zwischen der bisherigen bunten
-Palette und einer gemeinsamen Zugfarbe gewechselt werden. Standard ist
-`#D0D0D0`; Modus und Farbe werden in `config/settings.json` gespeichert. Im
-Bildfahrplan hält **Live mitbewegen** die interpolierte Simulationszeit optional
-an einer gespeicherten Position zwischen 0 und 100 Prozent der sichtbaren
-Zeitspanne. Der Live-Schalter selbst startet nach jedem Programmstart bewusst
-ausgeschaltet.
-
-Die Stationsnamen werden ohne zusätzliche Achsenüberschrift oberhalb der
-jeweiligen Route-Box gezeichnet. Stimmen die unveränderten Zugdetailfelder
-`von` beziehungsweise `nach` exakt mit einer konfigurierten äußeren Einfahrt
-überein, verlängert der Bildfahrplan Plan- und Projektionspolyline bis zu diesem
-Randpunkt. Die Zeit dort ist ausdrücklich eine aus dem nächsten brauchbaren
-Fahrsegment extrapolierte Darstellungszeit und keine von StellwerkSim gelieferte
-Fahrplanzeit.
-
-Eine eigene responsive Kopfzeile reserviert oberhalb der Route-Boxen Platz für
-die Stationsnamen. Ihre tatsächlichen Schriftbreiten und Pixelpositionen
-entscheiden je Route, ob alle Namen horizontal oder um 90 Grad gedreht gezeigt
-werden. Die größte benötigte Höhe gilt gemeinsam für alle sichtbaren Routen;
-bei einer Fenstergrößenänderung wird die rein visuelle Entscheidung neu
-berechnet, ohne Stations-X-Positionen oder Kilometrierung anzutasten.
-
-Zugtrassen werden für jede sichtbare Bildfahrplan-Streckeninstanz separat aus
-der geordneten Folge ihrer explizit zugeordneten `raw_names` beziehungsweise
-`target_raw_members` aufgebaut. Ein Achsenpunkt ist dabei durch
-`(instance_id, node_id)` identifiziert. Gemeinsame Grenzbetriebsstellen dürfen
-deshalb in beiden benachbarten Boxen erscheinen, während die getrennten
-Polylines niemals den visuellen Gap überbrücken. Die Modellliste der
-Bildfahrplaninstanzen ist zugleich die autoritative Links-nach-rechts-Reihenfolge;
-`order` wird daraus nur für die Persistenz synchronisiert.
-
-Der sekündliche Live-Tick verwendet stabile Plotobjekte und aktualisiert im
-Normalfall nur Jetzt-Linie und gegebenenfalls Live-Follow-Range. X-Layout,
-Stationsheader und Zugprojektionen werden über getrennte Signaturen nur bei
-fachlichen Änderungen neu berechnet. Das Zeitraster bleibt pro RouteBox
-segmentiert: fünfminütlich dezent gepunktet, viertelstündlich durchgezogen und
-zur vollen Stunde stärker. Beide äußeren Zeitachsen verwenden dieselbe
-pixelabhängig gewählte Tickfolge: bevorzugt fünf Minuten, bei starkem Zoom eine
-Minute und bei weitem Zoom eine gröbere Stufe.
-
-Zug- und kleine zweistellige Ankunfts-/Abfahrts-Minutenlabels werden anhand
-ihrer tatsächlichen Pixelboxen kollisionsarm auf mehrere mögliche Seiten des
-Fahrplanpunkts verteilt. Wichtige Zuglabels haben Vorrang; wenn kein lesbarer
-Platz verbleibt, wird ein nachrangiges Minutenlabel bewusst ausgelassen.
-
-Der Farbmodus **Zuggattung** gruppiert die explizit gepflegten Kürzel in
-Nahverkehr, Fernverkehr, Güterverkehr, Rangierfahrten und Sonstiges; unbekannte
-Kürzel fallen immer unter Sonstiges. Kategorien besitzen editierbare Farben und
-wirken beim Ändern als Massenüberschreiben ihrer Gattungen. Anschließend können
-einzelne Gattungen wieder abweichend eingefärbt werden. Kategorie- und
-Gattungsfarben bleiben auch beim Wechsel zu Einfarbig oder Bunt in
-`config/settings.json` erhalten.
-
-Die mit dem STS-Handbuch abgeglichene Standardliste umfasst die deutschen
-Nah-, Fern-, Güter-, Rangier- und Sondergattungen; `RS` und `SAB` sind als
-projektspezifischer Nahverkehr ergänzt, `DGN` ist Güterverkehr und alle
-Schreibweisen von `Tfzf` gehören zu Sonstiges. Eigene Gattungen können gesucht,
-nach Kategorie gefiltert, hinzugefügt, umkategorisiert und wieder gelöscht werden.
-Sie werden samt Farbe in `config/settings.json` gespeichert. Die bunte Darstellung
-verwendet 20 Dark-Mode-taugliche Farben und weist neuen, auf derselben Route
-zeitlich und räumlich nahen Zügen per deterministischer OKLab-Farbdistanz möglichst
-unterschiedliche Farben zu. Bestehende ZID-Farben bleiben dabei stabil. Zugname,
-Plan-/Projektionslinie und Ankunfts-/Abfahrtsminuten verwenden stets dieselbe
-einmal aufgelöste Grundfarbe.
+gesichert. Der eigentliche Bildfahrplan-Tab verwendet in diesem Meilenstein noch
+das bisherige lineare `RouteProfile`; das neue persistente Modell bereitet seine
+spätere Umstellung vor.
 
 Jede Bildfahrplan-Streckeninstanz besitzt eine eigene Kilometrierung. Der
 Schalter **km…** öffnet den Editor in der gewählten Links-nach-rechts-Richtung.

@@ -696,9 +696,10 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.graph.normalize_instance_order(); self._mark_dirty(); self._refresh_instances()
 
     def _instances_reordered(self, parent, start, end, destination, row) -> None:
-        # rowsMoved liefert die Modellindizes zuverlässig; die QListWidget-
-        # Reihenfolge wird nicht als paralleler fachlicher State zurückgelesen.
-        self.graph.move_bildfahrplan_instances(start, end, row); self._mark_dirty()
+        ids = [self.bf_list.item(index).data(ID_ROLE) for index in range(self.bf_list.count())]
+        lookup = {item.instance_id: item for item in self.graph.bildfahrplan_routes}
+        self.graph.bildfahrplan_routes = [lookup[item_id] for item_id in ids]
+        self.graph.normalize_instance_order(); self._mark_dirty()
 
     def _search(self, text: str) -> None:
         needle = text.casefold().strip()

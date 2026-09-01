@@ -5,8 +5,6 @@ from .tabs.bildfahrplan_tab import BildfahrplanTab
 from .tabs.infrastructure_tab import InfrastructureTab
 from .tabs.operating_points_tab import OperatingPointsTab
 from .tabs.placeholders import PlaceholderTab
-from .tabs.settings_tab import SettingsTab
-from .settings import ApplicationSettingsStore
 from .collector_adapter import REPOSITORY_ROOT
 
 
@@ -17,20 +15,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("StellwerkSim Bildfahrplan V0.4.1")
         self.resize(1200, 760)
         self.tabs = QtWidgets.QTabWidget()
-        self.settings_store = ApplicationSettingsStore(REPOSITORY_ROOT / "config")
-        self.settings = SettingsTab(self.settings_store.load(), self.settings_store.save)
-        self.infrastructure = InfrastructureTab(REPOSITORY_ROOT / "config")
-        self.diagram = BildfahrplanTab(
-            adapter, profile, lambda: self.infrastructure.graph,
-            lambda: self.settings.settings, self.settings.set_live_follow_position,
-        )
-        self.settings.settingsChanged.connect(self.diagram.settings_changed)
+        self.diagram = BildfahrplanTab(adapter, profile)
         self.tabs.addTab(self.diagram, "Bildfahrplan")
         self.tabs.addTab(PlaceholderTab("Gleisbelegung – folgt in einer späteren Version"), "Gleisbelegung")
+        self.infrastructure = InfrastructureTab(REPOSITORY_ROOT / "config")
         self.infrastructure_index = self.tabs.addTab(self.infrastructure, "Strecke")
         self.operating_points = OperatingPointsTab(REPOSITORY_ROOT / "config")
         self.tabs.addTab(self.operating_points, "Gleise / Ortszuordnung")
-        self.tabs.addTab(self.settings, "Einstellungen")
+        self.tabs.addTab(PlaceholderTab("Allgemeine Einstellungen – folgen in einer späteren Version"), "Einstellungen")
         self._previous_tab = self.tabs.currentWidget()
         self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)

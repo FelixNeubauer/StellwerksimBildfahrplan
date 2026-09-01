@@ -363,14 +363,10 @@ class EditableTopologyGraph:
             route = DefinedRoute(**item); graph.defined_routes[route.route_id] = route
         graph.bildfahrplan_routes = [BildfahrplanRouteInstance(**item)
                                      for item in data.get("bildfahrplan_routes", [])]
-        # Beim Laden ist ``order`` die Legacy-/Persistenzquelle. Danach ist die
-        # Liste selbst autoritativ und normalize_instance_order sortiert nie.
-        graph.bildfahrplan_routes.sort(key=lambda item: item.order)
         graph.normalize_instance_order()
         return graph
 
     def to_dict(self) -> dict[str, Any]:
-        self.normalize_instance_order()
         return {
             "graph": {
                 "nodes": [asdict(item) for item in self.nodes.values()],
@@ -622,16 +618,8 @@ class EditableTopologyGraph:
         return item
 
     def normalize_instance_order(self) -> None:
-        """Synchronisiert das persistierte Feld mit der autoritativen Liste."""
+        self.bildfahrplan_routes.sort(key=lambda item: item.order)
         for order, item in enumerate(self.bildfahrplan_routes): item.order = order
-
-    def move_bildfahrplan_instances(self, start: int, end: int, destination_row: int) -> None:
-        """Übernimmt eine Qt-rowsMoved-Operation unmittelbar in die Modellliste."""
-        moved = self.bildfahrplan_routes[start:end + 1]
-        remaining = self.bildfahrplan_routes[:start] + self.bildfahrplan_routes[end + 1:]
-        insertion = destination_row - len(moved) if destination_row > end else destination_row
-        self.bildfahrplan_routes = remaining[:insertion] + moved + remaining[insertion:]
-        self.normalize_instance_order()
 
     def initialize_missing_kilometrages(self, estimator) -> int:
         """Ergänzt Legacy-Daten; ``estimator`` bleibt eine austauschbare Fachlogik."""
