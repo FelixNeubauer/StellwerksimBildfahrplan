@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from infrastructure import (
-    EditableTopologyGraph, EditableTopologyGraphStore, OperationalRouteEdge,
+    BildfahrplanRouteInstance, EditableTopologyGraph, EditableTopologyGraphStore, OperationalRouteEdge,
     OperationalRouteGraph, OperationalRouteNode, TopologySupplementCandidate,
     TopologyTarget, TopologyTargetRegistry,
     AssignableRawItem, EditableOperatingPoint, EntryPoint, OperatingPointAssignments,
@@ -452,6 +452,20 @@ class EditableTopologyTests(unittest.TestCase):
             store.save(7, "Test", regenerated)
             reloaded = EditableTopologyGraph.from_dict(store.load_path(store.path_for(7)))
             self.assertEqual(set(reloaded.nodes), {"A", "B", "C"})
+
+    def test_instance_move_updates_model_order_and_survives_roundtrip(self):
+        graph = EditableTopologyGraph()
+        graph.bildfahrplan_routes = [
+            BildfahrplanRouteInstance(name, name, "left", index)
+            for index, name in enumerate(("A", "B", "C"))
+        ]
+        # Qt meldet C -> ganz oben als start=end=2, destination_row=0.
+        graph.move_bildfahrplan_instances(2, 2, 0)
+        self.assertEqual([item.instance_id for item in graph.bildfahrplan_routes], ["C", "A", "B"])
+        self.assertEqual([item.order for item in graph.bildfahrplan_routes], [0, 1, 2])
+        restored = EditableTopologyGraph.from_dict(graph.to_dict())
+        self.assertEqual([item.instance_id for item in restored.bildfahrplan_routes], ["C", "A", "B"])
+        self.assertEqual([item.order for item in restored.bildfahrplan_routes], [0, 1, 2])
 
 
 if __name__ == "__main__":

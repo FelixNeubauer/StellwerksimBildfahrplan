@@ -9,8 +9,12 @@ sys.path.insert(0, str(ROOT / "Schnittstellentest"))
 
 from bildfahrplan.profile import OperatingPoint, RouteProfile
 from bildfahrplan.timeline import (
-    DISTANCE_AXIS, NOW_LINE_ANGLE, TIME_AXIS, build_trace, format_axis_time,
-    is_renderable_service, parse_clock, schedule_to_points, unwrap_time,
+    DISTANCE_AXIS, NOW_LINE_ANGLE, TIME_AXIS, BoundaryEndpoint, BoundaryRouteProjection,
+    RouteInstanceProjection, RouteInstanceProjectionPoint, build_colored_minute_event_labels,
+    build_minute_event_labels,
+    build_route_instance_train_segments, build_trace, extend_trace_to_boundaries,
+    format_axis_time, is_renderable_service,
+    parse_clock, schedule_to_points, unwrap_time,
 )
 from sts_collector import SchedulePoint
 
@@ -80,6 +84,178 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual([item.raw_name for item in trace.planned], ["A 1", "A 1"])
         self.assertEqual(trace.projected[0].time_seconds - trace.planned[0].time_seconds, 300)
         self.assertIn("+5", trace.label)
+
+    def test_minute_labels_use_two_digits_and_deduplicate_equal_times(self):
+        points = schedule_to_points(
+            [point("A 1", "18:09", "18:09"), point("B", "18:24", "18:25")],
+            self.profile, parse_clock("18:00"))
+        labels = build_minute_event_labels(points)
+        self.assertEqual([item.text for item in labels], ["09", "24", "25"])
+        self.assertEqual([item.kind for item in labels], ["arrival", "arrival", "departure"])
+
+    def test_minute_labels_use_the_single_resolved_train_color(self):
+        points = schedule_to_points([point("A 1", "18:09", "18:24")],
+                                    self.profile, parse_clock("18:00"))
+        for color in ("#123456", "#00BCD4", "#4FC3F7"):
+            labels = build_colored_minute_event_labels(points, color)
+            self.assertEqual({item.color for item in labels}, {color})
+
+    def test_exit_uses_adjacent_movement_slope_after_last_departure(self):
+        profile = RouteProfile("Exit", (
+            OperatingPoint("b", "B", 10, ("B",)),
+            OperatingPoint("c", "C", 20, ("C",)),
+        ))
+        service = SimpleNamespace(
+            zid=1, name="RE", service_kind="train", current_delay=2,
+            origin="intern", destination="Exit", original_schedule=[
+                point("B", departure="10:00"), point("C", "10:06", "10:08"),
+            ],
+        )
+        trace = extend_trace_to_boundaries(
+            service, build_trace(service, profile, parse_clock("10:00")),
+            (BoundaryRouteProjection("route", (10, 20, 25), (
+                BoundaryEndpoint("entry", 10, ("Entry",)),
+                BoundaryEndpoint("exit", 25, ("Exit",)),
+            )),),
+        )
+        self.assertEqual(trace.planned[-1].time_seconds, parse_clock("10:11"))
+        self.assertEqual(trace.projected[-1].time_seconds, parse_clock("10:13"))
+        self.assertEqual(trace.planned[-2].kind, "departure")
+        self.assertEqual(trace.planned[-1].source, "extrapolated_from_adjacent_segment")
+        self.assertEqual(trace.planned[-1].direction, "exit")
+
+    def test_entry_reaches_arrival_and_preserves_halt(self):
+        profile = RouteProfile("Entry", (
+            OperatingPoint("a", "A", 5, ("A",)),
+            OperatingPoint("b", "B", 15, ("B",)),
+        ))
+        service = SimpleNamespace(
+            zid=2, name="RB", service_kind="train", current_delay=0,
+            origin="Entry", destination="intern", original_schedule=[
+                point("A", "10:03", "10:05"), point("B", "10:11"),
+            ],
+        )
+        trace = extend_trace_to_boundaries(
+            service, build_trace(service, profile, parse_clock("10:00")),
+            (BoundaryRouteProjection("route", (0, 5, 15), (
+                BoundaryEndpoint("entry", 0, ("Entry",)),
+                BoundaryEndpoint("exit", 15, ("Exit",)),
+            )),),
+        )
+        self.assertEqual(trace.planned[0].time_seconds, parse_clock("10:00"))
+        self.assertEqual([item.kind for item in trace.planned[1:3]], ["arrival", "departure"])
+        self.assertEqual([item.time_seconds for item in trace.planned[1:3]],
+                         [parse_clock("10:03"), parse_clock("10:05")])
+
+    def test_boundary_projection_is_independent_of_display_direction(self):
+        service = SimpleNamespace(origin="Entry", destination="Exit")
+        points = (
+            # Fachliche Fahrtrichtung läuft hier von großem zu kleinem X.
+            self._plot_point("10:03", 15, "A", "arrival"),
+            self._plot_point("10:05", 15, "A", "departure"),
+            self._plot_point("10:11", 5, "B", "arrival"),
+            self._plot_point("10:12", 5, "B", "departure"),
+        )
+        from bildfahrplan.timeline import TrainTrace
+        trace = extend_trace_to_boundaries(service, TrainTrace(3, "Zug", points, points), (
+            BoundaryRouteProjection("reverse", (20, 15, 5, 0), (
+                BoundaryEndpoint("entry", 20, ("Entry",)),
+                BoundaryEndpoint("exit", 0, ("Exit",)),
+            )),
+        ))
+        self.assertEqual((trace.planned[0].position, trace.planned[-1].position), (20, 0))
+        self.assertEqual((trace.planned[0].time_seconds, trace.planned[-1].time_seconds),
+                         (parse_clock("10:00"), parse_clock("10:15")))
+
+    def test_one_inner_point_has_no_boundary_extrapolation(self):
+        service = SimpleNamespace(origin="Entry", destination=None)
+        from bildfahrplan.timeline import TrainTrace
+        points = (self._plot_point("10:03", 5, "A", "arrival"),)
+        trace = TrainTrace(4, "Zug", points, points)
+        extended = extend_trace_to_boundaries(service, trace, (
+            BoundaryRouteProjection("route", (0, 5), (
+                BoundaryEndpoint("entry", 0, ("Entry",)),
+                BoundaryEndpoint("exit", 5, ("Exit",)),
+            )),
+        ))
+        self.assertEqual(extended, trace)
+
+    def test_zero_distance_segment_uses_next_movement_segment(self):
+        service = SimpleNamespace(origin="Entry", destination=None)
+        from bildfahrplan.timeline import TrainTrace
+        points = (
+            self._plot_point("10:03", 5, "A", "arrival"),
+            self._plot_point("10:04", 5, "A", "departure"),
+            self._plot_point("10:05", 5, "B", "arrival"),
+            self._plot_point("10:06", 5, "B", "departure"),
+            self._plot_point("10:12", 15, "C", "arrival"),
+        )
+        trace = TrainTrace(5, "Zug", points, points)
+        extended = extend_trace_to_boundaries(service, trace, (
+            BoundaryRouteProjection("route", (0, 5, 15), (
+                BoundaryEndpoint("entry", 0, ("Entry",)),
+                BoundaryEndpoint("exit", 15, ("Exit",)),
+            )),
+        ))
+        self.assertEqual(extended.planned[0].time_seconds, parse_clock("10:00"))
+
+    def test_train_is_projected_per_instance_without_gap_connection(self):
+        service = SimpleNamespace(
+            zid=10, name="RE", service_kind="train", current_delay=0,
+            origin=None, destination=None, original_schedule=[
+                point("A", departure="10:00"), point("X", "10:05", "10:06"),
+                point("B", "10:11"),
+            ],
+        )
+        routes = (
+            self._instance_route("first", "r1", (("A", 0.0), ("X", 0.45))),
+            self._instance_route("second", "r2", (("X", 0.50), ("B", 1.0))),
+        )
+        segments = build_route_instance_train_segments(service, routes, parse_clock("10:00"))
+        self.assertEqual([segment.instance_id for segment in segments], ["first", "second"])
+        self.assertEqual([point.position for point in segments[0].planned], [0.0, 0.45, 0.45])
+        self.assertEqual([point.position for point in segments[1].planned], [0.50, 0.50, 1.0])
+        self.assertEqual(segments[0].planned[-2].time_seconds, segments[1].planned[0].time_seconds)
+        for segment, (start, end) in zip(segments, ((0.0, 0.45), (0.50, 1.0))):
+            for points in (segment.planned, segment.projected):
+                self.assertGreaterEqual(min(point.position for point in points), start)
+                self.assertLessEqual(max(point.position for point in points), end)
+                self.assertTrue(all(point.instance_id == segment.instance_id for point in points))
+
+    def test_shared_single_station_does_not_activate_unrelated_route(self):
+        route_a = self._instance_route("a", "ra", (("P", 0), ("Y", 1), ("Q", 2)))
+        route_b = self._instance_route("b", "rb", (("X", 3), ("Y", 4), ("Z", 5)))
+        service_a = SimpleNamespace(
+            zid=11, name="A", service_kind="train", current_delay=0,
+            origin=None, destination=None,
+            original_schedule=[point("P", departure="10:00"), point("Y", "10:05", "10:06"),
+                               point("Q", "10:10")],
+        )
+        service_b = SimpleNamespace(
+            zid=12, name="B", service_kind="train", current_delay=0,
+            origin=None, destination=None,
+            original_schedule=[point("X", departure="11:00"), point("Y", "11:05", "11:06"),
+                               point("Z", "11:10")],
+        )
+        self.assertEqual(
+            [item.instance_id for item in build_route_instance_train_segments(
+                service_a, (route_a, route_b), parse_clock("10:00"))], ["a"])
+        self.assertEqual(
+            [item.instance_id for item in build_route_instance_train_segments(
+                service_b, (route_a, route_b), parse_clock("11:00"))], ["b"])
+
+    @staticmethod
+    def _instance_route(instance_id, route_id, nodes):
+        return RouteInstanceProjection(
+            instance_id, route_id,
+            tuple(RouteInstanceProjectionPoint(
+                instance_id, route_id, name, x, name, (name,)) for name, x in nodes),
+        )
+
+    @staticmethod
+    def _plot_point(clock, position, raw_name, kind):
+        from bildfahrplan.timeline import PlotPoint
+        return PlotPoint(parse_clock(clock), position, raw_name, kind)
 
 
 if __name__ == "__main__":
