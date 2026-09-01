@@ -18,23 +18,16 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         self.summary.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
-        self.route = QtWidgets.QLabel()
-        self.route.setTextFormat(QtCore.Qt.TextFormat.PlainText)
-        self.route.setWordWrap(True)
-        layout.addWidget(self.route)
-        self.notices = QtWidgets.QLabel()
-        self.notices.setWordWrap(True)
-        layout.addWidget(self.notices)
-        self.table = QtWidgets.QTableWidget(0, 7)
+        self.table = QtWidgets.QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Abfahrt", "Flags", "Hinweis", "Optionen"))
+            ("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Abfahrt", "Flags", "Optionen"))
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setWordWrap(True)
         header = self.table.horizontalHeader()
-        for column in range(7):
+        for column in range(6):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table, 1)
         self.footer = QtWidgets.QHBoxLayout()
         self.footer.addStretch()
@@ -53,9 +46,6 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         self.summary.setText(
             f"Zug: {model.train_name}\nVon: {model.origin or '–'}\nNach: {model.destination or '–'}"
             f"{delay}{status}")
-        self.route.setText("Laufweg:\n" + (" – ".join(model.route_points) or "–"))
-        self.notices.setText("Allgemeine Hinweise: " + "\n".join(model.common_notices) if model.common_notices else "")
-        self.notices.setVisible(bool(model.common_notices))
         if structure_changed:
             self.table.setRowCount(len(model.rows))
         palette = self.palette()
@@ -65,7 +55,7 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         normal = palette.color(QtGui.QPalette.ColorRole.Text)
         for row_number, row in enumerate(model.rows):
             values = (row.operating_point, row.raw_schedule_name, row.arrival, row.departure,
-                      " · ".join(row.flags), row.notice)
+                      " · ".join(row.flags))
             background = base if row.group_index % 2 == 0 else alternate
             if row.completed:
                 background = QtGui.QColor(background).darker(115)
@@ -78,10 +68,10 @@ class TrainScheduleWindow(QtWidgets.QWidget):
                 item.setToolTip(row.raw_flags if column == 4 else value)
                 item.setBackground(background)
                 item.setForeground(muted if row.completed else normal)
-            button = self.table.cellWidget(row_number, 6)
+            button = self.table.cellWidget(row_number, 5)
             if button is None:
                 button = QtWidgets.QPushButton("Optionen")
-                self.table.setCellWidget(row_number, 6, button)
+                self.table.setCellWidget(row_number, 5, button)
             button.setEnabled(not row.completed)
         self.table.resizeRowsToContents()
 

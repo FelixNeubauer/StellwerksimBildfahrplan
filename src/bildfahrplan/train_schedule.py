@@ -18,7 +18,6 @@ class TrainScheduleRow:
     departure: str
     flags: tuple[str, ...]
     raw_flags: str
-    notice: str
     completed: bool
     group_index: int
 
@@ -30,15 +29,13 @@ class TrainScheduleViewModel:
     origin: str
     destination: str
     delay: int | None
-    route_points: tuple[str, ...]
-    common_notices: tuple[str, ...]
     rows: tuple[TrainScheduleRow, ...]
     in_current_snapshot: bool
 
     @property
     def signature(self) -> tuple[object, ...]:
         return (self.train_name, self.origin, self.destination, self.delay,
-                self.route_points, self.common_notices, self.rows, self.in_current_snapshot)
+                self.rows, self.in_current_snapshot)
 
 
 # Nur fachlich im Handbuch bzw. durch die STS-Fahrplanattribute belegte Codes
@@ -49,6 +46,7 @@ FLAG_LABELS = {
     "R": "Wendet",
     "K": "Kuppelt",
     "F": "Flügelt",
+    "E": "Neuer Fahrplan",
     "L": "Setzt Lok um",
 }
 _FLAG_TOKEN = re.compile(r"([A-Z])(?:\[([^]]*)\]|\(([^)]*)\))?")
@@ -64,17 +62,19 @@ def format_schedule_flags(entry: object) -> tuple[str, ...]:
     for match in _FLAG_TOKEN.finditer(raw):
         consumed[match.start():match.end()] = [True] * (match.end() - match.start())
         token, square, round_value = match.groups()
-        detail = square if square is not None else round_value
+        if token == "P" and square is not None:
+            continue
         label = FLAG_LABELS.get(token)
         rendered = label if label else match.group(0)
-        if detail and label:
+        detail = square if square is not None else round_value
+        if detail and label and token not in {"E", "F", "K"}:
             rendered = f"{rendered} ({detail})"
         if rendered not in result:
             result.append(rendered)
     remainder = "".join(char for index, char in enumerate(raw) if not consumed[index]).strip()
     if remainder and remainder not in result:
         result.append(remainder)
-    return tuple(result or (raw,))
+    return tuple(result)
 
 
 def sequential_group_indices(operating_points: Iterable[str]) -> tuple[int, ...]:
@@ -86,18 +86,6 @@ def sequential_group_indices(operating_points: Iterable[str]) -> tuple[int, ...]
             group += 1
             previous = value
         result.append(group)
-    return tuple(result)
-
-
-def build_route_points(
-    operating_points: Iterable[str], origin: str = "", destination: str = "",
-) -> tuple[str, ...]:
-    """Bildet den Laufweg ohne globale Deduplizierung aus belastbaren Namen."""
-    result: list[str] = []
-    for value in (origin, *operating_points, destination):
-        point = str(value or "").strip()
-        if point and (not result or point.casefold() != result[-1].casefold()):
-            result.append(point)
     return tuple(result)
 
 
@@ -146,9 +134,6 @@ def build_train_schedule_view_model(
     original = tuple(getattr(service, "original_schedule", ()))
     current = tuple(getattr(service, "current_schedule", ())) if in_current_snapshot else ()
     active = remaining_indices(original, current)
-    notices = tuple(str(getattr(point, "hint_text", "") or "") for point in original)
-    nonempty = tuple(notice for notice in notices if notice)
-    common = (nonempty[0],) if original and len(nonempty) == len(original) and len(set(nonempty)) == 1 else ()
     ops = []
     for point in original:
         raw = str(getattr(point, "planned_name", None) or getattr(point, "raw_name", ""))
@@ -159,17 +144,15 @@ def build_train_schedule_view_model(
     groups = sequential_group_indices(ops)
     origin = str(getattr(service, "origin", "") or "")
     destination = str(getattr(service, "destination", "") or "")
-    route_points = build_route_points(ops, origin, destination)
     rows = tuple(TrainScheduleRow(
         index, ops[index],
         str(getattr(point, "planned_name", None) or getattr(point, "raw_name", "")),
         _clock(getattr(point, "planned_arrival", None)),
         _clock(getattr(point, "planned_departure", None)),
         format_schedule_flags(point), str(getattr(point, "flags_raw", "") or ""),
-        "" if notices[index] in common else notices[index], index not in active, groups[index],
+        index not in active, groups[index],
     ) for index, point in enumerate(original))
     return TrainScheduleViewModel(
         int(getattr(service, "zid")), str(getattr(service, "name", "")),
-        origin, destination, getattr(service, "current_delay", None), route_points,
-        common, rows, in_current_snapshot,
+        origin, destination, getattr(service, "current_delay", None), rows, in_current_snapshot,
     )

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from bildfahrplan.train_hits import line_hit_candidates, prefer_label
 from bildfahrplan.train_schedule import (
-    build_route_points, build_train_schedule_view_model, format_schedule_flags, remaining_indices,
+    build_train_schedule_view_model, format_schedule_flags, remaining_indices,
     sequential_group_indices,
 )
 
@@ -39,51 +39,30 @@ def test_repeated_names_match_latest_ordered_occurrence():
     assert remaining_indices(original, [point("A"), point("B")]) == frozenset({2, 3})
 
 
-def test_common_and_individual_notices_are_separated_conservatively():
-    common = build_train_schedule_view_model(service([point(name, notice="Hinweis ABC") for name in "ABCD"]))
-    assert common.common_notices == ("Hinweis ABC",)
-    assert all(not row.notice for row in common.rows)
-    individual = build_train_schedule_view_model(service([
-        point("A"), point("B", notice="Lokwechsel"), point("C")]))
-    assert individual.common_notices == ()
-    assert [row.notice for row in individual.rows] == ["", "Lokwechsel", ""]
+def test_schedule_view_model_has_no_route_or_notice_presentation():
+    model = build_train_schedule_view_model(service([point("A", notice="nicht vollständig geliefert")]))
+    assert not hasattr(model, "route_points")
+    assert not hasattr(model, "common_notices")
+    assert not hasattr(model.rows[0], "notice")
 
 
-def test_completed_stop_keeps_notice_from_original_schedule():
-    original = [point("A", notice="  Hinweis A\nzweite Zeile  "), point("B"), point("C")]
-    model = build_train_schedule_view_model(service(original, original[1:]))
-    assert model.rows[0].completed is True
-    assert model.rows[0].notice == "  Hinweis A\nzweite Zeile  "
+def test_schedule_flag_user_texts_hide_parameters_and_p_flags():
+    assert format_schedule_flags(point("A", flags="P[l]")) == ()
+    assert format_schedule_flags(point("A", flags="P[r]")) == ()
+    assert format_schedule_flags(point("A", flags="D")) == ("Durchfahrt",)
+    assert format_schedule_flags(point("A", flags="E(12345)")) == ("Neuer Fahrplan",)
+    assert format_schedule_flags(point("A", flags="E(RE 123)")) == ("Neuer Fahrplan",)
+    assert format_schedule_flags(point("A", flags="F(12345)")) == ("Flügelt",)
+    assert format_schedule_flags(point("A", flags="K(RE 123)")) == ("Kuppelt",)
+    assert format_schedule_flags(point("A", flags="P[l] D")) == ("Durchfahrt",)
+    assert format_schedule_flags(point("A", flags="P[l] E(123) F(456)")) == (
+        "Neuer Fahrplan", "Flügelt")
+    assert format_schedule_flags(point("A", flags="E(1)E(2)F(3)F(4)K(5)K(6)")) == (
+        "Neuer Fahrplan", "Flügelt", "Kuppelt")
 
 
-def test_route_uses_operating_points_and_only_deduplicates_consecutive_points():
-    original = [
-        point("TBL 3", operating_point="TBL"),
-        point("TSK 504", operating_point="TSK"),
-        point("TSK 580", operating_point="TSK"),
-        point("TSK 505", operating_point="TSK"),
-        point("TALL", operating_point="TALL"),
-        point("TEH 3", operating_point="TEH"),
-    ]
-    model = build_train_schedule_view_model(service(original))
-    assert model.route_points == ("Aalen", "TBL", "TSK", "TALL", "TEH", "Ulm Hbf")
-    assert build_route_points(("A", "B", "B", "C", "A")) == ("A", "B", "C", "A")
-
-
-def test_route_adds_origin_and_destination_without_boundary_duplicates():
-    assert build_route_points(("TKS", "TIT", "THD"), "Aalen", "Ulm Hbf") == (
-        "Aalen", "TKS", "TIT", "THD", "Ulm Hbf")
-    assert build_route_points(("Aalen", "TKS", "Ulm Hbf"), "Aalen", "Ulm Hbf") == (
-        "Aalen", "TKS", "Ulm Hbf")
-
-
-def test_flags_have_german_labels_and_unknown_data_survives():
-    entry = point("A", flags="DARKFELP[r]X(9)")
-    labels = format_schedule_flags(entry)
-    assert labels[:7] == ("Durchfahrt", "Frühere Abfahrt möglich", "Wendet", "Kuppelt",
-                          "Flügelt", "E", "Setzt Lok um")
-    assert "P[r]" in labels
-    assert "X(9)" in labels
+def test_unknown_schedule_flags_remain_visible():
+    assert format_schedule_flags(point("A", flags="X(9)")) == ("X(9)",)
 
 
 def test_line_hits_are_unique_per_zid_and_ambiguity_is_preserved():
@@ -108,3 +87,11 @@ def test_completed_row_palette_uses_disabled_color_group():
     source = (Path(__file__).parents[1] / "src/app/train_schedule_window.py").read_text(encoding="utf-8")
     assert "QtGui.QPalette.ColorGroup.Disabled" in source
     assert "QtGui.QPalette.ColorRole.Disabled" not in source
+
+
+def test_schedule_window_uses_six_columns_without_route_or_notices():
+    source = (Path(__file__).parents[1] / "src/app/train_schedule_window.py").read_text(encoding="utf-8")
+    assert "QTableWidget(0, 6)" in source
+    assert '("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Abfahrt", "Flags", "Optionen")' in source
+    assert "self.route" not in source
+    assert "self.notices" not in source
