@@ -53,7 +53,7 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         palette = self.palette()
         base = palette.color(QtGui.QPalette.ColorRole.Base)
         alternate = palette.color(QtGui.QPalette.ColorRole.AlternateBase)
-        muted = palette.color(QtGui.QPalette.ColorRole.Disabled, QtGui.QPalette.ColorRole.Text)
+        muted = palette.color(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Text)
         normal = palette.color(QtGui.QPalette.ColorRole.Text)
         for row_number, row in enumerate(model.rows):
             values = (row.operating_point, row.raw_schedule_name, row.arrival, row.departure,

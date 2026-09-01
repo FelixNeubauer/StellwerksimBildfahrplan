@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from bildfahrplan.train_hits import line_hit_candidates, prefer_label
@@ -73,3 +74,9 @@ def test_plan_and_projection_segments_resolve_to_one_train_candidate():
         (7, "RS 26550", ((0, 2), (10, 2))),
     ])
     assert [hit.zid for hit in hits] == [7]
+
+
+def test_completed_row_palette_uses_disabled_color_group():
+    source = (Path(__file__).parents[1] / "src/app/train_schedule_window.py").read_text(encoding="utf-8")
+    assert "QtGui.QPalette.ColorGroup.Disabled" in source
+    assert "QtGui.QPalette.ColorRole.Disabled" not in source
