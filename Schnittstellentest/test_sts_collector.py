@@ -215,6 +215,37 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual((service.current_track, service.planned_track), ("MBLH 2", "MBLH 1"))
         self.assertEqual((service.visible, service.at_track), (True, False))
 
+    def test_actual_events_match_repeated_stops_in_remaining_sequence(self):
+        collector = STSLiveCollector()
+        collector.process(xml(f'<simzeit zeit="{self.simtime(9, 0, 0)}" />'))
+        rows = ''.join(f'<gleis name="{name}" plan="{name}" an="10:00" ab="10:01" />'
+                       for name in ("A", "B", "C", "B", "D"))
+        collector.process(xml(f'<zugfahrplan zid="7">{rows}</zugfahrplan>'))
+        first_remaining = ''.join(f'<gleis name="{name}" plan="{name}" an="10:00" ab="10:01" />'
+                                  for name in ("B", "C", "B", "D"))
+        collector.process(xml(f'<zugfahrplan zid="7">{first_remaining}</zugfahrplan>'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="B" />'))
+        # Wiederholungen konsumieren nicht versehentlich den zweiten Besuch.
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="B" />'))
+        second_remaining = ''.join(f'<gleis name="{name}" plan="{name}" an="10:00" ab="10:01" />'
+                                   for name in ("B", "D"))
+        collector.process(xml(f'<zugfahrplan zid="7">{second_remaining}</zugfahrplan>'))
+        collector.process(xml(f'<simzeit zeit="{self.simtime(9, 30, 0)}" />'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B" />'))
+        timing = collector.services[7].actual_timing.rows
+        self.assertEqual(sorted(timing), [1, 3])
+        self.assertEqual(timing[1].actual_departure_minute, 9 * 60)
+        self.assertEqual(timing[3].actual_arrival_minute, 9 * 60 + 30)
+
+    def test_passage_events_do_not_create_actual_stop_times(self):
+        collector = STSLiveCollector()
+        collector.process(xml(f'<simzeit zeit="{self.simtime(10, 0, 0)}" />'))
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="X" plan="X" '
+                              'an="10:00" ab="10:00" flags="D" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="X" />'))
+        self.assertEqual(collector.services[7].actual_timing.rows, {})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,6 +106,32 @@ class DepartureState:
 
 
 @dataclass
+class ActualScheduleRowTiming:
+    """In dieser Collector-Sitzung beobachtete Zeiten einer Planzeile.
+
+    Die Minuten sind fortlaufende Simulationsminuten (also inklusive des vom
+    Collector erkannten Simulationstags), nicht Minuten der lokalen Rechneruhr.
+    """
+
+    actual_arrival_minute: int | None = None
+    actual_departure_minute: int | None = None
+
+
+@dataclass
+class ActualTrainTiming:
+    """Nicht persistierte, reihenfolgestabile Ist-Historie einer ZID."""
+
+    rows: dict[int, ActualScheduleRowTiming] = field(default_factory=dict)
+    last_observed_index: int | None = None
+    last_event_art: str | None = None
+    last_event_track: str | None = None
+
+    def signature(self) -> tuple[tuple[int, int | None, int | None], ...]:
+        return tuple((index, row.actual_arrival_minute, row.actual_departure_minute)
+                     for index, row in sorted(self.rows.items()))
+
+
+@dataclass
 class SessionMetadata:
     session_id: str = field(default_factory=lambda: str(uuid4()))
     aid: int | None = None
@@ -146,6 +172,7 @@ class TrainService:
     temporary_locomotive: bool = False
     service_kind: str = "unknown"
     departure_states: dict[str, DepartureState] = field(default_factory=dict)
+    actual_timing: ActualTrainTiming = field(default_factory=ActualTrainTiming)
 
     def __post_init__(self) -> None:
         if self.service_kind not in SERVICE_KINDS:
@@ -425,6 +452,8 @@ class STSLiveCollector:
             receive_timestamp=self.clock().isoformat(), simtime=self.simtime, raw_xml=raw,
         )
         service.raw_events.append(event)
+        if event.art in {"ankunft", "abfahrt"}:
+            self._record_actual_timing(service, event)
         key = (service.zid, event.track)
         if event.art == "abfahrt":
             self._process_departure(service, event)
@@ -438,6 +467,85 @@ class STSLiveCollector:
         elif service.interpreted_events and self._event_identity(service.interpreted_events[-1]) == self._event_identity(event):
             return
         service.interpreted_events.append(event)
+
+    @staticmethod
+    def _is_passage(point: SchedulePoint) -> bool:
+        # STS-Flag D ist laut Handbuch eine Durchfahrt und kein Halt. Parameter
+        # anderer Flags werden bewusst nicht als frei erfundene Semantik gelesen.
+        return "D" in (point.flags_raw or "")
+
+    @staticmethod
+    def _schedule_identity(point: SchedulePoint) -> tuple[str, str | None, str | None]:
+        return (point.planned_name or point.raw_name,
+                point.planned_arrival, point.planned_departure)
+
+    def _remaining_original_indices(self, service: TrainService) -> tuple[int, ...]:
+        """Dieselbe ordered-subsequence-Semantik wie das Fahrplanfenster."""
+        original = tuple(map(self._schedule_identity, service.original_schedule))
+        current = tuple(map(self._schedule_identity, service.current_schedule))
+        if not current:
+            return ()
+        solutions: list[tuple[int, ...]] = []
+
+        def match(current_index: int, start: int, chosen: tuple[int, ...]) -> None:
+            if current_index == len(current):
+                solutions.append(chosen)
+                return
+            for index in range(start, len(original)):
+                if original[index] == current[current_index]:
+                    match(current_index + 1, index + 1, (*chosen, index))
+
+        match(0, 0, ())
+        return max(solutions, key=lambda indices: indices[0]) if solutions else ()
+
+    def _match_event_schedule_index(self, service: TrainService, event: TrainEvent) -> int | None:
+        """Ordnet ein Halt-Ereignis konservativ einer unveraenderlichen Planzeile zu."""
+        names = {name for name in (event.track, event.planned_track) if name}
+        if not names or not service.original_schedule:
+            return None
+        candidates = [
+            index for index, point in enumerate(service.original_schedule)
+            if not self._is_passage(point)
+            and names.intersection((point.raw_name, point.current_name, point.planned_name))
+        ]
+        remaining = self._remaining_original_indices(service)
+        active_candidates = [index for index in remaining if index in candidates]
+        if active_candidates:
+            # Der erste passende Punkt des reihenfolgestabil gematchten
+            # Restfahrplans ist auch bei A-B-C-B-D eindeutig der aktuelle Besuch.
+            return active_candidates[0]
+        last = service.actual_timing.last_observed_index
+        forward = [index for index in candidates if last is None or index >= last]
+        if len(forward) == 1:
+            return forward[0]
+        if last is not None and last in forward:
+            return last
+        # Ohne Restfahrplan oder eindeutigen Fortschrittsanker wird keine
+        # möglicherweise falsche Zeile dauerhaft festgeschrieben.
+        return None
+
+    def _record_actual_timing(self, service: TrainService, event: TrainEvent) -> bool:
+        timing = service.actual_timing
+        if timing.last_event_art == event.art and timing.last_event_track == event.track:
+            return False
+        index = self._match_event_schedule_index(service, event)
+        if index is None or event.simtime is None:
+            return False
+        minute = self._sim_day * 24 * 60 + event.simtime // 60_000
+        row = timing.rows.setdefault(index, ActualScheduleRowTiming())
+        attribute = ("actual_arrival_minute" if event.art == "ankunft"
+                     else "actual_departure_minute")
+        # First observation wins. So sind Duplikate mit einer geringfuegig
+        # spaeteren Empfangsminute idempotent und koennen keinen zweiten Besuch
+        # desselben Namens konsumieren.
+        if getattr(row, attribute) is not None:
+            return False
+        setattr(row, attribute, minute)
+        timing.last_observed_index = max(
+            index, timing.last_observed_index if timing.last_observed_index is not None else index)
+        timing.last_event_art = event.art
+        timing.last_event_track = event.track
+        return True
 
     def _process_departure(self, service: TrainService, event: TrainEvent) -> None:
         key = event.track or ""
@@ -511,7 +619,10 @@ class STSLiveCollector:
             "last_schedule_slot": self._last_schedule_slot, "sim_day": self._sim_day,
             "previous_simtime": self._previous_simtime, "active_zids": sorted(self._active_zids),
             "session": asdict(self.session),
-            "services": [asdict(item) for item in self.services.values()],
+            # ActualTiming ist absichtlich reine Laufzeit-Historie. Auch der
+            # explizite Diagnose-State persistiert sie nicht.
+            "services": [{key: value for key, value in asdict(item).items()
+                          if key != "actual_timing"} for item in self.services.values()],
             "families": [asdict(item) for item in self.families.values()], "raw_xml": self.raw_xml,
         }
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -538,6 +649,7 @@ class STSLiveCollector:
             raw_service["raw_events"] = [TrainEvent(**e) for e in raw_service["raw_events"]]
             raw_service["interpreted_events"] = [TrainEvent(**e) for e in raw_service["interpreted_events"]]
             raw_service["relations"] = [TrainRelation(**r) for r in raw_service["relations"]]
+            raw_service.pop("actual_timing", None)
             name, zid = raw_service.get("name", ""), raw_service["zid"]
             raw_service.setdefault("service_kind", self._classify_service(zid, name))
             raw_service["departure_states"] = {

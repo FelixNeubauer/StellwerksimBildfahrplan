@@ -210,7 +210,9 @@ class BildfahrplanTab(QtWidgets.QWidget):
                            tuple(sorted(settings.train_type_colors.items())),
                            tuple((item.name, item.category, item.color)
                                  for item in settings.custom_train_types), tuple(
-            (service.zid, service.current_delay, getattr(service, "origin", None),
+            (service.zid, service.current_delay,
+             getattr(getattr(service, "actual_timing", None), "signature", lambda: ())(),
+             getattr(service, "origin", None),
              getattr(service, "destination", None),
              service.name, tuple((p.planned_name, p.planned_arrival, p.planned_departure)
                    for p in service.original_schedule))
@@ -340,6 +342,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
         for service in services:
             projection_signature = (
                 self._x_source_signature, service.current_delay,
+                getattr(getattr(service, "actual_timing", None), "signature", lambda: ())(),
                 getattr(service, "origin", None), getattr(service, "destination", None),
                 service.name, tuple((p.planned_name, p.planned_arrival, p.planned_departure)
                       for p in service.original_schedule),
@@ -375,6 +378,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
                 rendered, service.name, self._colorful_train_colors.get(service.zid))
             service_signature = (
                 self._x_source_signature, color, service.current_delay,
+                getattr(getattr(service, "actual_timing", None), "signature", lambda: ())(),
                 getattr(service, "origin", None), getattr(service, "destination", None),
                 tuple((p.planned_name, p.planned_arrival, p.planned_departure)
                       for p in service.original_schedule),

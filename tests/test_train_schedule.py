@@ -89,9 +89,21 @@ def test_completed_row_palette_uses_disabled_color_group():
     assert "QtGui.QPalette.ColorRole.Disabled" not in source
 
 
-def test_schedule_window_uses_six_columns_without_route_or_notices():
+def test_schedule_window_uses_actual_columns_without_route_or_notices():
     source = (Path(__file__).parents[1] / "src/app/train_schedule_window.py").read_text(encoding="utf-8")
-    assert "QTableWidget(0, 6)" in source
-    assert '("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Abfahrt", "Flags", "Optionen")' in source
+    assert "QTableWidget(0, 8)" in source
+    assert '"Ist-Ankunft"' in source
+    assert '"Ist-Abfahrt"' in source
     assert "self.route" not in source
     assert "self.notices" not in source
+
+
+def test_actual_times_are_visible_but_passage_actual_columns_stay_empty():
+    value = service([point("A", "10:00", "10:05"), point("X", "10:10", "10:10", flags="D")])
+    value.actual_timing = SimpleNamespace(rows={
+        0: SimpleNamespace(actual_arrival_minute=9 * 60 + 1, actual_departure_minute=9 * 60 + 6),
+        1: SimpleNamespace(actual_arrival_minute=9 * 60 + 11, actual_departure_minute=9 * 60 + 11),
+    })
+    model = build_train_schedule_view_model(value)
+    assert (model.rows[0].actual_arrival, model.rows[0].actual_departure) == ("09:01", "09:06")
+    assert (model.rows[1].actual_arrival, model.rows[1].actual_departure) == ("", "")
