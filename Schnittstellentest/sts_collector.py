@@ -85,6 +85,18 @@ class TrainEvent:
     raw_xml: str
 
 
+@dataclass(frozen=True)
+class ActualTimingDiagnostic:
+    zid: int
+    event_type: str
+    event_track: str | None
+    known_current_track: str | None
+    event_simtime_seconds: float | None
+    matched_original_index: int | None
+    matched_schedule_name: str | None
+    match_reason: str
+
+
 @dataclass
 class TrainRelation:
     relation_type: str
@@ -123,6 +135,8 @@ class ActualTrainTiming:
 
     rows: dict[int, ActualScheduleRowTiming] = field(default_factory=dict)
     last_observed_index: int | None = None
+    last_arrival_index: int | None = None
+    last_departure_index: int | None = None
     last_event_art: str | None = None
     last_event_track: str | None = None
 
@@ -223,6 +237,9 @@ class STSLiveCollector:
         self._has_received_train_list = False
         self._signal_stop_open: set[tuple[int, str | None]] = set()
         self.messages: list[str] = []
+        # Gezielte Diagnose fuer Live-Tests; wird nicht als normale UI-Meldung
+        # ausgegeben und nicht persistiert.
+        self.actual_timing_diagnostics: list[ActualTimingDiagnostic] = []
         if self.storage_path and self.storage_path.exists():
             self.load()
 
@@ -242,7 +259,8 @@ class STSLiveCollector:
         messages, self.messages = self.messages, []
         return messages
 
-    def process(self, element: ET.Element, raw_xml: str | None = None) -> list[str]:
+    def process(self, element: ET.Element, raw_xml: str | None = None,
+                event_simtime_seconds: float | None = None) -> list[str]:
         raw = raw_xml if raw_xml is not None else ET.tostring(element, encoding="unicode")
         self.raw_xml.append(raw)
         commands: list[str] = []
@@ -257,7 +275,7 @@ class STSLiveCollector:
         elif element.tag == "zugfahrplan":
             self._process_schedule(element, raw)
         elif element.tag == "ereignis" and element.get("zid") is not None:
-            self._process_event(element, raw)
+            self._process_event(element, raw, event_simtime_seconds)
         self.save()
         return commands
 
@@ -390,13 +408,18 @@ class STSLiveCollector:
 
     def _update_state(self, service: TrainService, element: ET.Element) -> None:
         service.name = element.get("name") or service.name
-        service.current_delay = _int(element.get("verspaetung"))
-        service.current_track = element.get("gleis")
-        service.planned_track = element.get("plangleis")
-        service.visible = _bool(element.get("sichtbar"))
-        service.at_track = _bool(element.get("amgleis"))
-        service.origin = element.get("von")
-        service.destination = element.get("nach")
+        updates = (
+            ("current_delay", "verspaetung", _int),
+            ("current_track", "gleis", lambda value: value),
+            ("planned_track", "plangleis", lambda value: value),
+            ("visible", "sichtbar", _bool),
+            ("at_track", "amgleis", _bool),
+            ("origin", "von", lambda value: value),
+            ("destination", "nach", lambda value: value),
+        )
+        for attribute, xml_name, converter in updates:
+            if element.get(xml_name) is not None:
+                setattr(service, attribute, converter(element.get(xml_name)))
         service.last_seen_simtime = self.simtime
 
     def _process_details(self, element: ET.Element, raw: str) -> None:
@@ -439,10 +462,12 @@ class STSLiveCollector:
                     f"Plan: {point.planned_name}"
                 )
 
-    def _process_event(self, element: ET.Element, raw: str) -> None:
+    def _process_event(self, element: ET.Element, raw: str,
+                       event_simtime_seconds: float | None = None) -> None:
         service = self._service(element)
         if not service:
             return
+        known_current_track = service.current_track
         self._update_state(service, element)
         event = TrainEvent(
             art=element.get("art", ""), zid=service.zid, train_name=element.get("name"),
@@ -453,7 +478,8 @@ class STSLiveCollector:
         )
         service.raw_events.append(event)
         if event.art in {"ankunft", "abfahrt"}:
-            self._record_actual_timing(service, event)
+            self._record_actual_timing(service, event, known_current_track,
+                                       event_simtime_seconds)
         key = (service.zid, event.track)
         if event.art == "abfahrt":
             self._process_departure(service, event)
@@ -498,40 +524,96 @@ class STSLiveCollector:
         match(0, 0, ())
         return max(solutions, key=lambda indices: indices[0]) if solutions else ()
 
-    def _match_event_schedule_index(self, service: TrainService, event: TrainEvent) -> int | None:
-        """Ordnet ein Halt-Ereignis konservativ einer unveraenderlichen Planzeile zu."""
-        names = {name for name in (event.track, event.planned_track) if name}
-        if not names or not service.original_schedule:
-            return None
-        candidates = [
-            index for index, point in enumerate(service.original_schedule)
-            if not self._is_passage(point)
-            and names.intersection((point.raw_name, point.current_name, point.planned_name))
-        ]
+    def _match_event_schedule_index(
+        self, service: TrainService, event: TrainEvent, known_current_track: str | None,
+    ) -> tuple[int | None, str]:
+        """Ordnet Eventkontext vorwaerts und eventartspezifisch einer Planzeile zu."""
+        if not service.original_schedule:
+            return None, "no_schedule"
+        evidence = []
+        if event.track:
+            evidence.append((event.track, "event_track"))
+        elif known_current_track:
+            evidence.append((known_current_track, "known_current_track"))
+        if event.planned_track and event.planned_track not in {item[0] for item in evidence}:
+            evidence.append((event.planned_track, "event_planned_track"))
+        if not evidence:
+            return None, "no_track_context"
+
+        candidates: list[int] = []
+        evidence_reason = "no_candidate"
+        passage_match = False
+        for name, reason in evidence:
+            matching = [
+                index for index, point in enumerate(service.original_schedule)
+                if name in (point.raw_name, point.current_name, point.planned_name)
+            ]
+            passage_match = passage_match or any(
+                self._is_passage(service.original_schedule[index]) for index in matching)
+            candidates = [index for index in matching
+                          if not self._is_passage(service.original_schedule[index])]
+            if candidates:
+                evidence_reason = reason
+                break
+        if not candidates:
+            return None, "D-point" if passage_match else "no_candidate"
+
         remaining = self._remaining_original_indices(service)
-        active_candidates = [index for index in remaining if index in candidates]
+        boundary = remaining[0] if remaining else None
+        timing = service.actual_timing
+
+        # Eine Abfahrt gehoert primaer zur unmittelbar zuvor beobachteten
+        # Ankunft am selben Raw-Halt, selbst wenn der Restfahrplan schon schrumpfte.
+        if (event.art == "abfahrt" and timing.last_arrival_index in candidates
+                and getattr(timing.rows.get(timing.last_arrival_index),
+                            "actual_departure_minute", None) is None):
+            return timing.last_arrival_index, f"{evidence_reason}+last_arrival"
+
+        # Ist der aktuelle Halt bereits aus current_schedule verschwunden, ist
+        # fuer ein soeben empfangenes Halt-Event die Zeile direkt vor der Grenze
+        # die entscheidende Sequenzevidenz -- aber nur bei passendem Gleisnamen.
+        if boundary is not None and boundary - 1 in candidates:
+            return boundary - 1, f"{evidence_reason}+before_remaining"
+
+        last = timing.last_observed_index
+        minimum = 0 if last is None else last
+        forward = [index for index in candidates if index >= minimum]
+        active_candidates = [index for index in remaining if index in forward]
         if active_candidates:
-            # Der erste passende Punkt des reihenfolgestabil gematchten
-            # Restfahrplans ist auch bei A-B-C-B-D eindeutig der aktuelle Besuch.
-            return active_candidates[0]
-        last = service.actual_timing.last_observed_index
-        forward = [index for index in candidates if last is None or index >= last]
+            return active_candidates[0], f"{evidence_reason}+remaining"
         if len(forward) == 1:
-            return forward[0]
+            return forward[0], f"{evidence_reason}+unique_forward"
         if last is not None and last in forward:
-            return last
+            return last, f"{evidence_reason}+cursor"
         # Ohne Restfahrplan oder eindeutigen Fortschrittsanker wird keine
         # möglicherweise falsche Zeile dauerhaft festgeschrieben.
-        return None
+        return None, "ambiguous"
 
-    def _record_actual_timing(self, service: TrainService, event: TrainEvent) -> bool:
+    def _record_actual_timing(self, service: TrainService, event: TrainEvent,
+                              known_current_track: str | None,
+                              event_simtime_seconds: float | None) -> bool:
         timing = service.actual_timing
         if timing.last_event_art == event.art and timing.last_event_track == event.track:
+            self._diagnose_actual_timing(service, event, known_current_track,
+                                         event_simtime_seconds, None, "duplicate")
             return False
-        index = self._match_event_schedule_index(service, event)
-        if index is None or event.simtime is None:
+        index, reason = self._match_event_schedule_index(service, event, known_current_track)
+        if index is None:
+            self._diagnose_actual_timing(service, event, known_current_track,
+                                         event_simtime_seconds, None, reason)
             return False
-        minute = self._sim_day * 24 * 60 + event.simtime // 60_000
+        if event_simtime_seconds is None:
+            # Direkte Collector-Nutzung (Diagnosetester/Tests) hat keinen
+            # Adapter-Interpolator; dort bleibt die autoritative Serverzeit der
+            # deterministische Fallback.
+            event_simtime_seconds = (self._sim_day * 86400 + self.simtime / 1000
+                                     if self.simtime is not None else None)
+        if event_simtime_seconds is None:
+            self._diagnose_actual_timing(service, event, known_current_track,
+                                         None, index, "no_simtime")
+            return False
+        # Deterministisches round-half-up, nicht Python-Banker's-Rounding.
+        minute = int((event_simtime_seconds + 30.0) // 60)
         row = timing.rows.setdefault(index, ActualScheduleRowTiming())
         attribute = ("actual_arrival_minute" if event.art == "ankunft"
                      else "actual_departure_minute")
@@ -539,13 +621,31 @@ class STSLiveCollector:
         # spaeteren Empfangsminute idempotent und koennen keinen zweiten Besuch
         # desselben Namens konsumieren.
         if getattr(row, attribute) is not None:
+            self._diagnose_actual_timing(service, event, known_current_track,
+                                         event_simtime_seconds, index, "duplicate_row")
             return False
         setattr(row, attribute, minute)
         timing.last_observed_index = max(
             index, timing.last_observed_index if timing.last_observed_index is not None else index)
         timing.last_event_art = event.art
         timing.last_event_track = event.track
+        if event.art == "ankunft":
+            timing.last_arrival_index = index
+        else:
+            timing.last_departure_index = index
+        self._diagnose_actual_timing(service, event, known_current_track,
+                                     event_simtime_seconds, index, reason)
         return True
+
+    def _diagnose_actual_timing(self, service: TrainService, event: TrainEvent,
+                                known_current_track: str | None,
+                                event_simtime_seconds: float | None,
+                                index: int | None, reason: str) -> None:
+        name = (service.original_schedule[index].planned_name
+                if index is not None else None)
+        self.actual_timing_diagnostics.append(ActualTimingDiagnostic(
+            service.zid, event.art, event.track, known_current_track,
+            event_simtime_seconds, index, name, reason))
 
     def _process_departure(self, service: TrainService, event: TrainEvent) -> None:
         key = event.track or ""

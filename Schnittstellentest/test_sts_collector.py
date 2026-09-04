@@ -246,6 +246,78 @@ class CollectorTests(unittest.TestCase):
         collector.process(xml('<ereignis art="ankunft" zid="7" gleis="X" />'))
         self.assertEqual(collector.services[7].actual_timing.rows, {})
 
+    def test_departure_matches_event_track_before_already_shrunken_remaining_schedule(self):
+        collector = STSLiveCollector()
+        collector.process(xml(f'<simzeit zeit="{self.simtime(13, 30, 0)}" />'))
+        collector.process(xml(
+            '<zugdetails zid="7" name="RS 26369" gleis="TMU 1" />'))
+        collector.process(xml(
+            '<zugfahrplan zid="7">'
+            '<gleis name="TMU 1" plan="TMU 1" an="13:25" ab="13:30" />'
+            '<gleis name="TRR 1" plan="TRR 1" an="13:34" ab="13:34" />'
+            '<gleis name="TEH 3" plan="TEH 3" an="13:40" ab="13:43" />'
+            '</zugfahrplan>'))
+        collector.process(xml(
+            '<zugfahrplan zid="7">'
+            '<gleis name="TRR 1" plan="TRR 1" an="13:34" ab="13:34" />'
+            '<gleis name="TEH 3" plan="TEH 3" an="13:40" ab="13:43" />'
+            '</zugfahrplan>'))
+
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="TMU 1" />'),
+                          event_simtime_seconds=13 * 3600 + 30 * 60)
+
+        rows = collector.services[7].actual_timing.rows
+        self.assertEqual(rows[0].actual_departure_minute, 13 * 60 + 30)
+        self.assertNotIn(1, rows)
+        diagnostic = collector.actual_timing_diagnostics[-1]
+        self.assertEqual((diagnostic.matched_original_index,
+                          diagnostic.matched_schedule_name), (0, "TMU 1"))
+        self.assertIn("event_track", diagnostic.match_reason)
+
+    def test_departure_prefers_last_arrival_despite_schedule_shrink(self):
+        collector = STSLiveCollector()
+        collector.process(xml(f'<simzeit zeit="{self.simtime(13, 20, 0)}" />'))
+        collector.process(xml('<zugfahrplan zid="7">'
+                              '<gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" />'
+                              '<gleis name="C" plan="C" />'
+                              '</zugfahrplan>'))
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" />'
+                              '<gleis name="C" plan="C" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B" />'),
+                          event_simtime_seconds=13 * 3600 + 20 * 60)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="C" plan="C" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="B" />'),
+                          event_simtime_seconds=13 * 3600 + 25 * 60)
+        rows = collector.services[7].actual_timing.rows
+        self.assertEqual((rows[1].actual_arrival_minute, rows[1].actual_departure_minute),
+                         (13 * 60 + 20, 13 * 60 + 25))
+        self.assertNotIn(2, rows)
+
+    def test_actual_event_minutes_use_deterministic_half_up_rounding(self):
+        for seconds in (13 * 3600 + 29 * 60 + 59.2, 13 * 3600 + 30 * 60 + 1):
+            collector = STSLiveCollector()
+            collector.process(xml('<zugfahrplan zid="7">'
+                                  '<gleis name="A" plan="A" /></zugfahrplan>'))
+            collector.process(xml('<ereignis art="ankunft" zid="7" gleis="A" />'),
+                              event_simtime_seconds=seconds)
+            self.assertEqual(collector.services[7].actual_timing.rows[0].actual_arrival_minute,
+                             13 * 60 + 30)
+
+    def test_arrival_uses_matching_stop_immediately_before_remaining_boundary(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7">'
+                              '<gleis name="A" plan="A" /><gleis name="B" plan="B" />'
+                              '<gleis name="C" plan="C" /><gleis name="B" plan="B" />'
+                              '<gleis name="E" plan="E" /></zugfahrplan>'))
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="C" plan="C" />'
+                              '<gleis name="B" plan="B" /><gleis name="E" plan="E" />'
+                              '</zugfahrplan>'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B" />'),
+                          event_simtime_seconds=13 * 3600 + 20 * 60)
+        self.assertIn(1, collector.services[7].actual_timing.rows)
+        self.assertNotIn(3, collector.services[7].actual_timing.rows)
+
 
 if __name__ == "__main__":
     unittest.main()
