@@ -19,7 +19,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs = QtWidgets.QTabWidget()
         self.settings_store = ApplicationSettingsStore(REPOSITORY_ROOT / "config")
         self.settings = SettingsTab(self.settings_store.load(), self.settings_store.save)
-        self.infrastructure = InfrastructureTab(REPOSITORY_ROOT / "config")
+        self.operating_points = OperatingPointsTab(REPOSITORY_ROOT / "config")
+        self.infrastructure = InfrastructureTab(
+            REPOSITORY_ROOT / "config",
+            target_registry_provider=self.operating_points.topology_target_registry,
+            target_registry_ready_provider=(
+                lambda: self.operating_points.assignment_completeness().is_complete))
         self.diagram = BildfahrplanTab(
             adapter, profile, lambda: self.infrastructure.graph,
             lambda: self.settings.settings, self.settings.set_live_follow_position,
@@ -28,7 +33,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(self.diagram, "Bildfahrplan")
         self.tabs.addTab(PlaceholderTab("Gleisbelegung – folgt in einer späteren Version"), "Gleisbelegung")
         self.infrastructure_index = self.tabs.addTab(self.infrastructure, "Strecke")
-        self.operating_points = OperatingPointsTab(REPOSITORY_ROOT / "config")
         self.tabs.addTab(self.operating_points, "Gleise / Ortszuordnung")
         self.tabs.addTab(self.settings, "Einstellungen")
         self._previous_tab = self.tabs.currentWidget()

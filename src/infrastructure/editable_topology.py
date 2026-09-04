@@ -296,7 +296,8 @@ class EditableTopologyGraph:
                           if index == 0 or item != redirected[index - 1]]
             migrated.defined_routes[route_id] = DefinedRoute(
                 route_id, route.display_name, redirected,
-                redirected[0] if redirected else "", redirected[-1] if redirected else "")
+                redirected[0] if redirected else "", redirected[-1] if redirected else "",
+                dict(route.default_kilometrage))
         migrated.bildfahrplan_routes = list(self.bildfahrplan_routes)
         for target_id, target in sorted(registry.targets.items()):
             if target_id not in migrated.nodes:
@@ -313,6 +314,55 @@ class EditableTopologyGraph:
         self.defined_routes, self.bildfahrplan_routes = migrated.defined_routes, migrated.bildfahrplan_routes
         self.metadata = migrated.metadata
         return changed
+
+    def add_registry_supplements(self, registry: TopologyTargetRegistry) -> int:
+        """Ergaenzt neue Registry-Ziele, ohne den autoritativen Graph zu migrieren.
+
+        Stabile gespeicherte Identitaeten haben Vorrang. Der Anzeigename dient
+        nur dann als Legacy-Fallback, wenn sowohl im Graph als auch in der
+        Registry genau ein Kandidat existiert. Vorhandene Knoten, Kanten,
+        Strecken und Layoutpositionen werden nicht veraendert.
+        """
+        represented: set[str] = set()
+        for node in self.nodes.values():
+            candidates = {
+                value for value in (
+                    node.target_id,
+                    node.operating_point_id,
+                    node.metadata.get("canonical_target_id"),
+                    node.metadata.get("target_id"),
+                ) if value in registry.targets
+            }
+            if node.id in registry.targets:
+                candidates.add(node.id)
+            if len(candidates) == 1:
+                represented.update(candidates)
+
+        graph_names: dict[str, list[TopologyNode]] = {}
+        for node in self.nodes.values():
+            graph_names.setdefault(self.logical_name(node.display_name), []).append(node)
+        target_names: dict[str, list[TopologyTarget]] = {}
+        for target in registry.targets.values():
+            target_names.setdefault(self.logical_name(target.display_name), []).append(target)
+        for name, targets in target_names.items():
+            nodes = graph_names.get(name, ())
+            if len(targets) == 1 and len(nodes) == 1:
+                represented.add(targets[0].target_id)
+
+        added = 0
+        for target_id, target in sorted(registry.targets.items()):
+            if target_id in represented:
+                continue
+            node = self.ensure_supplement_node(
+                target_id, target.display_name,
+                "entry" if target.target_kind == "entry_point" else "junction",
+                "registry_supplement", canonical_target_id=target_id,
+                target_kind=target.target_kind)
+            node.metadata["target_raw_members"] = list(target.raw_members)
+            node.metadata["target_evidence"] = list(target.evidence)
+            represented.add(target_id)
+            added += 1
+        return added
 
     def canonicalize_automatic_nodes(self, canonical_by_node: dict[str, str]) -> int:
         """Unifies automatic representations without touching authoritative manual nodes."""

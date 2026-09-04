@@ -544,8 +544,14 @@ class OperatingPointAssignments:
             },
             "manual_point_ids": sorted(self.manual_point_ids),
             "assignments": dict(sorted(self.manual_assignments.items(), key=lambda item: natural_sort_key(item[0]))),
-            "assignment_sources": {name: self.sources.get(name, "manual")
-                                   for name in sorted(self.manual_assignments, key=natural_sort_key)},
+            # ``manual_assignments`` ist der autoritative Override-Layer. Seine
+            # Eintraege duerfen deshalb auch nach einem Rebuild niemals nur mit
+            # einer automatischen Snapshot-Quelle persistiert werden.
+            "assignment_sources": {
+                name: "manual_entry" if target in self.entry_points else "manual"
+                for name, target in sorted(
+                    self.manual_assignments.items(), key=lambda item: natural_sort_key(item[0]))
+            },
             "unassigned": sorted(self.explicitly_unassigned, key=natural_sort_key),
             "deleted_automatic_point_ids": sorted(self.deleted_automatic_point_ids),
             "deleted_automatic_identities": sorted(self.deleted_automatic_identities),

@@ -569,6 +569,11 @@ class OperatingPointsTab(QtWidgets.QWidget):
     def assignment_completeness(self):
         return self.model.completeness()
 
+    def topology_target_registry(self):
+        """Liefert die aktuelle effektive Ortszuordnung direkt aus dem Speicher."""
+        from infrastructure import TopologyTargetRegistry
+        return TopologyTargetRegistry.from_assignments(self.model, self._automatic)
+
     def _refresh_completer(self) -> None:
         entries = []
         for point in self.model.points.values(): entries.append(f"{point.display_name}  [Betriebsstelle]")

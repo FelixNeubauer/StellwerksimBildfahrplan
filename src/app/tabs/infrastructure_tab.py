@@ -10,7 +10,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from infrastructure import (
     CorridorGraphBuilder, EditableTopologyGraph, EditableTopologyGraphStore,
     InfrastructureGraphBuilder, OperatingPointResolver, RawInfrastructureGraph,
-    OperatingPointAssignments, SavedStellwerkIdentity, SchedulePointGraph, archive_artifact, entry_points_from_raw_graph,
+    SavedStellwerkIdentity, SchedulePointGraph, archive_artifact,
     find_identity_candidate, parse_bahnsteigliste, parse_wege, save_generated_graph,
     TopologyTargetRegistry,
     estimate_kilometrage, validate_kilometrage,
@@ -148,7 +148,8 @@ class MoveNodeCommand(QtGui.QUndoCommand):
 
 
 class InfrastructureTab(QtWidgets.QWidget):
-    def __init__(self, config_directory, parent=None) -> None:
+    def __init__(self, config_directory, parent=None, *, target_registry_provider=None,
+                 target_registry_ready_provider=None) -> None:
         super().__init__(parent)
         self.config_directory = Path(config_directory)
         self.store = EditableTopologyGraphStore(config_directory)
@@ -156,6 +157,8 @@ class InfrastructureTab(QtWidgets.QWidget):
         self.aid = None; self.facility_name = None
         self._last_signature = None; self._automatic_graph = None; self._automatic_source = None
         self._target_registry = TopologyTargetRegistry()
+        self._target_registry_provider = target_registry_provider
+        self._target_registry_ready_provider = target_registry_ready_provider
         self._services = ()
         self._dirty = False; self._identity_ready = False; self._loading = False
         self._route_path: list[str] | None = None
@@ -260,7 +263,11 @@ class InfrastructureTab(QtWidgets.QWidget):
             self._automatic_graph = automatic
             self._automatic_source = context[2]
             if not self._identity_ready and self.aid is not None and self.facility_name:
-                self._load_or_initialize(automatic)
+                saved_exists = self.store.path_for(self.aid).exists()
+                registry_ready = (self._target_registry_ready_provider() if
+                                  self._target_registry_ready_provider else True)
+                if saved_exists or registry_ready:
+                    self._load_or_initialize(automatic)
             elif self._identity_ready:
                 before = self.graph.to_dict(); self._apply_supplements(self.graph)
                 if self.graph.to_dict() != before:
@@ -282,37 +289,15 @@ class InfrastructureTab(QtWidgets.QWidget):
         platform_xml = next((raw_xml for raw_xml in reversed(snapshot.infrastructure_documents)
                              if raw_xml.lstrip().startswith("<bahnsteigliste")), None)
         platforms = parse_bahnsteigliste(platform_xml) if platform_xml else ()
-        manual = {}
-        if snapshot.aid is not None:
-            manual_path = self.config_directory / "operating_points" / f"{snapshot.aid}.json"
-            if manual_path.exists():
-                candidate = json.loads(manual_path.read_text(encoding="utf-8"))
-                validation = validate_saved_stellwerk_identity(
-                    candidate, SavedStellwerkIdentity(snapshot.aid, snapshot.facility_name or "unbekannt"), manual_path)
-                if validation.status == "match": manual = candidate
-        operating = OperatingPointResolver(platforms, manual, snapshot.aid).resolve(schedule)
+        operating = OperatingPointResolver(platforms, aid=snapshot.aid).resolve(schedule)
         corridor = CorridorGraphBuilder(schedule, operating, raw).build(); operational = corridor.to_operational_graph()
-        entries = entry_points_from_raw_graph(raw)
-        raw_names = set(schedule.nodes)
-        raw_kinds = {name: "schedule_point" for name in raw_names}
-        for platform in platforms:
-            raw_names.add(platform.raw_name); raw_names.update(platform.related_names)
-            raw_kinds[platform.raw_name] = "platform_or_haltpunkt"
-            raw_kinds.update({name: "platform_or_haltpunkt" for name in platform.related_names})
-        entry_assignments = {}
-        for entry in entries.values():
-            raw_names.add(entry.display_name); raw_kinds[entry.display_name] = "entry"
-            entry_assignments[entry.display_name] = entry.id
-        assignments = OperatingPointAssignments()
-        assignments.rebuild(
-            operating, raw_names, (), manual, entry_points=entries,
-            raw_item_kinds=raw_kinds, automatic_entry_assignments=entry_assignments)
-        self._target_registry = TopologyTargetRegistry.from_assignments(assignments, operating)
+        self._target_registry = (self._target_registry_provider()
+                                 if self._target_registry_provider else TopologyTargetRegistry())
         graph = EditableTopologyGraph.from_registry_projection(operational, self._target_registry)
         return graph, (raw, builder, operational, platforms, schedule, operating, corridor)
 
     def _apply_supplements(self, graph: EditableTopologyGraph) -> None:
-        graph.migrate_to_registry(self._target_registry)
+        graph.add_registry_supplements(self._target_registry)
 
     def _raw_to_topology_node(self, node_ids) -> dict[str, str]:
         result = dict(self._target_registry.raw_to_target)
@@ -365,13 +350,18 @@ class InfrastructureTab(QtWidgets.QWidget):
             if validation.path.exists(): archive_artifact(validation.path)
         self.graph = (EditableTopologyGraph.from_dict(data) if data else
                       EditableTopologyGraph.from_dict(automatic.to_dict()))
+        legacy_migrated = bool(data and int(data.get("schema_version", 1)) < self.store.SCHEMA_VERSION)
+        if legacy_migrated:
+            self.graph.migrate_to_registry(self._target_registry)
         before_supplements = self.graph.to_dict(); self._apply_supplements(self.graph)
         supplements_changed = self.graph.to_dict() != before_supplements
-        kilometrages_changed = self._ensure_kilometrages()
-        self._identity_ready = True; self._dirty = data is None or supplements_changed
+        # Aktuelle Artefakte werden exakt geladen. Fehlende Kilometerwerte
+        # werden nur im einmaligen Legacy-Pfad migriert, nie im Normalbetrieb.
+        kilometrages_changed = self._ensure_kilometrages() if legacy_migrated else False
+        self._identity_ready = True; self._dirty = data is None or supplements_changed or legacy_migrated
         self._dirty = self._dirty or kilometrages_changed
         self._rebuild_scene(); self._refresh_routes(); self._refresh_instances()
-        if data is None: self.flush_pending_save()
+        if data is None or legacy_migrated: self.flush_pending_save()
         unresolved = len(self.graph.metadata.get("unmapped_legacy_nodes", ()))
         message = ("Finaler gespeicherter Graph geladen." if data
                    else "Initialgraph automatisch erzeugt und gespeichert.")

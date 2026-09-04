@@ -12,22 +12,21 @@ from bildfahrplan.navigation import (
     centered_time_range, clamp_time_range, time_bounds,
     live_follow_time_range,
 )
-from infrastructure import entry_points_from_raw_graph
-
-
 class UiLogicTests(unittest.TestCase):
-    def test_infrastructure_tab_imports_entry_point_supplement_builder(self):
-        """Startup regression: _topology_supplements must resolve its helper."""
+    def test_infrastructure_tab_uses_in_memory_registry_provider(self):
         path = Path(__file__).parents[1] / "src/app/tabs/infrastructure_tab.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        imported = {
-            alias.name
-            for node in tree.body
-            if isinstance(node, ast.ImportFrom) and node.module == "infrastructure"
-            for alias in node.names
-        }
-        self.assertIn("entry_points_from_raw_graph", imported)
-        self.assertTrue(callable(entry_points_from_raw_graph))
+        source = path.read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn("self._target_registry_provider()", source)
+        self.assertNotIn('config_directory / "operating_points"', source)
+
+    def test_main_window_wires_live_assignment_provider_before_infrastructure(self):
+        source = (ROOT / "src/app/main_window.py").read_text(encoding="utf-8")
+        assignments = source.index("self.operating_points = OperatingPointsTab")
+        infrastructure = source.index("self.infrastructure = InfrastructureTab")
+        provider = source.index("self.operating_points.topology_target_registry")
+        self.assertLess(assignments, infrastructure)
+        self.assertGreater(provider, infrastructure)
 
     def test_topology_tools_use_arrow_navigation_and_selection_label(self):
         widgets = (ROOT / "src/app/widgets/topology_graphics.py").read_text(encoding="utf-8")

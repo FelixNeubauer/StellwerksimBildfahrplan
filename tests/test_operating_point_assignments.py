@@ -258,6 +258,10 @@ class AssignmentLogicTests(unittest.TestCase):
         config = model.to_config()
         self.assertEqual(set(config["assignments"].values()), {entry_id})
         self.assertEqual(set(config["assignment_sources"].values()), {"manual_entry"})
+        restored = OperatingPointAssignments()
+        restored.rebuild(graph, (), (), config)
+        self.assertEqual({restored.assignments[name] for name in names}, {entry_id})
+        self.assertEqual({restored.sources[name] for name in names}, {"manual_entry"})
 
     def test_clear_keeps_evidence_based_self_assignments(self):
         graph = automatic("Martinszell", "Einfahrt F")
@@ -335,6 +339,19 @@ class AssignmentLogicTests(unittest.TestCase):
         self.assertIn("X", rebuilt.unassigned)
         again = OperatingPointAssignments(); again.rebuild(graph, ("X",), (), rebuilt.to_config())
         self.assertIn("X", again.unassigned)
+
+    def test_manual_override_is_top_level_authoritative_not_snapshot_only(self):
+        graph = automatic("TBL 1", "TBL 2")
+        model = OperatingPointAssignments(); model.rebuild(graph, ("TBL 1", "TBL 2"), ())
+        manual = model.add_point("Sonderziel")
+        model.assign(("TBL 1",), manual)
+        config = model.to_config()
+        self.assertEqual(config["assignments"]["TBL 1"], manual)
+        self.assertEqual(config["assignment_sources"]["TBL 1"], "manual")
+        rebuilt = OperatingPointAssignments()
+        rebuilt.rebuild(graph, ("TBL 1", "TBL 2"), (), config)
+        self.assertEqual(rebuilt.assignments["TBL 1"], manual)
+        self.assertEqual(rebuilt.sources["TBL 1"], "manual")
 
     def test_existing_config_does_not_replace_live_auto_assignments(self):
         graph = automatic("TBL 1", "TBL 2", "TBL 3")

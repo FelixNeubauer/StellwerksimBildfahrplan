@@ -200,6 +200,60 @@ class EditableTopologyTests(unittest.TestCase):
         self.assertEqual(len(graph.metadata["unmapped_legacy_nodes"]), 1)
         self.assertFalse(graph.duplicate_target_ids())
 
+    def test_registry_migration_preserves_default_kilometrage(self):
+        registry = TopologyTargetRegistry(targets={
+            name: TopologyTarget(name, "operating_point", name) for name in ("A", "B")})
+        graph = graph_with_nodes(("A", "entry"), ("B", "entry"))
+        graph.add_edge("A", "B")
+        route = graph.add_route("A – B", ["A", "B"])
+        route.default_kilometrage = {"A": 0.0, "B": 12.5}
+        graph.migrate_to_registry(registry)
+        self.assertEqual(graph.defined_routes[route.route_id].default_kilometrage,
+                         {"A": 0.0, "B": 12.5})
+
+    def test_additive_registry_refresh_preserves_authoritative_graph(self):
+        graph = graph_with_nodes(("A", "entry"), ("B", "junction"), ("C", "entry"))
+        graph.nodes["A"].target_id = "A"
+        graph.nodes["B"].layout_x, graph.nodes["B"].layout_y = 123.0, 456.0
+        graph.add_edge("A", "B", source="automatic")
+        graph.add_edge("B", "C", source="manual")
+        route = graph.add_route("A – C", ["A", "B", "C"])
+        route.default_kilometrage = {"A": 0.0, "B": 5.0, "C": 10.0}
+        instance = graph.add_bildfahrplan_instance(route.route_id)
+        instance.kilometrage = {"A": 20.0, "B": 15.0, "C": 10.0}
+        before = graph.to_dict()
+
+        incomplete = TopologyTargetRegistry(targets={
+            "A": TopologyTarget("A", "operating_point", "A")})
+        self.assertEqual(graph.add_registry_supplements(incomplete), 0)
+        self.assertEqual(graph.to_dict(), before)
+
+        complete = TopologyTargetRegistry(targets={
+            name: TopologyTarget(name, "operating_point", name) for name in ("A", "B", "C", "D")})
+        self.assertEqual(graph.add_registry_supplements(complete), 1)
+        self.assertEqual(set(graph.nodes), {"A", "B", "C", "D"})
+        self.assertEqual(graph.degree("D"), 0)
+        self.assertEqual((graph.nodes["B"].layout_x, graph.nodes["B"].layout_y), (123.0, 456.0))
+        self.assertEqual({frozenset((edge.node_a, edge.node_b)) for edge in graph.edges.values()},
+                         {frozenset(("A", "B")), frozenset(("B", "C"))})
+        self.assertEqual(graph.defined_routes[route.route_id].ordered_node_ids, ["A", "B", "C"])
+        self.assertEqual(graph.defined_routes[route.route_id].default_kilometrage,
+                         {"A": 0.0, "B": 5.0, "C": 10.0})
+        self.assertEqual(graph.bildfahrplan_routes[0].kilometrage,
+                         {"A": 20.0, "B": 15.0, "C": 10.0})
+
+    def test_additive_registry_refresh_does_not_restore_deleted_automatic_edge(self):
+        graph = graph_with_nodes(("A", "entry"), ("B", "line"), ("C", "entry"))
+        graph.add_edge("A", "B", source="automatic")
+        deleted = graph.add_edge("B", "C", source="automatic")
+        graph.delete_edge(deleted.id)
+        graph.add_edge("A", "C", source="manual")
+        registry = TopologyTargetRegistry(targets={
+            name: TopologyTarget(name, "operating_point", name) for name in ("A", "B", "C")})
+        graph.add_registry_supplements(registry)
+        self.assertIsNone(graph.edge_between("B", "C"))
+        self.assertIsNotNone(graph.edge_between("A", "C"))
+
     def test_duplicate_target_validation_reports_target(self):
         graph = graph_with_nodes(("one", "junction"), ("two", "junction"))
         graph.nodes["one"].target_id = graph.nodes["two"].target_id = "THDM"

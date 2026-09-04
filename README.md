@@ -49,9 +49,13 @@ Der Tab **Strecke** enthält nun einen auf `QGraphicsScene` und
 `OperationalRouteGraph` wird für ein neues Stellwerk genau einmal als
 Initialvorschlag importiert. Danach ist der AID-spezifisch unter
 `config/topology/<aid>.json` gespeicherte editierbare Graph autoritativ und wird
-durch spätere automatische Erkennungen nicht verändert. Nur die ausdrücklich
-bestätigte Aktion **Graph automatisch neu erzeugen** archiviert den bisherigen
-Stand und ersetzt ihn durch einen neuen Import.
+durch spätere automatische Erkennungen weder reduziert noch umgebaut. Die
+aktuelle Target-Registry aus der effektiven In-Memory-Ortszuordnung ergänzt nur
+bislang fehlende Ziele als unverbundene Parking-Knoten. Verschwundene Ziele,
+vorhandene Kanten, Strecken, Kilometerwerte und Layoutpositionen bleiben
+unverändert. Nur die ausdrücklich bestätigte Aktion **Graph automatisch neu
+erzeugen** archiviert den bisherigen Stand und ersetzt ihn durch einen neuen
+Import.
 
 Knoten können verschoben, hinzugefügt, gelöscht und als
 Streckenbetriebsstelle, Einfahrt oder Abzweigbetriebsstelle klassifiziert
@@ -250,6 +254,11 @@ seines sichtbaren Zustands. Änderungen werden 30 Sekunden nach der letzten
 Bearbeitung automatisch sowie beim Verlassen des Tabs und beim Beenden sofort
 atomar gespeichert. Automatische Snapshot-Einträge bleiben automatisch; nur
 der getrennte Override-Bereich ist autoritativ manuell.
+
+Der Strecke-Tab bezieht diese effektive Ortszuordnung direkt aus dem aktuellen
+In-Memory-Modell des Editors. Auch noch nicht vom 30-Sekunden-Autosave erfasste
+manuelle Overrides stehen der Target-Registry deshalb sofort zur Verfügung; die
+JSON-Datei wird im Strecke-Tab nicht als parallele zweite Wahrheit eingelesen.
 
 Äußere Ein-/Ausfahrten und Anschlüsse werden im Ortszuordnungseditor als eigene
 logische Ziele behandelt. Primäre Quelle sind die verlustfrei geparsten
