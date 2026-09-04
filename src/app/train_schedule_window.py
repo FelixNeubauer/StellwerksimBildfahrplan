@@ -18,16 +18,17 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         self.summary.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
-        self.table = QtWidgets.QTableWidget(0, 6)
+        self.table = QtWidgets.QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
-            ("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Abfahrt", "Flags", "Optionen"))
+            ("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Ist-Ankunft",
+             "Abfahrt", "Ist-Abfahrt", "Flags", "Optionen"))
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setWordWrap(True)
         header = self.table.horizontalHeader()
-        for column in range(6):
+        for column in range(8):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table, 1)
         self.footer = QtWidgets.QHBoxLayout()
         self.footer.addStretch()
@@ -54,8 +55,8 @@ class TrainScheduleWindow(QtWidgets.QWidget):
         muted = palette.color(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Text)
         normal = palette.color(QtGui.QPalette.ColorRole.Text)
         for row_number, row in enumerate(model.rows):
-            values = (row.operating_point, row.raw_schedule_name, row.arrival, row.departure,
-                      " · ".join(row.flags))
+            values = (row.operating_point, row.raw_schedule_name, row.arrival, row.actual_arrival,
+                      row.departure, row.actual_departure, " · ".join(row.flags))
             background = base if row.group_index % 2 == 0 else alternate
             if row.completed:
                 background = QtGui.QColor(background).darker(115)
@@ -65,13 +66,13 @@ class TrainScheduleWindow(QtWidgets.QWidget):
                     item = QtWidgets.QTableWidgetItem()
                     self.table.setItem(row_number, column, item)
                 item.setText(value)
-                item.setToolTip(row.raw_flags if column == 4 else value)
+                item.setToolTip(row.raw_flags if column == 6 else value)
                 item.setBackground(background)
                 item.setForeground(muted if row.completed else normal)
-            button = self.table.cellWidget(row_number, 5)
+            button = self.table.cellWidget(row_number, 7)
             if button is None:
                 button = QtWidgets.QPushButton("Optionen")
-                self.table.setCellWidget(row_number, 5, button)
+                self.table.setCellWidget(row_number, 7, button)
             button.setEnabled(not row.completed)
         self.table.resizeRowsToContents()
 

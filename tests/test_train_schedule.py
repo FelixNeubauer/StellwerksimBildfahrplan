@@ -6,6 +6,7 @@ from bildfahrplan.train_schedule import (
     build_train_schedule_view_model, format_schedule_flags, remaining_indices,
     sequential_group_indices,
 )
+from sts_collector import ObservedScheduleRowTime, ObservedTrainTimes
 
 
 def point(name, arrival=None, departure=None, flags="", notice=None, operating_point=None):
@@ -44,6 +45,21 @@ def test_schedule_view_model_has_no_route_or_notice_presentation():
     assert not hasattr(model, "route_points")
     assert not hasattr(model, "common_notices")
     assert not hasattr(model.rows[0], "notice")
+
+
+def test_schedule_view_model_only_formats_observed_runtime_times():
+    observed = ObservedTrainTimes(rows={
+        0: ObservedScheduleRowTime(actual_arrival_minute=10 * 60 + 20,
+                                   actual_departure_minute=10 * 60 + 24),
+        1: ObservedScheduleRowTime(actual_arrival_minute=10 * 60 + 30,
+                                   actual_departure_minute=10 * 60 + 31),
+    })
+    model = build_train_schedule_view_model(
+        service([point("B2", "10:15", "10:16"), point("X", flags="D")]),
+        observed_times=observed,
+    )
+    assert (model.rows[0].actual_arrival, model.rows[0].actual_departure) == ("10:20", "10:24")
+    assert (model.rows[1].actual_arrival, model.rows[1].actual_departure) == ("", "")
 
 
 def test_schedule_flag_user_texts_hide_parameters_and_p_flags():
@@ -89,9 +105,11 @@ def test_completed_row_palette_uses_disabled_color_group():
     assert "QtGui.QPalette.ColorRole.Disabled" not in source
 
 
-def test_schedule_window_uses_six_columns_without_route_or_notices():
+def test_schedule_window_uses_eight_columns_without_route_or_notices():
     source = (Path(__file__).parents[1] / "src/app/train_schedule_window.py").read_text(encoding="utf-8")
-    assert "QTableWidget(0, 6)" in source
-    assert '("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Abfahrt", "Flags", "Optionen")' in source
+    assert "QTableWidget(0, 8)" in source
+    assert '("Betriebsstelle", "Gleis / Fahrplanpunkt", "Ankunft", "Ist-Ankunft",' in source
+    assert '("Abfahrt", "Ist-Abfahrt", "Flags", "Optionen")' not in source  # one continued tuple
+    assert '"Abfahrt", "Ist-Abfahrt", "Flags", "Optionen"' in source
     assert "self.route" not in source
     assert "self.notices" not in source

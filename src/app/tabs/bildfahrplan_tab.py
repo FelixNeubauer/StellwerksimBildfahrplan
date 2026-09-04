@@ -106,6 +106,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._last_trace_signature = None
         self._latest_services = {}
         self._known_services = {}
+        self._observed_train_times = {}
         self.open_train_windows = {}
         controls = QtWidgets.QHBoxLayout()
         controls.addWidget(QtWidgets.QLabel(f"Streckenprofil: {profile.name}"))
@@ -161,6 +162,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
     def refresh(self, snapshot) -> None:
         self._latest_services = {service.zid: service for service in snapshot.services}
         self._known_services.update(self._latest_services)
+        self._observed_train_times = snapshot.observed_train_times
         self._refresh_train_windows()
         # Die 1-Hz-Uhr aktualisiert primaer nur Zeitlinie und Statusanzeige.
         reference = snapshot.display_simtime
@@ -517,7 +519,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
             return
         model = build_train_schedule_view_model(
             service, self._operating_point_for,
-            in_current_snapshot=getattr(service, "status", "active") != "inactive_unknown")
+            in_current_snapshot=getattr(service, "status", "active") != "inactive_unknown",
+            observed_times=self._observed_train_times.get(zid))
         window = self.open_train_windows.get(zid)
         if window is None:
             window = TrainScheduleWindow(model, self.window())
@@ -538,7 +541,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
             window.update_view_model(build_train_schedule_view_model(
                 service, self._operating_point_for,
                 in_current_snapshot=(zid in self._latest_services and
-                                     getattr(service, "status", "active") != "inactive_unknown")))
+                                     getattr(service, "status", "active") != "inactive_unknown"),
+                observed_times=self._observed_train_times.get(zid)))
 
     @QtCore.Slot(int)
     def _train_window_closed(self, zid: int) -> None:

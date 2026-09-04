@@ -215,6 +215,60 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual((service.current_track, service.planned_track), ("MBLH 2", "MBLH 1"))
         self.assertEqual((service.visible, service.at_track), (True, False))
 
+    def test_observed_arrival_and_departure_match_original_planned_track(self):
+        collector = STSLiveCollector()
+        collector.process(xml(f'<simzeit zeit="{self.simtime(10, 20, 0)}" />'))
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A1" plan="A1" />'
+                              '<gleis name="B9" plan="B2" /><gleis name="C1" plan="C1" />'
+                              '</zugfahrplan>'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B9" plangleis="B2" />'))
+        collector.process(xml(f'<simzeit zeit="{self.simtime(10, 24, 0)}" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="B9" plangleis="B2" />'))
+        row = collector.observed_train_times[7].rows[1]
+        self.assertEqual((row.actual_arrival_minute, row.actual_departure_minute), (620, 624))
+
+    def test_observed_departure_without_arrival_and_duplicates_first_win(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B2" plan="B2" /></zugfahrplan>'))
+        for minute in (24, 24, 25):
+            collector.process(xml(f'<simzeit zeit="{self.simtime(10, minute, 0)}" />'))
+            collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="other" plangleis="B2" />'))
+        row = collector.observed_train_times[7].rows[0]
+        self.assertIsNone(row.actual_arrival_minute)
+        self.assertEqual(row.actual_departure_minute, 624)
+
+    def test_observed_repeated_track_uses_remaining_schedule_sequence(self):
+        collector = STSLiveCollector()
+        full = ('<zugfahrplan zid="7"><gleis name="A" plan="A" an="10:00" />'
+                '<gleis name="B" plan="B" an="10:10" /><gleis name="C" plan="C" an="10:20" />'
+                '<gleis name="B" plan="B" an="10:30" /><gleis name="D" plan="D" an="10:40" />'
+                '</zugfahrplan>')
+        collector.process(xml(full))
+        collector.process(xml(f'<simzeit zeit="{self.simtime(10, 11, 0)}" />'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" plangleis="B" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" />'))
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" an="10:30" />'
+                              '<gleis name="D" plan="D" an="10:40" /></zugfahrplan>'))
+        collector.process(xml(f'<simzeit zeit="{self.simtime(10, 31, 0)}" />'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" plangleis="B" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" />'))
+        rows = collector.observed_train_times[7].rows
+        self.assertEqual(set(rows), {1, 3})
+        self.assertEqual(rows[1].actual_arrival_minute, 611)
+        self.assertEqual(rows[3].actual_arrival_minute, 631)
+
+    def test_observed_ambiguous_d_point_and_missing_plangleis_are_ignored(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" />'
+                              '<gleis name="X" plan="X" flags="D" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'))
+        collector.services[7].current_schedule = []
+        collector.process(xml(f'<simzeit zeit="{self.simtime(10, 0, 0)}" />'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" plangleis="B" />'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" plangleis="X" />'))
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B" />'))
+        self.assertEqual(collector.observed_train_times[7].rows, {})
+
 
 if __name__ == "__main__":
     unittest.main()

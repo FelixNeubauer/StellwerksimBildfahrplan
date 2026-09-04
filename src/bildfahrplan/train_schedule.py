@@ -15,7 +15,9 @@ class TrainScheduleRow:
     operating_point: str
     raw_schedule_name: str
     arrival: str
+    actual_arrival: str
     departure: str
+    actual_departure: str
     flags: tuple[str, ...]
     raw_flags: str
     completed: bool
@@ -129,7 +131,7 @@ def _clock(value: str | None) -> str:
 
 def build_train_schedule_view_model(
     service: object, operating_point_for: Callable[[str, object], str | None] | None = None,
-    *, in_current_snapshot: bool = True,
+    *, in_current_snapshot: bool = True, observed_times: object | None = None,
 ) -> TrainScheduleViewModel:
     original = tuple(getattr(service, "original_schedule", ()))
     current = tuple(getattr(service, "current_schedule", ())) if in_current_snapshot else ()
@@ -144,15 +146,25 @@ def build_train_schedule_view_model(
     groups = sequential_group_indices(ops)
     origin = str(getattr(service, "origin", "") or "")
     destination = str(getattr(service, "destination", "") or "")
-    rows = tuple(TrainScheduleRow(
-        index, ops[index],
-        str(getattr(point, "planned_name", None) or getattr(point, "raw_name", "")),
-        _clock(getattr(point, "planned_arrival", None)),
-        _clock(getattr(point, "planned_departure", None)),
-        format_schedule_flags(point), str(getattr(point, "flags_raw", "") or ""),
-        index not in active, groups[index],
-    ) for index, point in enumerate(original))
+    observed_rows = getattr(observed_times, "rows", {}) if observed_times is not None else {}
+    rows = []
+    for index, point in enumerate(original):
+        observed = observed_rows.get(index)
+        is_d_point = "D" in re.findall(r"([A-Z])(?:\[[^]]*\]|\([^)]*\))?",
+                                        str(getattr(point, "flags_raw", "") or ""))
+        actual_arrival = getattr(observed, "actual_arrival_minute", None) if not is_d_point else None
+        actual_departure = getattr(observed, "actual_departure_minute", None) if not is_d_point else None
+        rows.append(TrainScheduleRow(
+            index, ops[index],
+            str(getattr(point, "planned_name", None) or getattr(point, "raw_name", "")),
+            _clock(getattr(point, "planned_arrival", None)),
+            format_axis_time(actual_arrival * 60) if actual_arrival is not None else "",
+            _clock(getattr(point, "planned_departure", None)),
+            format_axis_time(actual_departure * 60) if actual_departure is not None else "",
+            format_schedule_flags(point), str(getattr(point, "flags_raw", "") or ""),
+            index not in active, groups[index],
+        ))
     return TrainScheduleViewModel(
         int(getattr(service, "zid")), str(getattr(service, "name", "")),
-        origin, destination, getattr(service, "current_delay", None), rows, in_current_snapshot,
+        origin, destination, getattr(service, "current_delay", None), tuple(rows), in_current_snapshot,
     )
