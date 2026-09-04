@@ -1,0 +1,14 @@
+{
+  "train_color_mode": "colorful",
+  "single_train_color": "#D0D0D0",
+  "live_follow_position_percent": 15,
+  "category_train_colors": {
+    "local": "#4FC3F7",
+    "long_distance": "#EF5350",
+    "freight": "#FFB74D",
+    "shunting": "#BA68C8",
+    "other": "#BDBDBD"
+  },
+  "train_type_colors": {},
+  "custom_train_types": []
+}

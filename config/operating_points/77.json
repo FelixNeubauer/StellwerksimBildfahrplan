@@ -1,0 +1,2513 @@
+{
+  "schema_version": 3,
+  "artifact_type": "operating_points",
+  "stellwerk": {
+    "aid": 77,
+    "name": "Blaubeuren 2024"
+  },
+  "aid": 77,
+  "stellwerk_name": "Blaubeuren 2024",
+  "saved_at": "2026-09-04T16:30:41.213648+00:00",
+  "entry_points": {
+    "entry:wege:altshausen:6d86c61c19": {
+      "display_name": "Altshausen",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:29",
+          "element_type": "7",
+          "enr": "29",
+          "raw_name": "Altshausen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Altshausen",
+            "enr": "29",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:9",
+          "element_type": "6",
+          "enr": "9",
+          "raw_name": "Altshausen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Altshausen",
+            "enr": "9",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:tsl:altshausen",
+          "display_name": "Altshausen",
+          "source_node": "TSL",
+          "external_name": "Altshausen",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "raw_external_connector"
+          ],
+          "confidence": "inferred",
+          "raw_connector": "enr:29",
+          "directionality": "observed_outgoing",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "Altshausen",
+          "possible_source_nodes": [
+            "Ef Altshausen",
+            "TSL"
+          ],
+          "trusted_incoming_count": 0,
+          "trusted_outgoing_count": 2,
+          "untrusted_incoming_count": 2,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:29",
+          "supporting_services": [
+            16056,
+            98267,
+            142620,
+            200639
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "TSL"
+        },
+        {
+          "source_node": "TSL",
+          "original_target": "Altshausen",
+          "normalized_candidate": "altshausen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:29",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:claas:8f0d50589f": {
+      "display_name": "Claas",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:49",
+          "element_type": "6",
+          "enr": "49",
+          "raw_name": "Claas",
+          "metadata": {
+            "tag": "shape",
+            "name": "Claas",
+            "enr": "49",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7"
+      ],
+      "boundary_evidence": []
+    },
+    "entry:wege:denkinger:47ff25ba53": {
+      "display_name": "Denkinger",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:6",
+          "element_type": "6",
+          "enr": "6",
+          "raw_name": "Denkinger",
+          "metadata": {
+            "tag": "shape",
+            "name": "Denkinger",
+            "enr": "6",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7"
+      ],
+      "boundary_evidence": []
+    },
+    "entry:wege:heidelberg-zement:d0a731dbd5": {
+      "display_name": "Heidelberg Zement",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:3",
+          "element_type": "6",
+          "enr": "3",
+          "raw_name": "Heidelberg Zement",
+          "metadata": {
+            "tag": "shape",
+            "name": "Heidelberg Zement",
+            "enr": "3",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7"
+      ],
+      "boundary_evidence": []
+    },
+    "entry:wege:herrlingen:9f759f10fd": {
+      "display_name": "Herrlingen",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:2",
+          "element_type": "6",
+          "enr": "2",
+          "raw_name": "Herrlingen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Herrlingen",
+            "enr": "2",
+            "type": "6"
+          }
+        },
+        {
+          "node_id": "enr:22",
+          "element_type": "7",
+          "enr": "22",
+          "raw_name": "Herrlingen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Herrlingen",
+            "enr": "22",
+            "type": "7"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:tar:herrlingen",
+          "display_name": "Herrlingen",
+          "source_node": "TAR",
+          "external_name": "Herrlingen",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "raw_external_connector"
+          ],
+          "confidence": "inferred",
+          "raw_connector": "enr:22",
+          "directionality": "observed_outgoing",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "Herrlingen",
+          "possible_source_nodes": [
+            "TAR",
+            "TRC",
+            "TSK"
+          ],
+          "trusted_incoming_count": 0,
+          "trusted_outgoing_count": 12,
+          "untrusted_incoming_count": 9,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:22",
+          "supporting_services": [
+            9398,
+            9404,
+            10235,
+            18232,
+            33658,
+            107630,
+            107741,
+            108048,
+            123257,
+            123764,
+            124340,
+            135677,
+            136157,
+            166574,
+            183194,
+            203527,
+            211894,
+            211895,
+            211896,
+            211897,
+            212160
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "TAR"
+        },
+        {
+          "source_node": "TAR",
+          "original_target": "Herrlingen",
+          "normalized_candidate": "herrlingen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:22",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TSK",
+          "original_target": "Herrlingen",
+          "normalized_candidate": "herrlingen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:22",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TRC",
+          "original_target": "Herrlingen",
+          "normalized_candidate": "herrlingen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:22",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:m-nsingen:0b2c924fef": {
+      "display_name": "Münsingen",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:25",
+          "element_type": "7",
+          "enr": "25",
+          "raw_name": "Münsingen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Münsingen",
+            "enr": "25",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:5",
+          "element_type": "6",
+          "enr": "5",
+          "raw_name": "Münsingen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Münsingen",
+            "enr": "5",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "TBL",
+          "original_target": "Münsingen",
+          "normalized_candidate": "münsingen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:25",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TSK",
+          "original_target": "Münsingen",
+          "normalized_candidate": "münsingen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:25",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:mengen:f45b30b588": {
+      "display_name": "Mengen",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:11",
+          "element_type": "6",
+          "enr": "11",
+          "raw_name": "Mengen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Mengen",
+            "enr": "11",
+            "type": "6"
+          }
+        },
+        {
+          "node_id": "enr:31",
+          "element_type": "7",
+          "enr": "31",
+          "raw_name": "Mengen",
+          "metadata": {
+            "tag": "shape",
+            "name": "Mengen",
+            "enr": "31",
+            "type": "7"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "schedule_endpoint",
+        "zugdetails_von_nach",
+        "raw_external_connector",
+        "confirmed_deferred_boundary"
+      ],
+      "boundary_evidence": [
+        {
+          "id": "synthetic:external:tht:mengen",
+          "display_name": "Mengen",
+          "source_node": "THT",
+          "external_name": "Mengen",
+          "evidence": [
+            "schedule_endpoint",
+            "zugdetails_von_nach",
+            "raw_external_connector"
+          ],
+          "confidence": "inferred",
+          "raw_connector": "enr:31",
+          "directionality": "observed_outgoing",
+          "display_offset": 0.12,
+          "node_origin": "synthetic_external_boundary"
+        },
+        {
+          "external_name": "Mengen",
+          "possible_source_nodes": [
+            "THT",
+            "TRC"
+          ],
+          "trusted_incoming_count": 0,
+          "trusted_outgoing_count": 6,
+          "untrusted_incoming_count": 8,
+          "untrusted_outgoing_count": 0,
+          "raw_connector": "enr:31",
+          "supporting_services": [
+            16056,
+            18232,
+            33658,
+            98267,
+            123257,
+            123764,
+            124340,
+            135677,
+            136157,
+            142620,
+            166574,
+            194906,
+            200639,
+            215967
+          ],
+          "confidence": "exact",
+          "status": "confirmed_automatically",
+          "reason": "trusted_endpoint_observation",
+          "confirmation_source": "THT"
+        },
+        {
+          "source_node": "THT",
+          "original_target": "Mengen",
+          "normalized_candidate": "mengen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:31",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        },
+        {
+          "source_node": "TRC",
+          "original_target": "Mengen",
+          "normalized_candidate": "mengen",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:31",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:merkle:47c2726e4b": {
+      "display_name": "Merkle",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:1",
+          "element_type": "6",
+          "enr": "1",
+          "raw_name": "Merkle",
+          "metadata": {
+            "tag": "shape",
+            "name": "Merkle",
+            "enr": "1",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "TAR",
+          "original_target": "Merkle",
+          "normalized_candidate": "merkle",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:1",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:sappi:a0007555dc": {
+      "display_name": "Sappi",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:7",
+          "element_type": "6",
+          "enr": "7",
+          "raw_name": "Sappi",
+          "metadata": {
+            "tag": "shape",
+            "name": "Sappi",
+            "enr": "7",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "TEH",
+          "original_target": "Sappi",
+          "normalized_candidate": "sappi",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:7",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:schwenk-zement:b7258c8ecd": {
+      "display_name": "Schwenk Zement",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:24",
+          "element_type": "7",
+          "enr": "24",
+          "raw_name": "Schwenk Zement",
+          "metadata": {
+            "tag": "shape",
+            "name": "Schwenk Zement",
+            "enr": "24",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:4",
+          "element_type": "6",
+          "enr": "4",
+          "raw_name": "Schwenk Zement",
+          "metadata": {
+            "tag": "shape",
+            "name": "Schwenk Zement",
+            "enr": "4",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7"
+      ],
+      "boundary_evidence": []
+    },
+    "entry:wege:shredderwerk:758db4620b": {
+      "display_name": "Shredderwerk",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:28",
+          "element_type": "7",
+          "enr": "28",
+          "raw_name": "Shredderwerk",
+          "metadata": {
+            "tag": "shape",
+            "name": "Shredderwerk",
+            "enr": "28",
+            "type": "7"
+          }
+        },
+        {
+          "node_id": "enr:8",
+          "element_type": "6",
+          "enr": "8",
+          "raw_name": "Shredderwerk",
+          "metadata": {
+            "tag": "shape",
+            "name": "Shredderwerk",
+            "enr": "8",
+            "type": "6"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "THT",
+          "original_target": "Shredderwerk",
+          "normalized_candidate": "shredderwerk",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:28",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    },
+    "entry:wege:umspannwerk:35a25374ac": {
+      "display_name": "Umspannwerk",
+      "source": "wege",
+      "infrastructure_elements": [
+        {
+          "node_id": "enr:10",
+          "element_type": "6",
+          "enr": "10",
+          "raw_name": "Umspannwerk",
+          "metadata": {
+            "tag": "shape",
+            "name": "Umspannwerk",
+            "enr": "10",
+            "type": "6"
+          }
+        },
+        {
+          "node_id": "enr:30",
+          "element_type": "7",
+          "enr": "30",
+          "raw_name": "Umspannwerk",
+          "metadata": {
+            "tag": "shape",
+            "name": "Umspannwerk",
+            "enr": "30",
+            "type": "7"
+          }
+        }
+      ],
+      "evidence": [
+        "wege_type_6_or_7",
+        "raw_external_connector"
+      ],
+      "boundary_evidence": [
+        {
+          "source_node": "THT",
+          "original_target": "Umspannwerk",
+          "normalized_candidate": "umspannwerk",
+          "classification": "confirmed_external_connector",
+          "matched_node": null,
+          "matched_raw_names": [],
+          "raw_connector": "enr:30",
+          "evidence": [
+            "raw_external_connector"
+          ]
+        }
+      ]
+    }
+  },
+  "raw_item_kinds": {
+    "Altshausen": "entry",
+    "Claas": "entry",
+    "Denkinger": "entry",
+    "Ef Altshausen": "platform_or_haltpunkt",
+    "Ef Mengen": "platform_or_haltpunkt",
+    "Heidelberg Zement": "entry",
+    "Herrlingen": "entry",
+    "Mengen": "entry",
+    "Merkle": "entry",
+    "Münsingen": "entry",
+    "Sappi": "entry",
+    "Schwenk Zement": "entry",
+    "Shredderwerk": "entry",
+    "TALL 1": "platform_or_haltpunkt",
+    "TALL 1L": "platform_or_haltpunkt",
+    "TALL 2": "platform_or_haltpunkt",
+    "TALL 2L": "platform_or_haltpunkt",
+    "TALL 3": "platform_or_haltpunkt",
+    "TAR 1": "platform_or_haltpunkt",
+    "TAR 2": "platform_or_haltpunkt",
+    "TBL 1": "platform_or_haltpunkt",
+    "TBL 2": "platform_or_haltpunkt",
+    "TBL 3": "platform_or_haltpunkt",
+    "TBL 9": "platform_or_haltpunkt",
+    "TBLM": "platform_or_haltpunkt",
+    "TEH 1": "platform_or_haltpunkt",
+    "TEH 2": "platform_or_haltpunkt",
+    "TEH 2 Flügel": "platform_or_haltpunkt",
+    "TEH 3": "platform_or_haltpunkt",
+    "TEH 5": "platform_or_haltpunkt",
+    "TEH 5 Flügel": "platform_or_haltpunkt",
+    "TEH 9": "platform_or_haltpunkt",
+    "TEH 9 Flügel": "platform_or_haltpunkt",
+    "TEH Wende": "platform_or_haltpunkt",
+    "TGEH": "platform_or_haltpunkt",
+    "THSM": "platform_or_haltpunkt",
+    "THT 1": "platform_or_haltpunkt",
+    "THT 1L": "platform_or_haltpunkt",
+    "THT 2": "platform_or_haltpunkt",
+    "THT 2L": "platform_or_haltpunkt",
+    "THT 3": "platform_or_haltpunkt",
+    "THT 3L": "platform_or_haltpunkt",
+    "THT 4": "platform_or_haltpunkt",
+    "THT 4L": "platform_or_haltpunkt",
+    "THT 9": "platform_or_haltpunkt",
+    "THT Wende": "platform_or_haltpunkt",
+    "THTO": "platform_or_haltpunkt",
+    "TMU 1": "platform_or_haltpunkt",
+    "TMU 2": "platform_or_haltpunkt",
+    "TRC 1": "platform_or_haltpunkt",
+    "TRC 1L": "platform_or_haltpunkt",
+    "TRC 2": "platform_or_haltpunkt",
+    "TRI 1": "platform_or_haltpunkt",
+    "TRI 1L": "platform_or_haltpunkt",
+    "TRI 2": "platform_or_haltpunkt",
+    "TRI 2L": "platform_or_haltpunkt",
+    "TRI 3": "platform_or_haltpunkt",
+    "TRR 1": "platform_or_haltpunkt",
+    "TRR 2": "platform_or_haltpunkt",
+    "TRR Wende": "platform_or_haltpunkt",
+    "TSK 501": "platform_or_haltpunkt",
+    "TSK 501L": "platform_or_haltpunkt",
+    "TSK 502": "platform_or_haltpunkt",
+    "TSK 502L": "platform_or_haltpunkt",
+    "TSK 503": "platform_or_haltpunkt",
+    "TSK 504": "platform_or_haltpunkt",
+    "TSK 504 Flügel": "platform_or_haltpunkt",
+    "TSK 504 Mitte": "platform_or_haltpunkt",
+    "TSK 505": "platform_or_haltpunkt",
+    "TSK 505 Flügel": "platform_or_haltpunkt",
+    "TSK 505 Mitte": "platform_or_haltpunkt",
+    "TSK 580": "platform_or_haltpunkt",
+    "TSK 91": "platform_or_haltpunkt",
+    "TSK Verladung": "platform_or_haltpunkt",
+    "TSK Wende": "platform_or_haltpunkt",
+    "TSL 1": "platform_or_haltpunkt",
+    "TSL 1 Wende": "platform_or_haltpunkt",
+    "TSL 2": "platform_or_haltpunkt",
+    "TSL 3": "platform_or_haltpunkt",
+    "TSL 3 Wende": "platform_or_haltpunkt",
+    "TSL 4": "platform_or_haltpunkt",
+    "Umspannwerk": "entry"
+  },
+  "operating_points": {},
+  "manual_point_ids": [],
+  "assignments": {
+    "Ef Altshausen": "entry:wege:altshausen:6d86c61c19",
+    "Ef Mengen": "entry:wege:mengen:f45b30b588"
+  },
+  "assignment_sources": {
+    "Ef Altshausen": "manual_entry",
+    "Ef Mengen": "manual_entry"
+  },
+  "unassigned": [],
+  "deleted_automatic_point_ids": [
+    "Ef Altshausen",
+    "Ef Mengen"
+  ],
+  "deleted_automatic_identities": [
+    "ef altshausen",
+    "ef mengen"
+  ],
+  "deleted_entry_point_ids": [],
+  "hidden_manual_point_ids": [],
+  "editor_snapshot": {
+    "raw_names": [
+      "Altshausen",
+      "Claas",
+      "Denkinger",
+      "Ef Altshausen",
+      "Ef Mengen",
+      "Heidelberg Zement",
+      "Herrlingen",
+      "Mengen",
+      "Merkle",
+      "Münsingen",
+      "Sappi",
+      "Schwenk Zement",
+      "Shredderwerk",
+      "TALL 1",
+      "TALL 1L",
+      "TALL 2",
+      "TALL 2L",
+      "TALL 3",
+      "TAR 1",
+      "TAR 2",
+      "TBL 1",
+      "TBL 2",
+      "TBL 3",
+      "TBL 9",
+      "TBLM",
+      "TEH 1",
+      "TEH 2",
+      "TEH 2 Flügel",
+      "TEH 3",
+      "TEH 5",
+      "TEH 5 Flügel",
+      "TEH 9",
+      "TEH 9 Flügel",
+      "TEH Wende",
+      "TGEH",
+      "THSM",
+      "THT 1",
+      "THT 1L",
+      "THT 2",
+      "THT 2L",
+      "THT 3",
+      "THT 3L",
+      "THT 4",
+      "THT 4L",
+      "THT 9",
+      "THT Wende",
+      "THTO",
+      "TMU 1",
+      "TMU 2",
+      "TRC 1",
+      "TRC 1L",
+      "TRC 2",
+      "TRI 1",
+      "TRI 1L",
+      "TRI 2",
+      "TRI 2L",
+      "TRI 3",
+      "TRR 1",
+      "TRR 2",
+      "TRR Wende",
+      "TSK 91",
+      "TSK 501",
+      "TSK 501L",
+      "TSK 502",
+      "TSK 502L",
+      "TSK 503",
+      "TSK 504",
+      "TSK 504 Flügel",
+      "TSK 504 Mitte",
+      "TSK 505",
+      "TSK 505 Flügel",
+      "TSK 505 Mitte",
+      "TSK 580",
+      "TSK Verladung",
+      "TSK Wende",
+      "TSL 1",
+      "TSL 1 Wende",
+      "TSL 2",
+      "TSL 3",
+      "TSL 3 Wende",
+      "TSL 4",
+      "Umspannwerk"
+    ],
+    "raw_items": {
+      "Altshausen": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Claas": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Denkinger": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Ef Altshausen": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste",
+          "haltepunkt=true"
+        ]
+      },
+      "Ef Mengen": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste",
+          "haltepunkt=true"
+        ]
+      },
+      "Heidelberg Zement": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Herrlingen": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Mengen": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Merkle": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Münsingen": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Sappi": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Schwenk Zement": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "Shredderwerk": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      },
+      "TALL 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TALL 1L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TALL 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TALL 2L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TALL 3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TAR 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TAR 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TBL 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TBL 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TBL 3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TBL 9": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TBLM": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste",
+          "haltepunkt=true"
+        ]
+      },
+      "TEH 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH 2 Flügel": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH 3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH 5": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH 5 Flügel": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH 9": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH 9 Flügel": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TEH Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TGEH": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste",
+          "haltepunkt=true"
+        ]
+      },
+      "THSM": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste",
+          "haltepunkt=true"
+        ]
+      },
+      "THT 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 1L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 2L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 3L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 4": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 4L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT 9": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THT Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "THTO": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste",
+          "haltepunkt=true"
+        ]
+      },
+      "TMU 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TMU 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRC 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRC 1L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRC 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRI 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRI 1L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRI 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRI 2L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRI 3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRR 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRR 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TRR Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 501": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 501L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 502": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 502L": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 503": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 504": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 504 Flügel": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 504 Mitte": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 505": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 505 Flügel": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 505 Mitte": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 580": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK 91": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK Verladung": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSK Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSL 1": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSL 1 Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSL 2": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSL 3": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSL 3 Wende": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "TSL 4": {
+        "kind": "platform_or_haltpunkt",
+        "evidence": [
+          "bahnsteigliste"
+        ]
+      },
+      "Umspannwerk": {
+        "kind": "entry",
+        "evidence": [
+          "confirmed_boundary"
+        ]
+      }
+    },
+    "entry_points": {
+      "entry:wege:altshausen:6d86c61c19": {
+        "display_name": "Altshausen",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:29",
+            "element_type": "7",
+            "enr": "29",
+            "raw_name": "Altshausen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Altshausen",
+              "enr": "29",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:9",
+            "element_type": "6",
+            "enr": "9",
+            "raw_name": "Altshausen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Altshausen",
+              "enr": "9",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:tsl:altshausen",
+            "display_name": "Altshausen",
+            "source_node": "TSL",
+            "external_name": "Altshausen",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "raw_external_connector"
+            ],
+            "confidence": "inferred",
+            "raw_connector": "enr:29",
+            "directionality": "observed_outgoing",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "Altshausen",
+            "possible_source_nodes": [
+              "Ef Altshausen",
+              "TSL"
+            ],
+            "trusted_incoming_count": 0,
+            "trusted_outgoing_count": 2,
+            "untrusted_incoming_count": 2,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:29",
+            "supporting_services": [
+              16056,
+              98267,
+              142620,
+              200639
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "TSL"
+          },
+          {
+            "source_node": "TSL",
+            "original_target": "Altshausen",
+            "normalized_candidate": "altshausen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:29",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:claas:8f0d50589f": {
+        "display_name": "Claas",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:49",
+            "element_type": "6",
+            "enr": "49",
+            "raw_name": "Claas",
+            "metadata": {
+              "tag": "shape",
+              "name": "Claas",
+              "enr": "49",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7"
+        ],
+        "boundary_evidence": []
+      },
+      "entry:wege:denkinger:47ff25ba53": {
+        "display_name": "Denkinger",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:6",
+            "element_type": "6",
+            "enr": "6",
+            "raw_name": "Denkinger",
+            "metadata": {
+              "tag": "shape",
+              "name": "Denkinger",
+              "enr": "6",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7"
+        ],
+        "boundary_evidence": []
+      },
+      "entry:wege:heidelberg-zement:d0a731dbd5": {
+        "display_name": "Heidelberg Zement",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:3",
+            "element_type": "6",
+            "enr": "3",
+            "raw_name": "Heidelberg Zement",
+            "metadata": {
+              "tag": "shape",
+              "name": "Heidelberg Zement",
+              "enr": "3",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7"
+        ],
+        "boundary_evidence": []
+      },
+      "entry:wege:herrlingen:9f759f10fd": {
+        "display_name": "Herrlingen",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:2",
+            "element_type": "6",
+            "enr": "2",
+            "raw_name": "Herrlingen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Herrlingen",
+              "enr": "2",
+              "type": "6"
+            }
+          },
+          {
+            "node_id": "enr:22",
+            "element_type": "7",
+            "enr": "22",
+            "raw_name": "Herrlingen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Herrlingen",
+              "enr": "22",
+              "type": "7"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:tar:herrlingen",
+            "display_name": "Herrlingen",
+            "source_node": "TAR",
+            "external_name": "Herrlingen",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "raw_external_connector"
+            ],
+            "confidence": "inferred",
+            "raw_connector": "enr:22",
+            "directionality": "observed_outgoing",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "Herrlingen",
+            "possible_source_nodes": [
+              "TAR",
+              "TRC",
+              "TSK"
+            ],
+            "trusted_incoming_count": 0,
+            "trusted_outgoing_count": 12,
+            "untrusted_incoming_count": 9,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:22",
+            "supporting_services": [
+              9398,
+              9404,
+              10235,
+              18232,
+              33658,
+              107630,
+              107741,
+              108048,
+              123257,
+              123764,
+              124340,
+              135677,
+              136157,
+              166574,
+              183194,
+              203527,
+              211894,
+              211895,
+              211896,
+              211897,
+              212160
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "TAR"
+          },
+          {
+            "source_node": "TAR",
+            "original_target": "Herrlingen",
+            "normalized_candidate": "herrlingen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:22",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TSK",
+            "original_target": "Herrlingen",
+            "normalized_candidate": "herrlingen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:22",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TRC",
+            "original_target": "Herrlingen",
+            "normalized_candidate": "herrlingen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:22",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:m-nsingen:0b2c924fef": {
+        "display_name": "Münsingen",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:25",
+            "element_type": "7",
+            "enr": "25",
+            "raw_name": "Münsingen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Münsingen",
+              "enr": "25",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:5",
+            "element_type": "6",
+            "enr": "5",
+            "raw_name": "Münsingen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Münsingen",
+              "enr": "5",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "TBL",
+            "original_target": "Münsingen",
+            "normalized_candidate": "münsingen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:25",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TSK",
+            "original_target": "Münsingen",
+            "normalized_candidate": "münsingen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:25",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:mengen:f45b30b588": {
+        "display_name": "Mengen",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:11",
+            "element_type": "6",
+            "enr": "11",
+            "raw_name": "Mengen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Mengen",
+              "enr": "11",
+              "type": "6"
+            }
+          },
+          {
+            "node_id": "enr:31",
+            "element_type": "7",
+            "enr": "31",
+            "raw_name": "Mengen",
+            "metadata": {
+              "tag": "shape",
+              "name": "Mengen",
+              "enr": "31",
+              "type": "7"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "schedule_endpoint",
+          "zugdetails_von_nach",
+          "raw_external_connector",
+          "confirmed_deferred_boundary"
+        ],
+        "boundary_evidence": [
+          {
+            "id": "synthetic:external:tht:mengen",
+            "display_name": "Mengen",
+            "source_node": "THT",
+            "external_name": "Mengen",
+            "evidence": [
+              "schedule_endpoint",
+              "zugdetails_von_nach",
+              "raw_external_connector"
+            ],
+            "confidence": "inferred",
+            "raw_connector": "enr:31",
+            "directionality": "observed_outgoing",
+            "display_offset": 0.12,
+            "node_origin": "synthetic_external_boundary"
+          },
+          {
+            "external_name": "Mengen",
+            "possible_source_nodes": [
+              "THT",
+              "TRC"
+            ],
+            "trusted_incoming_count": 0,
+            "trusted_outgoing_count": 6,
+            "untrusted_incoming_count": 8,
+            "untrusted_outgoing_count": 0,
+            "raw_connector": "enr:31",
+            "supporting_services": [
+              16056,
+              18232,
+              33658,
+              98267,
+              123257,
+              123764,
+              124340,
+              135677,
+              136157,
+              142620,
+              166574,
+              194906,
+              200639,
+              215967
+            ],
+            "confidence": "exact",
+            "status": "confirmed_automatically",
+            "reason": "trusted_endpoint_observation",
+            "confirmation_source": "THT"
+          },
+          {
+            "source_node": "THT",
+            "original_target": "Mengen",
+            "normalized_candidate": "mengen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:31",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          },
+          {
+            "source_node": "TRC",
+            "original_target": "Mengen",
+            "normalized_candidate": "mengen",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:31",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:merkle:47c2726e4b": {
+        "display_name": "Merkle",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:1",
+            "element_type": "6",
+            "enr": "1",
+            "raw_name": "Merkle",
+            "metadata": {
+              "tag": "shape",
+              "name": "Merkle",
+              "enr": "1",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "TAR",
+            "original_target": "Merkle",
+            "normalized_candidate": "merkle",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:1",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:sappi:a0007555dc": {
+        "display_name": "Sappi",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:7",
+            "element_type": "6",
+            "enr": "7",
+            "raw_name": "Sappi",
+            "metadata": {
+              "tag": "shape",
+              "name": "Sappi",
+              "enr": "7",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "TEH",
+            "original_target": "Sappi",
+            "normalized_candidate": "sappi",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:7",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:schwenk-zement:b7258c8ecd": {
+        "display_name": "Schwenk Zement",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:24",
+            "element_type": "7",
+            "enr": "24",
+            "raw_name": "Schwenk Zement",
+            "metadata": {
+              "tag": "shape",
+              "name": "Schwenk Zement",
+              "enr": "24",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:4",
+            "element_type": "6",
+            "enr": "4",
+            "raw_name": "Schwenk Zement",
+            "metadata": {
+              "tag": "shape",
+              "name": "Schwenk Zement",
+              "enr": "4",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7"
+        ],
+        "boundary_evidence": []
+      },
+      "entry:wege:shredderwerk:758db4620b": {
+        "display_name": "Shredderwerk",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:28",
+            "element_type": "7",
+            "enr": "28",
+            "raw_name": "Shredderwerk",
+            "metadata": {
+              "tag": "shape",
+              "name": "Shredderwerk",
+              "enr": "28",
+              "type": "7"
+            }
+          },
+          {
+            "node_id": "enr:8",
+            "element_type": "6",
+            "enr": "8",
+            "raw_name": "Shredderwerk",
+            "metadata": {
+              "tag": "shape",
+              "name": "Shredderwerk",
+              "enr": "8",
+              "type": "6"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "THT",
+            "original_target": "Shredderwerk",
+            "normalized_candidate": "shredderwerk",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:28",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      },
+      "entry:wege:umspannwerk:35a25374ac": {
+        "display_name": "Umspannwerk",
+        "source": "wege",
+        "infrastructure_elements": [
+          {
+            "node_id": "enr:10",
+            "element_type": "6",
+            "enr": "10",
+            "raw_name": "Umspannwerk",
+            "metadata": {
+              "tag": "shape",
+              "name": "Umspannwerk",
+              "enr": "10",
+              "type": "6"
+            }
+          },
+          {
+            "node_id": "enr:30",
+            "element_type": "7",
+            "enr": "30",
+            "raw_name": "Umspannwerk",
+            "metadata": {
+              "tag": "shape",
+              "name": "Umspannwerk",
+              "enr": "30",
+              "type": "7"
+            }
+          }
+        ],
+        "evidence": [
+          "wege_type_6_or_7",
+          "raw_external_connector"
+        ],
+        "boundary_evidence": [
+          {
+            "source_node": "THT",
+            "original_target": "Umspannwerk",
+            "normalized_candidate": "umspannwerk",
+            "classification": "confirmed_external_connector",
+            "matched_node": null,
+            "matched_raw_names": [],
+            "raw_connector": "enr:30",
+            "evidence": [
+              "raw_external_connector"
+            ]
+          }
+        ]
+      }
+    },
+    "operating_points": {
+      "TALL": {
+        "display_name": "TALL",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TAR": {
+        "display_name": "TAR",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TBL": {
+        "display_name": "TBL",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TBLM": {
+        "display_name": "TBLM",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TEH": {
+        "display_name": "TEH",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TGEH": {
+        "display_name": "TGEH",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THSM": {
+        "display_name": "THSM",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THT": {
+        "display_name": "THT",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "THTO": {
+        "display_name": "THTO",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TMU": {
+        "display_name": "TMU",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TRC": {
+        "display_name": "TRC",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TRI": {
+        "display_name": "TRI",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TRR": {
+        "display_name": "TRR",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TSK": {
+        "display_name": "TSK",
+        "station_key": null,
+        "source": "automatic"
+      },
+      "TSL": {
+        "display_name": "TSL",
+        "station_key": null,
+        "source": "automatic"
+      }
+    },
+    "assignments": {
+      "Altshausen": {
+        "target": "entry:wege:altshausen:6d86c61c19",
+        "operating_point": "entry:wege:altshausen:6d86c61c19",
+        "source": "self_entry"
+      },
+      "Claas": {
+        "target": "entry:wege:claas:8f0d50589f",
+        "operating_point": "entry:wege:claas:8f0d50589f",
+        "source": "self_entry"
+      },
+      "Denkinger": {
+        "target": "entry:wege:denkinger:47ff25ba53",
+        "operating_point": "entry:wege:denkinger:47ff25ba53",
+        "source": "self_entry"
+      },
+      "Ef Altshausen": {
+        "target": "entry:wege:altshausen:6d86c61c19",
+        "operating_point": "entry:wege:altshausen:6d86c61c19",
+        "source": "manual_entry"
+      },
+      "Ef Mengen": {
+        "target": "entry:wege:mengen:f45b30b588",
+        "operating_point": "entry:wege:mengen:f45b30b588",
+        "source": "manual_entry"
+      },
+      "Heidelberg Zement": {
+        "target": "entry:wege:heidelberg-zement:d0a731dbd5",
+        "operating_point": "entry:wege:heidelberg-zement:d0a731dbd5",
+        "source": "self_entry"
+      },
+      "Herrlingen": {
+        "target": "entry:wege:herrlingen:9f759f10fd",
+        "operating_point": "entry:wege:herrlingen:9f759f10fd",
+        "source": "self_entry"
+      },
+      "Mengen": {
+        "target": "entry:wege:mengen:f45b30b588",
+        "operating_point": "entry:wege:mengen:f45b30b588",
+        "source": "self_entry"
+      },
+      "Merkle": {
+        "target": "entry:wege:merkle:47c2726e4b",
+        "operating_point": "entry:wege:merkle:47c2726e4b",
+        "source": "self_entry"
+      },
+      "Münsingen": {
+        "target": "entry:wege:m-nsingen:0b2c924fef",
+        "operating_point": "entry:wege:m-nsingen:0b2c924fef",
+        "source": "self_entry"
+      },
+      "Sappi": {
+        "target": "entry:wege:sappi:a0007555dc",
+        "operating_point": "entry:wege:sappi:a0007555dc",
+        "source": "self_entry"
+      },
+      "Schwenk Zement": {
+        "target": "entry:wege:schwenk-zement:b7258c8ecd",
+        "operating_point": "entry:wege:schwenk-zement:b7258c8ecd",
+        "source": "self_entry"
+      },
+      "Shredderwerk": {
+        "target": "entry:wege:shredderwerk:758db4620b",
+        "operating_point": "entry:wege:shredderwerk:758db4620b",
+        "source": "self_entry"
+      },
+      "TALL 1": {
+        "target": "TALL",
+        "operating_point": "TALL",
+        "source": "automatic"
+      },
+      "TALL 1L": {
+        "target": "TALL",
+        "operating_point": "TALL",
+        "source": "automatic_station_key"
+      },
+      "TALL 2": {
+        "target": "TALL",
+        "operating_point": "TALL",
+        "source": "automatic"
+      },
+      "TALL 2L": {
+        "target": "TALL",
+        "operating_point": "TALL",
+        "source": "automatic_station_key"
+      },
+      "TALL 3": {
+        "target": "TALL",
+        "operating_point": "TALL",
+        "source": "automatic_station_key"
+      },
+      "TAR 1": {
+        "target": "TAR",
+        "operating_point": "TAR",
+        "source": "automatic"
+      },
+      "TAR 2": {
+        "target": "TAR",
+        "operating_point": "TAR",
+        "source": "automatic"
+      },
+      "TBL 1": {
+        "target": "TBL",
+        "operating_point": "TBL",
+        "source": "automatic"
+      },
+      "TBL 2": {
+        "target": "TBL",
+        "operating_point": "TBL",
+        "source": "automatic"
+      },
+      "TBL 3": {
+        "target": "TBL",
+        "operating_point": "TBL",
+        "source": "automatic"
+      },
+      "TBL 9": {
+        "target": "TBL",
+        "operating_point": "TBL",
+        "source": "automatic_station_key"
+      },
+      "TBLM": {
+        "target": "TBLM",
+        "operating_point": "TBLM",
+        "source": "self_haltpunkt"
+      },
+      "TEH 1": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic"
+      },
+      "TEH 2": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic"
+      },
+      "TEH 2 Flügel": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic_station_key"
+      },
+      "TEH 3": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic"
+      },
+      "TEH 5": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic_station_key"
+      },
+      "TEH 5 Flügel": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic_station_key"
+      },
+      "TEH 9": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic_station_key"
+      },
+      "TEH 9 Flügel": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic_station_key"
+      },
+      "TEH Wende": {
+        "target": "TEH",
+        "operating_point": "TEH",
+        "source": "automatic_station_key"
+      },
+      "TGEH": {
+        "target": "TGEH",
+        "operating_point": "TGEH",
+        "source": "self_haltpunkt"
+      },
+      "THSM": {
+        "target": "THSM",
+        "operating_point": "THSM",
+        "source": "self_haltpunkt"
+      },
+      "THT 1": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic"
+      },
+      "THT 1L": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic_station_key"
+      },
+      "THT 2": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic"
+      },
+      "THT 2L": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic_station_key"
+      },
+      "THT 3": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic"
+      },
+      "THT 3L": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic_station_key"
+      },
+      "THT 4": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic"
+      },
+      "THT 4L": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic_station_key"
+      },
+      "THT 9": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic_station_key"
+      },
+      "THT Wende": {
+        "target": "THT",
+        "operating_point": "THT",
+        "source": "automatic_station_key"
+      },
+      "THTO": {
+        "target": "THTO",
+        "operating_point": "THTO",
+        "source": "self_haltpunkt"
+      },
+      "TMU 1": {
+        "target": "TMU",
+        "operating_point": "TMU",
+        "source": "automatic"
+      },
+      "TMU 2": {
+        "target": "TMU",
+        "operating_point": "TMU",
+        "source": "automatic"
+      },
+      "TRC 1": {
+        "target": "TRC",
+        "operating_point": "TRC",
+        "source": "automatic"
+      },
+      "TRC 1L": {
+        "target": "TRC",
+        "operating_point": "TRC",
+        "source": "automatic_station_key"
+      },
+      "TRC 2": {
+        "target": "TRC",
+        "operating_point": "TRC",
+        "source": "automatic"
+      },
+      "TRI 1": {
+        "target": "TRI",
+        "operating_point": "TRI",
+        "source": "automatic"
+      },
+      "TRI 1L": {
+        "target": "TRI",
+        "operating_point": "TRI",
+        "source": "automatic_station_key"
+      },
+      "TRI 2": {
+        "target": "TRI",
+        "operating_point": "TRI",
+        "source": "automatic_station_key"
+      },
+      "TRI 2L": {
+        "target": "TRI",
+        "operating_point": "TRI",
+        "source": "automatic_station_key"
+      },
+      "TRI 3": {
+        "target": "TRI",
+        "operating_point": "TRI",
+        "source": "automatic_station_key"
+      },
+      "TRR 1": {
+        "target": "TRR",
+        "operating_point": "TRR",
+        "source": "automatic"
+      },
+      "TRR 2": {
+        "target": "TRR",
+        "operating_point": "TRR",
+        "source": "automatic_station_key"
+      },
+      "TRR Wende": {
+        "target": "TRR",
+        "operating_point": "TRR",
+        "source": "automatic_station_key"
+      },
+      "TSK 91": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 501": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic"
+      },
+      "TSK 501L": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 502": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic"
+      },
+      "TSK 502L": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 503": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic"
+      },
+      "TSK 504": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 504 Flügel": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 504 Mitte": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 505": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 505 Flügel": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK 505 Mitte": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic"
+      },
+      "TSK 580": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK Verladung": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic_station_key"
+      },
+      "TSK Wende": {
+        "target": "TSK",
+        "operating_point": "TSK",
+        "source": "automatic"
+      },
+      "TSL 1": {
+        "target": "TSL",
+        "operating_point": "TSL",
+        "source": "automatic"
+      },
+      "TSL 1 Wende": {
+        "target": "TSL",
+        "operating_point": "TSL",
+        "source": "automatic"
+      },
+      "TSL 2": {
+        "target": "TSL",
+        "operating_point": "TSL",
+        "source": "automatic_station_key"
+      },
+      "TSL 3": {
+        "target": "TSL",
+        "operating_point": "TSL",
+        "source": "automatic_station_key"
+      },
+      "TSL 3 Wende": {
+        "target": "TSL",
+        "operating_point": "TSL",
+        "source": "automatic_station_key"
+      },
+      "TSL 4": {
+        "target": "TSL",
+        "operating_point": "TSL",
+        "source": "automatic"
+      },
+      "Umspannwerk": {
+        "target": "entry:wege:umspannwerk:35a25374ac",
+        "operating_point": "entry:wege:umspannwerk:35a25374ac",
+        "source": "self_entry"
+      }
+    }
+  }
+}
