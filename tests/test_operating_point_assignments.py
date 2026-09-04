@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from infrastructure import (OperatingPoint, OperatingPointGraph, OperatingPointResolver,
-                            SchedulePointGraph, parse_bahnsteigliste, parse_wege)
+                            SchedulePointGraph, TopologyTargetRegistry,
+                            parse_bahnsteigliste, parse_wege)
 from infrastructure.operating_point_assignments import (
     InvalidAssignment, OperatingPointAssignments, OperatingPointConfigStore, can_assign_kind,
     entry_points_from_raw_graph, natural_sort_key, related_selection,
@@ -324,9 +325,97 @@ class AssignmentLogicTests(unittest.TestCase):
         graph = automatic("Martinszell", platforms=platforms)
         model = OperatingPointAssignments()
         model.rebuild(graph, ("Martinszell",), ("Martinszell",))
-        self.assertEqual(model.assignments["Martinszell"], "schedule:Martinszell")
+        self.assertEqual(model.assignments["Martinszell"], "Martinszell")
         self.assertEqual(model.sources["Martinszell"], "self_haltpunkt")
-        self.assertEqual(graph.nodes["schedule:Martinszell"].raw_names, ("Martinszell",))
+        self.assertEqual(graph.nodes["Martinszell"].raw_names, ("Martinszell",))
+
+    def test_haltpunkt_from_platform_data_needs_no_schedule(self):
+        platforms = parse_bahnsteigliste(
+            "<bahnsteigliste><bahnsteig name='TGEH' haltepunkt='true'/></bahnsteigliste>")
+        graph = OperatingPointResolver(platforms).resolve(SchedulePointGraph())
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TGEH",), ("TGEH",),
+                      raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        self.assertIn("TGEH", model.points)
+        self.assertEqual(graph.nodes["TGEH"].raw_names, ("TGEH",))
+        self.assertEqual(model.assignments["TGEH"], "TGEH")
+        self.assertEqual(model.sources["TGEH"], "self_haltpunkt")
+        self.assertEqual(model.raw_items["TGEH"].evidence,
+                         ("bahnsteigliste", "haltepunkt=true"))
+        self.assertIn("TGEH", TopologyTargetRegistry.from_assignments(model, graph).targets)
+
+    def test_multiple_haltpunkte_exist_before_first_schedule(self):
+        names = ("TBLM", "TGEH", "THSM", "THTO")
+        xml = "<bahnsteigliste>" + "".join(
+            f"<bahnsteig name='{name}' haltepunkt='true'/>" for name in names) + "</bahnsteigliste>"
+        platforms = parse_bahnsteigliste(xml)
+        graph = OperatingPointResolver(platforms).resolve(SchedulePointGraph())
+        model = OperatingPointAssignments()
+        model.rebuild(graph, names, names,
+                      raw_item_kinds={name: "platform_or_haltpunkt" for name in names})
+        self.assertEqual(set(model.points), set(names))
+        self.assertEqual(model.unassigned, set())
+        self.assertTrue(all(model.assignments[name] == name for name in names))
+        self.assertTrue(all(model.sources[name] == "self_haltpunkt" for name in names))
+
+    def test_platform_without_haltepunkt_flag_needs_other_evidence(self):
+        platforms = parse_bahnsteigliste("""
+            <bahnsteigliste>
+              <bahnsteig name='TALL 1' haltepunkt='false'/>
+              <bahnsteig name='TALL 2' haltepunkt='false'/>
+            </bahnsteigliste>""")
+        graph = OperatingPointResolver(platforms).resolve(SchedulePointGraph())
+        self.assertEqual(graph.nodes, {})
+
+    def test_early_haltpunkt_respects_manual_override_and_unassignment(self):
+        platforms = parse_bahnsteigliste(
+            "<bahnsteigliste><bahnsteig name='TGEH' haltepunkt='true'/></bahnsteigliste>")
+        graph = OperatingPointResolver(platforms).resolve(SchedulePointGraph())
+        model = OperatingPointAssignments()
+        model.rebuild(graph, ("TGEH",), ("TGEH",),
+                      raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        manual = model.add_point("Anderes Ziel")
+        model.assign(("TGEH",), manual)
+        rebuilt = OperatingPointAssignments()
+        rebuilt.rebuild(graph, ("TGEH",), ("TGEH",), model.to_config(),
+                        raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        self.assertEqual((rebuilt.assignments["TGEH"], rebuilt.sources["TGEH"]),
+                         (manual, "manual"))
+
+        rebuilt.remove_assignments(("TGEH",))
+        unassigned = OperatingPointAssignments()
+        unassigned.rebuild(graph, ("TGEH",), ("TGEH",), rebuilt.to_config(),
+                           raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        self.assertIn("TGEH", unassigned.unassigned)
+
+        deleted = OperatingPointAssignments()
+        deleted.rebuild(graph, ("TGEH",), ("TGEH",),
+                        raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        deleted.delete_point("TGEH")
+        after_delete = OperatingPointAssignments()
+        after_delete.rebuild(graph, ("TGEH",), ("TGEH",), deleted.to_config(),
+                             raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        self.assertNotIn("TGEH", after_delete.points)
+        self.assertIn("TGEH", after_delete.unassigned)
+
+    def test_later_schedule_evidence_reuses_haltpunkt_target(self):
+        platforms = parse_bahnsteigliste(
+            "<bahnsteigliste><bahnsteig name='TGEH' haltepunkt='true'/></bahnsteigliste>")
+        early_graph = OperatingPointResolver(platforms).resolve(SchedulePointGraph())
+        early = OperatingPointAssignments()
+        early.rebuild(early_graph, ("TGEH",), ("TGEH",),
+                      raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        early_config = early.to_config()
+
+        schedule = SchedulePointGraph(); schedule.observe(1, ("TGEH",))
+        later_graph = OperatingPointResolver(platforms).resolve(schedule)
+        later = OperatingPointAssignments()
+        later.rebuild(later_graph, ("TGEH",), ("TGEH",), early_config,
+                      raw_item_kinds={"TGEH": "platform_or_haltpunkt"})
+        self.assertEqual(set(later.points), {"TGEH"})
+        self.assertEqual(later.assignments["TGEH"], "TGEH")
+        self.assertEqual(later.sources["TGEH"], "self_haltpunkt")
+        self.assertEqual(later.to_config(), early_config)
 
     def test_manual_override_survives_auto_rebuild_and_remove(self):
         graph = automatic("X")

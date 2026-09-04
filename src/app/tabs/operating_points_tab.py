@@ -236,8 +236,7 @@ class OperatingPointsTab(QtWidgets.QWidget):
         for platform in self._platforms:
             self._raw_names.add(platform.raw_name); self._raw_names.update(platform.related_names)
         self._haltpunkte = {item.raw_name for item in self._platforms
-                            if item.metadata.get("haltepunkt", "false").lower() == "true"
-                            and item.raw_name in self._schedule.nodes}
+                            if item.metadata.get("haltepunkt", "false").lower() == "true"}
         platform_names = {item.raw_name for item in self._platforms}
         platform_names.update(name for item in self._platforms for name in item.related_names)
         self._raw_item_kinds = {name: ("platform_or_haltpunkt" if name in platform_names else "schedule_point")

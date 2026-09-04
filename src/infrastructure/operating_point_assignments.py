@@ -177,8 +177,12 @@ class OperatingPointAssignments:
         self.raw_items = {}
         for name in self.all_raw_names:
             kind = configured_kinds.get(name, "schedule_point")
+            default_evidence = (("bahnsteigliste", "haltepunkt=true") if name in haltepunkte
+                                else kind_evidence.get(kind, ()))
             evidence = tuple(snapshot.get("raw_items", {}).get(name, {}).get(
-                "evidence", kind_evidence.get(kind, ())))
+                "evidence", default_evidence))
+            if name in haltepunkte:
+                evidence = tuple(dict.fromkeys((*evidence, "bahnsteigliste", "haltepunkt=true")))
             self.raw_items[name] = AssignableRawItem(name, kind, evidence)
         self.deleted_automatic_point_ids = set(config.get("deleted_automatic_point_ids", ()))
         self.deleted_automatic_identities = set(config.get("deleted_automatic_identities", ()))

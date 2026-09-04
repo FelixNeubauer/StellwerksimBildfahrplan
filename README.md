@@ -238,6 +238,11 @@ Martinszell`. Manuelle Betriebsstellen, Zuordnungen und bewusst gelöste Namen
 werden autoritativ unter `config/operating_points/<aid>.json` gespeichert;
 generierte Graphdaten bleiben davon getrennt.
 
+Ein mit `haltepunkt="true"` gekennzeichneter Eintrag der aktuellen
+`bahnsteigliste` wird unmittelbar als eigener `self_haltpunkt` angelegt. Dafür
+ist kein bereits eingetroffener Zugfahrplan erforderlich; spätere
+Schedule-Evidenz ergänzt lediglich den bestehenden, stabilen Zustand.
+
 Ein expliziter Klick auf **Automatisch zuordnen** baut den automatischen
 Editorzustand stets neu aus den aktuellen Live-Daten auf. Dabei ergänzt der
 Editor mit dem bestehenden `station_key()` eindeutig präfixierte Namen auf

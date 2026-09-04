@@ -101,7 +101,9 @@ class PlatformRelationGraph:
         haltepunkte: set[str] = set()
         supported_keys: set[str] = set()
         for item in platforms:
-            if item.raw_name in schedule_names and item.metadata.get("haltepunkt", "false").lower() == "true":
+            # ``haltepunkt=true`` ist selbst explizite STS-Evidenz. Ein erst
+            # spaeter eintreffender Zugfahrplan ist dafuer keine Voraussetzung.
+            if item.metadata.get("haltepunkt", "false").lower() == "true":
                 haltepunkte.add(item.raw_name)
             if item.raw_name not in schedule_names:
                 continue
@@ -258,6 +260,13 @@ class OperatingPointResolver:
             if names:
                 groups.append((names, point_id, {"manual": 100}, True)); assigned.update(names)
         manual_groups = {point_id: (names, evidence) for names, point_id, evidence, manual in groups if manual}
+
+        # Echte STS-Haltepunkte existieren bereits aus der Bahnsteigliste als
+        # eigenstaendige Ziele. Wenn derselbe Name spaeter im Fahrplan
+        # erscheint, wird er von ``assigned`` in genau diesem Ziel gehalten.
+        for name in sorted(platform_graph.haltepunkt_names - assigned):
+            groups.append(({name}, name, {"bahnsteigliste_haltepunkt": 1}, False))
+            assigned.add(name)
 
         components = [set(component) - assigned for component in platform_graph.components()]
         components = [component for component in components if component]
