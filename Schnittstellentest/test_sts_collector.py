@@ -265,14 +265,15 @@ class CollectorTests(unittest.TestCase):
 
         collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="TMU 1" />'),
                           event_simtime_seconds=13 * 3600 + 30 * 60)
+        collector.advance_pending_departures(collector.pending_departures[7].deadline_monotonic)
 
         rows = collector.services[7].actual_timing.rows
         self.assertEqual(rows[0].actual_departure_minute, 13 * 60 + 30)
         self.assertNotIn(1, rows)
         diagnostic = collector.actual_timing_diagnostics[-1]
-        self.assertEqual((diagnostic.matched_original_index,
-                          diagnostic.matched_schedule_name), (0, "TMU 1"))
-        self.assertIn("event_track", diagnostic.match_reason)
+        self.assertEqual((diagnostic.selected_original_index,
+                          diagnostic.selected_schedule_name), (0, "TMU 1"))
+        self.assertEqual(diagnostic.match_reason, "pending_confirmed")
 
     def test_departure_prefers_last_arrival_despite_schedule_shrink(self):
         collector = STSLiveCollector()
@@ -289,6 +290,7 @@ class CollectorTests(unittest.TestCase):
         collector.process(xml('<zugfahrplan zid="7"><gleis name="C" plan="C" /></zugfahrplan>'))
         collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="B" />'),
                           event_simtime_seconds=13 * 3600 + 25 * 60)
+        collector.advance_pending_departures(collector.pending_departures[7].deadline_monotonic)
         rows = collector.services[7].actual_timing.rows
         self.assertEqual((rows[1].actual_arrival_minute, rows[1].actual_departure_minute),
                          (13 * 60 + 20, 13 * 60 + 25))
@@ -317,6 +319,111 @@ class CollectorTests(unittest.TestCase):
                           event_simtime_seconds=13 * 3600 + 20 * 60)
         self.assertIn(1, collector.services[7].actual_timing.rows)
         self.assertNotIn(3, collector.services[7].actual_timing.rows)
+
+    def test_departure_is_pending_for_ten_realtime_seconds(self):
+        now = [100.0]
+        collector = STSLiveCollector(monotonic=lambda: now[0])
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" ab="13:30" />'
+                              '<gleis name="B" plan="B" an="13:40" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="A" />'),
+                          event_simtime_seconds=13 * 3600 + 30 * 60)
+        self.assertNotIn(0, collector.services[7].actual_timing.rows)
+        deadline = collector.pending_departures[7].deadline_monotonic
+        self.assertEqual(deadline, 110.0)
+        self.assertEqual(collector.advance_pending_departures(109.9), ())
+        self.assertNotIn(0, collector.services[7].actual_timing.rows)
+        self.assertEqual(collector.advance_pending_departures(110.0), (7,))
+        self.assertEqual(collector.services[7].actual_timing.rows[0].actual_departure_minute,
+                         13 * 60 + 30)
+
+    def test_rothalt_cancels_only_same_train_pending_departure(self):
+        now = [0.0]
+        collector = STSLiveCollector(monotonic=lambda: now[0])
+        for zid in (7, 8):
+            collector.process(xml(f'<zugfahrplan zid="{zid}"><gleis name="A" plan="A" />'
+                                  '<gleis name="B" plan="B" /></zugfahrplan>'))
+            collector.process(xml(f'<ereignis art="abfahrt" zid="{zid}" gleis="A" />'),
+                              event_simtime_seconds=13 * 3600 + 30 * 60)
+        now[0] = 5.0
+        collector.process(xml('<ereignis art="rothalt" zid="7" gleis="Signal" />'))
+        self.assertNotIn(7, collector.pending_departures)
+        self.assertIn(8, collector.pending_departures)
+        collector.advance_pending_departures(10.0)
+        self.assertNotIn(0, collector.services[7].actual_timing.rows)
+        self.assertEqual(collector.services[8].actual_timing.rows[0].actual_departure_minute,
+                         13 * 60 + 30)
+
+    def test_late_rothalt_does_not_remove_confirmed_departure(self):
+        collector = STSLiveCollector(monotonic=lambda: 0.0)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="A" />'),
+                          event_simtime_seconds=13 * 3600 + 30 * 60,
+                          received_monotonic=0.0)
+        collector.advance_pending_departures(10.0)
+        collector.process(xml('<ereignis art="rothalt" zid="7" />'),
+                          received_monotonic=12.0)
+        self.assertEqual(collector.services[7].actual_timing.rows[0].actual_departure_minute,
+                         13 * 60 + 30)
+
+    def test_duplicate_departure_keeps_original_pending_deadline_and_time(self):
+        collector = STSLiveCollector(monotonic=lambda: 0.0)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="A" />'),
+                          event_simtime_seconds=13 * 3600 + 30 * 60,
+                          received_monotonic=0.0)
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="A" />'),
+                          event_simtime_seconds=13 * 3600 + 31 * 60,
+                          received_monotonic=2.0)
+        pending = collector.pending_departures[7]
+        self.assertEqual((pending.deadline_monotonic, pending.actual_minute),
+                         (10.0, 13 * 60 + 30))
+        self.assertEqual(collector.actual_timing_diagnostics[-1].match_reason,
+                         "pending_duplicate_ignored")
+
+    def test_wurdegruen_does_not_create_departure_after_rothalt(self):
+        collector = STSLiveCollector(monotonic=lambda: 0.0)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="A" />'),
+                          event_simtime_seconds=13 * 3600 + 30 * 60,
+                          received_monotonic=0.0)
+        collector.process(xml('<ereignis art="rothalt" zid="7" />'), received_monotonic=5.0)
+        collector.process(xml('<ereignis art="wurdegruen" zid="7" />'), received_monotonic=6.0)
+        collector.advance_pending_departures(20.0)
+        self.assertEqual(collector.services[7].actual_timing.rows, {})
+
+    def test_next_arrival_confirms_pending_departure_with_original_event_time(self):
+        collector = STSLiveCollector(monotonic=lambda: 0.0)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="A" />'),
+                          event_simtime_seconds=13 * 3600 + 30 * 60,
+                          received_monotonic=0.0)
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B" />'),
+                          event_simtime_seconds=13 * 3600 + 30 * 60 + 5,
+                          received_monotonic=5.0)
+        timing = collector.services[7].actual_timing.rows
+        self.assertEqual(timing[0].actual_departure_minute, 13 * 60 + 30)
+        self.assertEqual(timing[1].actual_arrival_minute, 13 * 60 + 30)
+        self.assertNotIn(7, collector.pending_departures)
+        self.assertEqual(collector.actual_timing_diagnostics[-1].match_reason,
+                         "pending_confirmed_by_next_arrival")
+
+    def test_ambiguous_repeated_stop_is_rejected_without_sequence_evidence(self):
+        collector = STSLiveCollector(monotonic=lambda: 0.0)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" />'
+                              '<gleis name="C" plan="C" /><gleis name="B" plan="B" />'
+                              '</zugfahrplan>'))
+        # Leerer Restfahrplan liefert bewusst keine Grenze zur Disambiguierung.
+        collector.services[7].current_schedule = []
+        collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B" />'),
+                          event_simtime_seconds=13 * 3600, received_monotonic=0.0)
+        self.assertEqual(collector.services[7].actual_timing.rows, {})
+        diagnostic = collector.actual_timing_diagnostics[-1]
+        self.assertEqual(diagnostic.match_reason, "ambiguous")
+        self.assertEqual(diagnostic.candidate_original_indices, (0, 2))
 
 
 if __name__ == "__main__":

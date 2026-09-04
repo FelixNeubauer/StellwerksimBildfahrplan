@@ -60,6 +60,8 @@ class CollectorStartupTests(unittest.TestCase):
             service = adapter.collector.services[7]
             self.assertEqual(adapter.collector.actual_timing_diagnostics[-1].event_simtime_seconds,
                              13 * 3600 + 30 * 60)
+            monotonic[0] += 10
+            adapter.snapshot()
             self.assertEqual(service.actual_timing.rows[0].actual_departure_minute,
                              13 * 60 + 30)
 

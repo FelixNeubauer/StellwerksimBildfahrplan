@@ -102,13 +102,15 @@ class CollectorAdapter:
     def _process_received_element(self, element, raw: str = "") -> list[str]:
         """Erfasst Eventzeit und Collector-Update atomar im Netzwerkthread."""
         with self._lock:
+            received_monotonic = self._display_clock.monotonic()
             event_time = None
             if element.tag == "ereignis":
                 # Ein empfangenes Protokollelement belegt eine aktive Verbindung;
                 # dieselbe zentrale Interpolation treibt auch die Live-Anzeige.
                 event_time, _running = self._display_clock.value(True)
             commands = self.collector.process(
-                element, raw or None, event_simtime_seconds=event_time)
+                element, raw or None, event_simtime_seconds=event_time,
+                received_monotonic=received_monotonic)
             if element.tag == "simzeit" and self.collector.simtime is not None:
                 sync = (self.collector.simtime, self.collector._sim_day)
                 self._display_clock.synchronize(*sync)
@@ -128,6 +130,7 @@ class CollectorAdapter:
 
     def snapshot(self) -> CollectorSnapshot:
         with self._lock:
+            self.collector.advance_pending_departures(self._display_clock.monotonic())
             sync = ((self.collector.simtime, self.collector._sim_day)
                     if self.collector.simtime is not None else None)
             if sync is not None and sync != self._last_display_sync:
