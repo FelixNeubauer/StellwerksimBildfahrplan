@@ -2,12 +2,14 @@ import json
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from app.collector_adapter import CollectorAdapter
+from app.simtime import SimTimeInterpolator
 
 
 class CollectorStartupTests(unittest.TestCase):
@@ -39,6 +41,29 @@ class CollectorStartupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             adapter = CollectorAdapter(Path(directory) / "missing.json", offline=False)
             self.assertEqual(adapter.snapshot().services, ())
+
+    def test_received_event_uses_current_central_interpolated_simtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = CollectorAdapter(Path(directory) / "state.json", offline=False)
+            monotonic = [100.0]
+            adapter._display_clock = SimTimeInterpolator(lambda: monotonic[0], max_extrapolation=60.0)
+            sync_ms = (13 * 3600 + 29 * 60 + 20) * 1000
+            adapter._process_received_element(ET.fromstring(f'<simzeit zeit="{sync_ms}" />'))
+            adapter._process_received_element(ET.fromstring(
+                '<zugfahrplan zid="7"><gleis name="TMU 1" plan="TMU 1" '
+                'an="13:25" ab="13:30" /></zugfahrplan>'))
+            monotonic[0] += 40
+
+            adapter._process_received_element(ET.fromstring(
+                '<ereignis art="abfahrt" zid="7" gleis="TMU 1" />'))
+
+            service = adapter.collector.services[7]
+            self.assertEqual(adapter.collector.actual_timing_diagnostics[-1].event_simtime_seconds,
+                             13 * 3600 + 30 * 60)
+            monotonic[0] += 10
+            adapter.snapshot()
+            self.assertEqual(service.actual_timing.rows[0].actual_departure_minute,
+                             13 * 60 + 30)
 
 
 if __name__ == "__main__":

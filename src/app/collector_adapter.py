@@ -51,7 +51,11 @@ class CollectorAdapter:
         self._worker: threading.Thread | None = None
         self._poller: threading.Thread | None = None
         self._stop = threading.Event()
-        self._display_clock = SimTimeInterpolator()
+        # Simzeit wird regulaer alle fuenf Sekunden synchronisiert. Eine
+        # grosszuegigere, weiterhin begrenzte Extrapolation verhindert jedoch,
+        # dass Ereignisse bei einer kurz verspaeteten Antwort auf dem letzten
+        # Serverwert stehen bleiben.
+        self._display_clock = SimTimeInterpolator(max_extrapolation=60.0)
         self._last_display_sync: tuple[int, int] | None = None
 
     def start(self, host: str = "127.0.0.1", port: int = 3691) -> None:
@@ -88,13 +92,30 @@ class CollectorAdapter:
                 result = self._parser.feed_line(bytes(event.data))
                 if result.state == "complete" and result.element is not None:
                     raw = (result.raw_document or b"").decode("utf-8", errors="backslashreplace")
-                    with self._lock:
-                        commands = self.collector.process(result.element, raw)
+                    commands = self._process_received_element(result.element, raw)
                     for command in commands:
                         self._send(command)
             elif event.kind in {"closed", "error", "connect_error"}:
                 with self._lock:
                     self.status = f"Verbindung beendet: {event.data}"
+
+    def _process_received_element(self, element, raw: str = "") -> list[str]:
+        """Erfasst Eventzeit und Collector-Update atomar im Netzwerkthread."""
+        with self._lock:
+            received_monotonic = self._display_clock.monotonic()
+            event_time = None
+            if element.tag == "ereignis":
+                # Ein empfangenes Protokollelement belegt eine aktive Verbindung;
+                # dieselbe zentrale Interpolation treibt auch die Live-Anzeige.
+                event_time, _running = self._display_clock.value(True)
+            commands = self.collector.process(
+                element, raw or None, event_simtime_seconds=event_time,
+                received_monotonic=received_monotonic)
+            if element.tag == "simzeit" and self.collector.simtime is not None:
+                sync = (self.collector.simtime, self.collector._sim_day)
+                self._display_clock.synchronize(*sync)
+                self._last_display_sync = sync
+            return commands
 
     def _send(self, command: str) -> None:
         try:
@@ -109,6 +130,7 @@ class CollectorAdapter:
 
     def snapshot(self) -> CollectorSnapshot:
         with self._lock:
+            self.collector.advance_pending_departures(self._display_clock.monotonic())
             sync = ((self.collector.simtime, self.collector._sim_day)
                     if self.collector.simtime is not None else None)
             if sync is not None and sync != self._last_display_sync:

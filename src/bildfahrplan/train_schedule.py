@@ -15,7 +15,9 @@ class TrainScheduleRow:
     operating_point: str
     raw_schedule_name: str
     arrival: str
+    actual_arrival: str
     departure: str
+    actual_departure: str
     flags: tuple[str, ...]
     raw_flags: str
     completed: bool
@@ -127,6 +129,10 @@ def _clock(value: str | None) -> str:
         return str(value)
 
 
+def _actual_clock(value: int | None) -> str:
+    return "" if value is None else format_axis_time(value * 60)
+
+
 def build_train_schedule_view_model(
     service: object, operating_point_for: Callable[[str, object], str | None] | None = None,
     *, in_current_snapshot: bool = True,
@@ -144,11 +150,17 @@ def build_train_schedule_view_model(
     groups = sequential_group_indices(ops)
     origin = str(getattr(service, "origin", "") or "")
     destination = str(getattr(service, "destination", "") or "")
+    actual_timing = getattr(service, "actual_timing", None)
+    actual_rows = getattr(actual_timing, "rows", {}) if actual_timing is not None else {}
     rows = tuple(TrainScheduleRow(
         index, ops[index],
         str(getattr(point, "planned_name", None) or getattr(point, "raw_name", "")),
         _clock(getattr(point, "planned_arrival", None)),
+        _actual_clock(getattr(actual_rows.get(index), "actual_arrival_minute", None))
+        if "D" not in str(getattr(point, "flags_raw", "") or "") else "",
         _clock(getattr(point, "planned_departure", None)),
+        _actual_clock(getattr(actual_rows.get(index), "actual_departure_minute", None))
+        if "D" not in str(getattr(point, "flags_raw", "") or "") else "",
         format_schedule_flags(point), str(getattr(point, "flags_raw", "") or ""),
         index not in active, groups[index],
     ) for index, point in enumerate(original))

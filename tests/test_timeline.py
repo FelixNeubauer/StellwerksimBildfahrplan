@@ -85,6 +85,58 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(trace.projected[0].time_seconds - trace.planned[0].time_seconds, 300)
         self.assertIn("+5", trace.label)
 
+    def test_actual_anchors_and_active_leg_do_not_shift_later_future(self):
+        profile = RouteProfile("ABC", (
+            OperatingPoint("a", "A", 0, ("A",)),
+            OperatingPoint("b", "B", 10, ("B",)),
+            OperatingPoint("c", "C", 20, ("C",)),
+        ))
+        service = SimpleNamespace(
+            zid=7, name="RE", service_kind="train", current_delay=0,
+            original_schedule=[point("A", departure="10:00"),
+                               point("B", "11:00", "11:05"), point("C", "12:00")],
+            actual_timing=SimpleNamespace(rows={
+                0: SimpleNamespace(actual_arrival_minute=None, actual_departure_minute=9 * 60),
+            }),
+        )
+        trace = build_trace(service, profile, parse_clock("09:00"))
+        self.assertEqual([p.time_seconds for p in trace.projected],
+                         [parse_clock("09:00"), parse_clock("10:00"),
+                          parse_clock("11:05"), parse_clock("12:00")])
+        self.assertEqual(trace.projected[1].source, "active_leg_projection")
+        service.actual_timing.rows[1] = SimpleNamespace(
+            actual_arrival_minute=10 * 60, actual_departure_minute=None)
+        trace = build_trace(service, profile, parse_clock("10:00"))
+        self.assertEqual([p.time_seconds for p in trace.projected],
+                         [parse_clock("09:00"), parse_clock("10:00"),
+                          parse_clock("11:05"), parse_clock("12:00")])
+        self.assertTrue(trace.projected[0].actual)
+        self.assertTrue(trace.projected[1].actual)
+
+    def test_new_departure_starts_new_symmetric_leg_through_passages(self):
+        profile = RouteProfile("route", tuple(
+            OperatingPoint(name.lower(), name, index * 10, (name,))
+            for index, name in enumerate(("A", "X", "Y", "B"))))
+        schedule = [point("A", departure="10:00"), point("X", "10:10", "10:10"),
+                    point("Y", "10:20", "10:20"), point("B", "10:30")]
+        schedule[1].flags_raw = schedule[2].flags_raw = "D"
+        service = SimpleNamespace(
+            zid=8, name="RE", service_kind="train", current_delay=17,
+            original_schedule=schedule,
+            actual_timing=SimpleNamespace(rows={
+                0: SimpleNamespace(actual_arrival_minute=None, actual_departure_minute=9 * 60 + 30),
+            }),
+        )
+        trace = build_trace(service, profile, parse_clock("09:30"))
+        self.assertEqual([p.time_seconds for p in trace.projected], [
+            parse_clock("09:30"), parse_clock("09:40"), parse_clock("09:50"), parse_clock("10:00")])
+        self.assertEqual([p.actual for p in trace.projected], [True, False, False, False])
+
+        # Dieselbe Logik ist bei spaeter Fahrt symmetrisch.
+        service.actual_timing.rows[0].actual_departure_minute = 10 * 60 + 12
+        trace = build_trace(service, profile, parse_clock("10:12"))
+        self.assertEqual(trace.projected[-1].time_seconds, parse_clock("10:42"))
+
     def test_minute_labels_use_two_digits_and_deduplicate_equal_times(self):
         points = schedule_to_points(
             [point("A 1", "18:09", "18:09"), point("B", "18:24", "18:25")],

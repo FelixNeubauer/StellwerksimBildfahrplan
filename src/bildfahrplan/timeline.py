@@ -153,6 +153,87 @@ def schedule_to_points(
     return tuple(result)
 
 
+def _actual_rows(service: object) -> dict[int, object]:
+    timing = getattr(service, "actual_timing", None)
+    return getattr(timing, "rows", {}) if timing is not None else {}
+
+
+def _is_passage(point: object) -> bool:
+    return "D" in str(getattr(point, "flags_raw", "") or "")
+
+
+def _active_leg(service: object) -> tuple[int, int, int] | None:
+    """Liefert (Abfahrtszeile, naechster Halt, Delta in Sekunden)."""
+    schedule = tuple(getattr(service, "_full_original_schedule",
+                             getattr(service, "original_schedule", ())))
+    rows = _actual_rows(service)
+    departures = [index for index, row in rows.items()
+                  if getattr(row, "actual_departure_minute", None) is not None]
+    for departure_index in sorted(departures, reverse=True):
+        target = next((index for index in range(departure_index + 1, len(schedule))
+                       if not _is_passage(schedule[index])), None)
+        if target is None or getattr(rows.get(target), "actual_arrival_minute", None) is not None:
+            continue
+        point = schedule[departure_index]
+        planned = getattr(point, "planned_departure", None)
+        actual_minute = getattr(rows[departure_index], "actual_departure_minute", None)
+        if not planned or actual_minute is None:
+            continue
+        actual_seconds = actual_minute * 60
+        planned_seconds = unwrap_time(parse_clock(planned), actual_seconds)
+        return departure_index, target, actual_seconds - planned_seconds
+    return None
+
+
+def effective_schedule_to_points(
+    service: object, profile: RouteProfile, reference_seconds: int,
+) -> tuple[PlotPoint, ...]:
+    """Kombiniert unveraenderlichen Plan, Ist-Anker und genau ein aktives Leg."""
+    schedule = tuple(getattr(service, "original_schedule", ()))
+    source_indices = tuple(getattr(service, "_schedule_source_indices", range(len(schedule))))
+    rows = _actual_rows(service)
+    active_leg = _active_leg(service)
+    delay_seconds = (getattr(service, "current_delay", None) or 0) * 60
+    result: list[PlotPoint] = []
+    previous_plan: int | None = None
+    for local_index, point in enumerate(schedule):
+        source_index = source_indices[local_index]
+        raw_name = point.planned_name or point.raw_name
+        location = profile.resolve(raw_name)
+        if location is None:
+            continue
+        values = (("arrival", point.planned_arrival), ("departure", point.planned_departure))
+        point_start = len(result)
+        for kind, raw_time in values:
+            if not raw_time:
+                continue
+            plan_time = unwrap_time(parse_clock(raw_time),
+                                    previous_plan if previous_plan is not None else reference_seconds)
+            while previous_plan is not None and plan_time < previous_plan:
+                plan_time += DAY_SECONDS
+            previous_plan = plan_time
+            row = rows.get(source_index)
+            actual_minute = (getattr(row, f"actual_{kind}_minute", None)
+                             if row is not None and not _is_passage(point) else None)
+            actual = actual_minute is not None
+            effective = actual_minute * 60 if actual else plan_time + delay_seconds
+            source = "actual_event" if actual else "delay_projection"
+            if not actual and active_leg is not None:
+                departure_index, target_index, delta = active_leg
+                in_leg = (departure_index < source_index < target_index
+                          or (source_index == target_index and kind == "arrival"))
+                if in_leg:
+                    effective = plan_time + delta
+                    source = "active_leg_projection"
+            result.append(PlotPoint(
+                effective, location.position, raw_name, kind, actual=actual,
+                source=source, node_id=location.id))
+        if (len(result) - point_start == 2
+                and result[-1].time_seconds == result[-2].time_seconds):
+            result.pop()
+    return tuple(result)
+
+
 def is_renderable_service(service: object) -> bool:
     return getattr(service, "service_kind", "unknown") == "train"
 
@@ -166,7 +247,7 @@ def build_trace(service: object, profile: RouteProfile, reference_seconds: int) 
     if not planned:
         return None
     delay = getattr(service, "current_delay", None) or 0
-    projected = schedule_to_points(original, profile, reference_seconds, delay * 60)
+    projected = effective_schedule_to_points(service, profile, reference_seconds)
     suffix = f" {delay:+d}" if delay else ""
     return TrainTrace(getattr(service, "zid"), f"{getattr(service, 'name', '')}{suffix}", planned, projected)
 
@@ -239,6 +320,11 @@ def replace_service_schedule(service: object, schedule: tuple[object, ...]) -> o
     for name in ("zid", "name", "service_kind", "current_delay", "origin", "destination"):
         if hasattr(service, name):
             setattr(view, name, getattr(service, name))
+    full_schedule = tuple(getattr(service, "_full_original_schedule",
+                                  getattr(service, "original_schedule", ())))
+    positions = {id(point): index for index, point in enumerate(full_schedule)}
+    view._full_original_schedule = full_schedule
+    view._schedule_source_indices = tuple(positions[id(point)] for point in schedule)
     view.original_schedule = schedule
     return view
 
