@@ -87,6 +87,7 @@ class TrainEvent:
     receive_timestamp: str
     simtime: int | None
     raw_xml: str
+    event_simtime_seconds: float | None = None
 
 
 @dataclass
@@ -242,7 +243,8 @@ class STSLiveCollector:
         messages, self.messages = self.messages, []
         return messages
 
-    def process(self, element: ET.Element, raw_xml: str | None = None) -> list[str]:
+    def process(self, element: ET.Element, raw_xml: str | None = None,
+                *, event_simtime_seconds: float | None = None) -> list[str]:
         raw = raw_xml if raw_xml is not None else ET.tostring(element, encoding="unicode")
         self.raw_xml.append(raw)
         commands: list[str] = []
@@ -257,7 +259,7 @@ class STSLiveCollector:
         elif element.tag == "zugfahrplan":
             self._process_schedule(element, raw)
         elif element.tag == "ereignis" and element.get("zid") is not None:
-            self._process_event(element, raw)
+            self._process_event(element, raw, event_simtime_seconds)
         self.save()
         return commands
 
@@ -439,17 +441,21 @@ class STSLiveCollector:
                     f"Plan: {point.planned_name}"
                 )
 
-    def _process_event(self, element: ET.Element, raw: str) -> None:
+    def _process_event(self, element: ET.Element, raw: str,
+                       event_simtime_seconds: float | None = None) -> None:
         service = self._service(element)
         if not service:
             return
         self._update_state(service, element)
+        if event_simtime_seconds is None and self.simtime is not None:
+            event_simtime_seconds = self._sim_day * 86400 + self.simtime / 1000
         event = TrainEvent(
             art=element.get("art", ""), zid=service.zid, train_name=element.get("name"),
             delay=_int(element.get("verspaetung")), track=element.get("gleis"),
             planned_track=element.get("plangleis"), visible=_bool(element.get("sichtbar")),
             at_track=_bool(element.get("amgleis")), origin=element.get("von"), destination=element.get("nach"),
             receive_timestamp=self.clock().isoformat(), simtime=self.simtime, raw_xml=raw,
+            event_simtime_seconds=event_simtime_seconds,
         )
         service.raw_events.append(event)
         if event.art in {"ankunft", "abfahrt"}:
@@ -495,6 +501,13 @@ class STSLiveCollector:
     def _is_d_point(point: SchedulePoint) -> bool:
         return "D" in _FLAG_TOKEN.findall(point.flags_raw or "")
 
+    @staticmethod
+    def _event_minute(event_simtime_seconds: float | None) -> int | None:
+        """Rundet fortlaufende Simulationssekunden deterministisch half-up."""
+        if event_simtime_seconds is None:
+            return None
+        return int((event_simtime_seconds + 30) // 60)
+
     def _observe_schedule_time(self, service: TrainService, event: TrainEvent) -> None:
         """Matcht echte Ankunft/Abfahrt konservativ nur per exaktem ``plangleis``."""
         # Nur das Ereignis selbst zusammen mit dem von STS explizit gesetzten
@@ -504,10 +517,10 @@ class STSLiveCollector:
             reason = "missing_amgleis" if event.at_track is None else "ignored_not_at_track"
             LOGGER.debug(
                 "observed_train_time zid=%s train_name=%r event_type=%s gleis=%r plangleis=%r "
-                "amgleis=%r event_simtime=%r candidate_original_indices=[] "
+                "amgleis=%r server_simtime_ms=%r event_simtime_seconds=%r candidate_original_indices=[] "
                 "selected_original_index=None selected_planned_name=None action=ignored reason=%s changed=False",
                 service.zid, service.name, event.art, event.track, event.planned_track,
-                event.at_track, event.simtime, reason,
+                event.at_track, event.simtime, event.event_simtime_seconds, reason,
             )
             return
 
@@ -562,7 +575,7 @@ class STSLiveCollector:
             attribute = ("actual_arrival_minute" if event.art == "ankunft"
                          else "actual_departure_minute")
             if getattr(row, attribute) is None:
-                minute = self._sim_day * 24 * 60 + event.simtime // 60_000 if event.simtime is not None else None
+                minute = self._event_minute(event.event_simtime_seconds)
                 if minute is not None:
                     setattr(row, attribute, minute)
                     changed = True
@@ -580,10 +593,12 @@ class STSLiveCollector:
                          if selected is not None else None)
         LOGGER.debug(
             "observed_train_time zid=%s train_name=%r event_type=%s gleis=%r plangleis=%r amgleis=%r "
-            "event_simtime=%r candidate_original_indices=%s selected_original_index=%r "
-            "selected_planned_name=%r action=%s reason=%s changed=%s",
+            "server_simtime_ms=%r event_simtime_seconds=%r stored_minute=%r "
+            "candidate_original_indices=%s selected_original_index=%r selected_planned_name=%r "
+            "action=%s reason=%s changed=%s",
             service.zid, service.name, event.art, event.track, planned, event.at_track,
-            event.simtime, candidates, selected, selected_name,
+            event.simtime, event.event_simtime_seconds,
+            self._event_minute(event.event_simtime_seconds), candidates, selected, selected_name,
             "stored" if changed else "ignored", reason, changed,
         )
 

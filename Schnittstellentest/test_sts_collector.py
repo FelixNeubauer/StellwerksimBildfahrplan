@@ -286,6 +286,36 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(state.last_observed_original_index, 0)
         self.assertIn("reason=ignored_not_at_track", "\n".join(logs.output))
 
+    def test_observed_event_minutes_use_half_up_rounding(self):
+        cases = (
+            ((6 * 60 + 5) * 60 + 29, 365),
+            ((6 * 60 + 5) * 60 + 30, 366),
+            ((6 * 60 + 5) * 60 + 59.2, 366),
+            ((6 * 60 + 6) * 60 + 1, 366),
+            ((6 * 60 + 6) * 60 + 30, 367),
+        )
+        for event_seconds, expected_minute in cases:
+            with self.subTest(event_seconds=event_seconds):
+                collector = STSLiveCollector()
+                collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'))
+                collector.process(
+                    xml('<ereignis art="ankunft" zid="7" plangleis="B" amgleis="true" />'),
+                    event_simtime_seconds=event_seconds,
+                )
+                self.assertEqual(
+                    collector.observed_train_times[7].rows[0].actual_arrival_minute,
+                    expected_minute,
+                )
+
+    def test_observed_event_rounding_preserves_next_simulation_day(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'))
+        collector.process(
+            xml('<ereignis art="ankunft" zid="7" plangleis="B" amgleis="true" />'),
+            event_simtime_seconds=24 * 3600 - 0.8,
+        )
+        self.assertEqual(collector.observed_train_times[7].rows[0].actual_arrival_minute, 1440)
+
     def test_false_arrival_does_not_block_later_true_arrival(self):
         collector = STSLiveCollector()
         collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'

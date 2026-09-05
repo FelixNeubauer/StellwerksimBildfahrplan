@@ -90,12 +90,27 @@ class CollectorAdapter:
                 if result.state == "complete" and result.element is not None:
                     raw = (result.raw_document or b"").decode("utf-8", errors="backslashreplace")
                     with self._lock:
-                        commands = self.collector.process(result.element, raw)
+                        commands = self._process_protocol_element(result.element, raw)
                     for command in commands:
                         self._send(command)
             elif event.kind in {"closed", "error", "connect_error"}:
                 with self._lock:
                     self.status = f"Verbindung beendet: {event.data}"
+
+    def _process_protocol_element(self, element, raw: str) -> list[str]:
+        """Verankert Simzeitantworten und stempelt Events unmittelbar beim Empfang."""
+        if element.tag == "simzeit":
+            commands = self.collector.process(element, raw)
+            if self.collector.simtime is not None:
+                sync = (self.collector.simtime, self.collector._sim_day)
+                self._display_clock.synchronize(*sync)
+                self._last_display_sync = sync
+            return commands
+        event_simtime_seconds = None
+        if element.tag == "ereignis":
+            event_simtime_seconds, _running = self._display_clock.value(self._client.connected)
+        return self.collector.process(
+            element, raw, event_simtime_seconds=event_simtime_seconds)
 
     def _send(self, command: str) -> None:
         try:

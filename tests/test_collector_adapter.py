@@ -2,12 +2,14 @@ import json
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from app.collector_adapter import CollectorAdapter
+from app.simtime import SimTimeInterpolator
 
 
 class CollectorStartupTests(unittest.TestCase):
@@ -39,6 +41,28 @@ class CollectorStartupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             adapter = CollectorAdapter(Path(directory) / "missing.json", offline=False)
             self.assertEqual(adapter.snapshot().services, ())
+
+    def test_event_uses_interpolated_simtime_at_protocol_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            now = [100.0]
+            adapter = CollectorAdapter(Path(directory) / "missing.json", offline=False)
+            adapter._display_clock = SimTimeInterpolator(
+                lambda: now[0], max_extrapolation=30)
+            simtime = (6 * 3600 + 5 * 60 + 40) * 1000
+            adapter._process_protocol_element(
+                ET.fromstring(f'<simzeit zeit="{simtime}" />'), "")
+            adapter._process_protocol_element(
+                ET.fromstring('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'), "")
+            now[0] += 20
+            adapter._process_protocol_element(
+                ET.fromstring('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="true" />'), "")
+            event = adapter.collector.services[7].raw_events[-1]
+            self.assertEqual(event.simtime, simtime)
+            self.assertEqual(event.event_simtime_seconds, 6 * 3600 + 6 * 60)
+            self.assertEqual(
+                adapter.collector.observed_train_times[7].rows[0].actual_departure_minute,
+                366,
+            )
 
 
 if __name__ == "__main__":
