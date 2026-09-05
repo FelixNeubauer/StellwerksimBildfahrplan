@@ -224,6 +224,7 @@ class CollectorTests(unittest.TestCase):
         collector.process(xml('<ereignis art="ankunft" zid="7" gleis="B9" plangleis="B2" amgleis="true" />'))
         collector.process(xml(f'<simzeit zeit="{self.simtime(10, 24, 0)}" />'))
         collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="B9" plangleis="B2" amgleis="true" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="C1" plangleis="C1" amgleis="false" />'))
         row = collector.observed_train_times[7].rows[1]
         self.assertEqual((row.actual_arrival_minute, row.actual_departure_minute), (620, 624))
 
@@ -233,9 +234,12 @@ class CollectorTests(unittest.TestCase):
         for minute in (24, 24, 25):
             collector.process(xml(f'<simzeit zeit="{self.simtime(10, minute, 0)}" />'))
             collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="other" plangleis="B2" amgleis="true" />'))
+        self.assertEqual(collector.observed_train_times[7].rows, {})
+        collector.process(xml(f'<simzeit zeit="{self.simtime(10, 26, 0)}" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" gleis="next" plangleis="next" amgleis="false" />'))
         row = collector.observed_train_times[7].rows[0]
         self.assertIsNone(row.actual_arrival_minute)
-        self.assertEqual(row.actual_departure_minute, 624)
+        self.assertEqual(row.actual_departure_minute, 626)
 
     def test_observed_repeated_track_uses_remaining_schedule_sequence(self):
         collector = STSLiveCollector()
@@ -247,11 +251,13 @@ class CollectorTests(unittest.TestCase):
         collector.process(xml(f'<simzeit zeit="{self.simtime(10, 11, 0)}" />'))
         collector.process(xml('<ereignis art="ankunft" zid="7" plangleis="B" amgleis="true" />'))
         collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="true" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="C" amgleis="false" />'))
         collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" an="10:30" />'
                               '<gleis name="D" plan="D" an="10:40" /></zugfahrplan>'))
         collector.process(xml(f'<simzeit zeit="{self.simtime(10, 31, 0)}" />'))
         collector.process(xml('<ereignis art="ankunft" zid="7" plangleis="B" amgleis="true" />'))
         collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="true" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="D" amgleis="false" />'))
         rows = collector.observed_train_times[7].rows
         self.assertEqual(set(rows), {1, 3})
         self.assertEqual(rows[1].actual_arrival_minute, 611)
@@ -284,7 +290,7 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(state.rows[0].actual_departure_minute, 310)
         self.assertNotIn(1, state.rows)
         self.assertEqual(state.last_observed_original_index, 0)
-        self.assertIn("reason=ignored_not_at_track", "\n".join(logs.output))
+        self.assertIn("reason=departure_confirmed_by_false", "\n".join(logs.output))
 
     def test_observed_event_minutes_use_half_up_rounding(self):
         cases = (
@@ -337,8 +343,62 @@ class CollectorTests(unittest.TestCase):
         collector.process(xml('<ereignis art="ankunft" zid="7" plangleis="TBL 2" amgleis="true" />'))
         collector.process(xml(f'<simzeit zeit="{self.simtime(5, 10, 0)}" />'))
         collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="TBL 2" amgleis="true" />'))
+        collector.process(xml(f'<simzeit zeit="{self.simtime(5, 11, 0)}" />'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="next" amgleis="false" />'))
         row = collector.observed_train_times[7].rows[0]
-        self.assertEqual((row.actual_arrival_minute, row.actual_departure_minute), (309, 310))
+        self.assertEqual((row.actual_arrival_minute, row.actual_departure_minute), (309, 311))
+
+    def test_departure_uses_true_row_and_first_false_time_only(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="TEH 1" plan="TEH 1" />'
+                              '<gleis name="TALL 1" plan="TALL 1" /></zugfahrplan>'))
+        true_time = (6 * 60 + 5) * 60 + 58
+        collector.process(
+            xml('<ereignis art="abfahrt" zid="7" gleis="TEH 1" '
+                'plangleis="TEH 1" amgleis="true" />'),
+            event_simtime_seconds=true_time,
+        )
+        self.assertEqual(collector.observed_train_times[7].rows, {})
+        self.assertEqual(collector.pending_observed_departures[7].original_schedule_index, 0)
+        false_time = (6 * 60 + 6) * 60 + 11
+        collector.process(
+            xml('<ereignis art="abfahrt" zid="7" gleis="TALL 1" '
+                'plangleis="TALL 1" amgleis="false" />'),
+            event_simtime_seconds=false_time,
+        )
+        rows = collector.observed_train_times[7].rows
+        self.assertEqual(rows[0].actual_departure_minute, 366)
+        self.assertNotIn(1, rows)
+        self.assertNotIn(7, collector.pending_observed_departures)
+        for seconds in (false_time + 1, false_time + 4):
+            collector.process(
+                xml('<ereignis art="abfahrt" zid="7" plangleis="TALL 1" amgleis="false" />'),
+                event_simtime_seconds=seconds,
+            )
+        self.assertEqual(rows[0].actual_departure_minute, 366)
+
+    def test_conflicting_true_departure_keeps_first_pending_without_advancing(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'))
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="A" amgleis="true" />'),
+                          event_simtime_seconds=360)
+        with self.assertLogs("sts_collector", level="DEBUG") as logs:
+            collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="true" />'),
+                              event_simtime_seconds=361)
+        pending = collector.pending_observed_departures[7]
+        self.assertEqual((pending.original_schedule_index, pending.planned_name), (0, "A"))
+        self.assertEqual(collector.observed_train_times[7].last_observed_original_index, 0)
+        self.assertIn("reason=departure_true_conflict", "\n".join(logs.output))
+
+    def test_departure_false_without_true_does_not_match_its_plangleis(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'))
+        with self.assertLogs("sts_collector", level="DEBUG") as logs:
+            collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="false" />'),
+                              event_simtime_seconds=360)
+        self.assertNotIn(7, collector.observed_train_times)
+        self.assertIn("reason=departure_false_without_pending", "\n".join(logs.output))
 
     def test_missing_amgleis_is_ignored_and_xml_boole_are_not_string_truthy(self):
         collector = STSLiveCollector()

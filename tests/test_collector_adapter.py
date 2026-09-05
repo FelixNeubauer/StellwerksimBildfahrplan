@@ -55,12 +55,12 @@ class CollectorStartupTests(unittest.TestCase):
                 ET.fromstring('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'), "")
             now[0] += 20
             adapter._process_protocol_element(
-                ET.fromstring('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="true" />'), "")
+                ET.fromstring('<ereignis art="ankunft" zid="7" plangleis="B" amgleis="true" />'), "")
             event = adapter.collector.services[7].raw_events[-1]
             self.assertEqual(event.simtime, simtime)
             self.assertEqual(event.event_simtime_seconds, 6 * 3600 + 6 * 60)
             self.assertEqual(
-                adapter.collector.observed_train_times[7].rows[0].actual_departure_minute,
+                adapter.collector.observed_train_times[7].rows[0].actual_arrival_minute,
                 366,
             )
 

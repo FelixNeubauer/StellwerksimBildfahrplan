@@ -110,6 +110,18 @@ class ObservedTrainTimes:
     last_event_original_index: int | None = None
 
 
+@dataclass(frozen=True)
+class PendingObservedDeparture:
+    """Durch ein true-Event bestimmte Zeile bis zur ersten false-Bestaetigung."""
+
+    zid: int
+    original_schedule_index: int
+    planned_name: str
+    true_track: str | None
+    true_event_simtime_seconds: float | None
+    train_name: str
+
+
 @dataclass
 class TrainRelation:
     relation_type: str
@@ -223,6 +235,8 @@ class STSLiveCollector:
         # Bewusst ausserhalb von TrainService: dieser diagnostische Zustand
         # darf niemals in Collector-State-Dateien oder die Projektion gelangen.
         self.observed_train_times: dict[int, ObservedTrainTimes] = {}
+        self.pending_observed_departures: dict[int, PendingObservedDeparture] = {}
+        self.confirmed_observed_departures: dict[int, PendingObservedDeparture] = {}
         self.messages: list[str] = []
         if self.storage_path and self.storage_path.exists():
             self.load()
@@ -510,6 +524,9 @@ class STSLiveCollector:
 
     def _observe_schedule_time(self, service: TrainService, event: TrainEvent) -> None:
         """Matcht echte Ankunft/Abfahrt konservativ nur per exaktem ``plangleis``."""
+        if event.art == "abfahrt" and event.at_track is False:
+            self._confirm_observed_departure(service, event)
+            return
         # Nur das Ereignis selbst zusammen mit dem von STS explizit gesetzten
         # Zustand ist Evidenz. Insbesondere darf ein vorausgemeldetes Event mit
         # amgleis=false keinerlei Matching- oder Sequenzzustand anlegen.
@@ -522,6 +539,12 @@ class STSLiveCollector:
                 service.zid, service.name, event.art, event.track, event.planned_track,
                 event.at_track, event.simtime, event.event_simtime_seconds, reason,
             )
+            return
+
+        pending = self.pending_observed_departures.get(service.zid)
+        if event.art == "abfahrt" and pending is not None and pending.planned_name == event.planned_track:
+            self._log_departure_transition(
+                service, event, pending, "departure_true_duplicate", None)
             return
 
         state = self.observed_train_times.setdefault(service.zid, ObservedTrainTimes())
@@ -570,10 +593,33 @@ class STSLiveCollector:
                     reason = "ambiguous"
 
         changed = False
-        if selected is not None and reason != "duplicate":
+        if selected is not None and reason != "duplicate" and event.art == "abfahrt":
+            if pending is not None:
+                reason = "departure_true_conflict"
+                self._log_departure_transition(service, event, pending, reason, None)
+            else:
+                pending = PendingObservedDeparture(
+                    zid=service.zid,
+                    original_schedule_index=selected,
+                    planned_name=service.original_schedule[selected].planned_name,
+                    true_track=event.track,
+                    true_event_simtime_seconds=event.event_simtime_seconds,
+                    train_name=service.name,
+                )
+                self.pending_observed_departures[service.zid] = pending
+                state.last_observed_original_index = max(
+                    selected,
+                    state.last_observed_original_index
+                    if state.last_observed_original_index is not None else -1,
+                )
+                state.last_event_type = event.art
+                state.last_event_planned_track = planned
+                state.last_event_original_index = selected
+                reason = "departure_pending_created"
+                self._log_departure_transition(service, event, pending, reason, None)
+        elif selected is not None and reason != "duplicate":
             row = state.rows.setdefault(selected, ObservedScheduleRowTime())
-            attribute = ("actual_arrival_minute" if event.art == "ankunft"
-                         else "actual_departure_minute")
+            attribute = "actual_arrival_minute"
             if getattr(row, attribute) is None:
                 minute = self._event_minute(event.event_simtime_seconds)
                 if minute is not None:
@@ -600,6 +646,55 @@ class STSLiveCollector:
             event.simtime, event.event_simtime_seconds,
             self._event_minute(event.event_simtime_seconds), candidates, selected, selected_name,
             "stored" if changed else "ignored", reason, changed,
+        )
+
+    def _confirm_observed_departure(self, service: TrainService, event: TrainEvent) -> None:
+        """Uebernimmt vom ersten false-Event nur die Zeit fuer die vorgemerkte Zeile."""
+        pending = self.pending_observed_departures.get(service.zid)
+        if pending is None:
+            reason = ("departure_false_duplicate" if service.zid in self.confirmed_observed_departures
+                      else "departure_false_without_pending")
+            self._log_departure_transition(
+                service, event, self.confirmed_observed_departures.get(service.zid), reason, None)
+            return
+        minute = self._event_minute(event.event_simtime_seconds)
+        if minute is None:
+            self._log_departure_transition(
+                service, event, pending, "departure_false_missing_simtime", None)
+            return
+        state = self.observed_train_times[service.zid]
+        row = state.rows.setdefault(pending.original_schedule_index, ObservedScheduleRowTime())
+        if row.actual_departure_minute is None:
+            row.actual_departure_minute = minute
+        self.pending_observed_departures.pop(service.zid, None)
+        self.confirmed_observed_departures[service.zid] = pending
+        self._log_departure_transition(
+            service, event, pending, "departure_confirmed_by_false", minute)
+
+    @staticmethod
+    def _log_departure_transition(
+        service: TrainService,
+        event: TrainEvent,
+        pending: PendingObservedDeparture | None,
+        reason: str,
+        stored_minute: int | None,
+    ) -> None:
+        LOGGER.debug(
+            "observed_departure zid=%s train_name=%r reason=%s "
+            "true_original_schedule_index=%r true_plangleis=%r true_gleis=%r "
+            "true_event_simtime_seconds=%r event_gleis=%r event_plangleis=%r event_amgleis=%r "
+            "event_simtime_seconds=%r false_gleis=%r false_plangleis=%r "
+            "false_event_simtime_seconds=%r stored_minute=%r",
+            service.zid, service.name, reason,
+            pending.original_schedule_index if pending else None,
+            pending.planned_name if pending else None,
+            pending.true_track if pending else None,
+            pending.true_event_simtime_seconds if pending else None,
+            event.track, event.planned_track, event.at_track, event.event_simtime_seconds,
+            event.track if event.at_track is False else None,
+            event.planned_track if event.at_track is False else None,
+            event.event_simtime_seconds if event.at_track is False else None,
+            stored_minute,
         )
 
     def _process_departure(self, service: TrainService, event: TrainEvent) -> None:
@@ -641,6 +736,8 @@ class STSLiveCollector:
             self._previous_simtime = None
             self._signal_stop_open.clear()
             self.observed_train_times.clear()
+            self.pending_observed_departures.clear()
+            self.confirmed_observed_departures.clear()
             self.messages.append(
                 f"Stellwerkwechsel erkannt: AID {old_aid} → {aid}. Alter Zustand archiviert: {archive}"
             )
