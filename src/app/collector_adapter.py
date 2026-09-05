@@ -30,6 +30,7 @@ class CollectorSnapshot:
     aid: int | None
     services: tuple[object, ...]
     observed_train_times: dict[int, object]
+    operating_point_assignments: dict[str, str]
     infrastructure_documents: tuple[str, ...]
     display_simtime: float | None
     display_simtime_running: bool
@@ -145,6 +146,7 @@ class CollectorAdapter:
                 sim_day=self.collector._sim_day, facility_name=self.collector.session.name,
                 aid=self.collector.session.aid, services=tuple(copy.deepcopy(list(self.collector.services.values()))),
                 observed_train_times=copy.deepcopy(self.collector.observed_train_times),
+                operating_point_assignments=dict(self.collector.operating_point_assignments),
                 infrastructure_documents=tuple(
                     raw for raw in self.collector.raw_xml
                     if raw.lstrip().startswith(("<wege", "<bahnsteigliste"))

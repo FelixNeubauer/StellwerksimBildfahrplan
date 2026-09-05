@@ -11,7 +11,7 @@ from bildfahrplan.profile import OperatingPoint, RouteProfile
 from bildfahrplan.timeline import (
     DISTANCE_AXIS, NOW_LINE_ANGLE, TIME_AXIS, BoundaryEndpoint, BoundaryRouteProjection,
     RouteInstanceProjection, RouteInstanceProjectionPoint, build_colored_minute_event_labels,
-    build_minute_event_labels,
+    build_minute_event_labels, grouped_minute_label_indices,
     build_route_instance_train_segments, build_trace, extend_trace_to_boundaries,
     format_axis_time, is_renderable_service,
     parse_clock, schedule_to_points, unwrap_time,
@@ -19,17 +19,17 @@ from bildfahrplan.timeline import (
 from sts_collector import SchedulePoint
 
 
-def point(name, arrival=None, departure=None):
+def point(name, arrival=None, departure=None, flags=""):
     return SchedulePoint(
         raw_name=name, current_name=name, planned_name=name,
-        planned_arrival=arrival, planned_departure=departure,
+        planned_arrival=arrival, planned_departure=departure, flags_raw=flags,
     )
 
 
 class TimelineTests(unittest.TestCase):
     def setUp(self):
         self.profile = RouteProfile("Test", (
-            OperatingPoint("a", "A", 0, ("A 1",)),
+            OperatingPoint("a", "A", 0, ("A 1", "A 2", "A 3", "AX")),
             OperatingPoint("b", "B", 10, ("B",)),
         ))
 
@@ -99,6 +99,72 @@ class TimelineTests(unittest.TestCase):
         for color in ("#123456", "#00BCD4", "#4FC3F7"):
             labels = build_colored_minute_event_labels(points, color)
             self.assertEqual({item.color for item in labels}, {color})
+
+    def test_minute_labels_use_only_contiguous_operating_point_group_edges(self):
+        schedule = [
+            point("A 1", "07:15", "07:36"),
+            point("A 2", "07:38", "07:39"),
+        ]
+        points = schedule_to_points(schedule, self.profile, parse_clock("07:00"))
+        allowed = grouped_minute_label_indices(schedule, {"A 1": "A", "A 2": "A"})
+        labels = build_colored_minute_event_labels(points, "#123456", allowed)
+        self.assertEqual(
+            [(item.event.text, item.event.kind) for item in labels],
+            [("15", "arrival"), ("39", "departure")],
+        )
+        self.assertEqual(
+            {(point.original_schedule_index, point.kind) for point in points},
+            {(0, "arrival"), (0, "departure"), (1, "arrival"), (1, "departure")},
+        )
+
+    def test_minute_label_groups_support_three_single_and_separate_stays(self):
+        three = [
+            point("A 1", "10:00", "10:05"),
+            point("A 2", "10:06", "10:08"),
+            point("A 3", "10:09", "10:15"),
+        ]
+        allowed = grouped_minute_label_indices(
+            three, {name: "A" for name in ("A 1", "A 2", "A 3")})
+        labels = build_colored_minute_event_labels(
+            schedule_to_points(three, self.profile, parse_clock("10:00")), "#fff", allowed)
+        self.assertEqual([item.event.text for item in labels], ["00", "15"])
+
+        single = [point("A 1", "10:00", "10:05")]
+        self.assertEqual(
+            grouped_minute_label_indices(single, {"A 1": "A"}),
+            frozenset({(0, "arrival"), (0, "departure")}),
+        )
+        separate = [
+            point("A 1", "10:00", "10:05"), point("B", "10:06", "10:07"),
+            point("A 2", "10:08", "10:09"),
+        ]
+        self.assertEqual(len(grouped_minute_label_indices(
+            separate, {"A 1": "A", "B": "B", "A 2": "A"})), 6)
+
+    def test_minute_label_grouping_uses_original_indices_after_route_filtering(self):
+        schedule = [
+            point("A 1", "10:00", "10:05"), point("A 2", "10:06", "10:08"),
+            point("B", "10:09", "10:10"),
+        ]
+        points = schedule_to_points(schedule, self.profile, parse_clock("10:00"))
+        visible_subset = tuple(point for point in points if point.original_schedule_index != 0)
+        allowed = grouped_minute_label_indices(
+            schedule, {"A 1": "A", "A 2": "A", "B": "B"})
+        labels = build_colored_minute_event_labels(visible_subset, "#fff", allowed)
+        self.assertNotIn(("06", "arrival"), [
+            (item.event.text, item.event.kind) for item in labels])
+        self.assertIn(("08", "departure"), [
+            (item.event.text, item.event.kind) for item in labels])
+
+    def test_d_row_inside_group_never_becomes_a_halt_label_edge(self):
+        schedule = [
+            point("A 1", "10:00", "10:05"),
+            point("AX", "10:06", "10:06", flags="D"),
+            point("A 2", "10:07", "10:09"),
+        ]
+        allowed = grouped_minute_label_indices(
+            schedule, {"A 1": "A", "AX": "A", "A 2": "A"})
+        self.assertEqual(allowed, frozenset({(0, "arrival"), (2, "departure")}))
 
     def test_exit_uses_adjacent_movement_slope_after_last_departure(self):
         profile = RouteProfile("Exit", (

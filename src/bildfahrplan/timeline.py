@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import re
 from typing import Iterable, Protocol
 
 from .profile import OperatingPoint, RouteProfile
@@ -32,6 +33,7 @@ class PlotPoint:
     direction: str | None = None
     instance_id: str | None = None
     route_id: str | None = None
+    original_schedule_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,9 @@ def schedule_to_points(
     """Erzeugt Ankunft/Abfahrt getrennt; unbekannte Raw-Namen bleiben unaufgeloest."""
     result: list[PlotPoint] = []
     previous: int | None = None
-    for schedule_point in schedule:
+    source_indices = tuple(getattr(schedule, "source_indices", ()))
+    for local_index, schedule_point in enumerate(schedule):
+        original_index = source_indices[local_index] if source_indices else local_index
         point_start = len(result)
         # Fuer die Plantrasse ist der unveraenderliche Planname massgeblich.
         raw_name = schedule_point.planned_name or schedule_point.raw_name
@@ -145,7 +149,10 @@ def schedule_to_points(
             while previous is not None and current < previous:
                 current += DAY_SECONDS
             current += offset_seconds
-            result.append(PlotPoint(current, location.position, raw_name, kind, node_id=location.id))
+            result.append(PlotPoint(
+                current, location.position, raw_name, kind, node_id=location.id,
+                original_schedule_index=original_index,
+            ))
             previous = current - offset_seconds
         # Eine Durchfahrt mit identischen an/ab-Zeiten braucht nur einen Punkt.
         if len(result) - point_start == 2 and result[-1].time_seconds == result[-2].time_seconds:
@@ -188,7 +195,9 @@ def build_route_instance_train_segments(
             tuple(OperatingPoint(point.node_id, point.label, point.position, point.raw_names)
                   for point in route.points),
         )
-        trace = build_trace(replace_service_schedule(service, selected), profile, reference_seconds)
+        trace = build_trace(replace_service_schedule(
+            service, tuple(point for _index, point in selected),
+            tuple(index for index, _point in selected)), profile, reference_seconds)
         if trace is None:
             continue
         boundary = BoundaryRouteProjection(
@@ -222,15 +231,66 @@ def build_minute_event_labels(points: Iterable[PlotPoint]) -> tuple[MinuteEventL
     return tuple(result)
 
 
+_SCHEDULE_FLAG_TOKEN = re.compile(r"([A-Z])(?:\[[^]]*\]|\([^)]*\))?")
+
+
+def grouped_minute_label_indices(
+    schedule: Iterable[object], operating_point_assignments: dict[str, str] | None = None,
+) -> frozenset[tuple[int, str]]:
+    """Bestimmt Labelkanten zusammenhängender logisch zugeordneter Aufenthalte."""
+    points = tuple(schedule)
+    assignments = operating_point_assignments or {}
+
+    def key(index: int) -> object:
+        point = points[index]
+        raw = str(getattr(point, "planned_name", None) or getattr(point, "raw_name", ""))
+        mapped = getattr(point, "operating_point", None) or assignments.get(raw)
+        return mapped if mapped is not None else ("unassigned_schedule_row", index)
+
+    def is_d(index: int) -> bool:
+        raw = str(getattr(points[index], "flags_raw", "") or "")
+        return "D" in _SCHEDULE_FLAG_TOKEN.findall(raw)
+
+    allowed: set[tuple[int, str]] = set()
+    start = 0
+    while start < len(points):
+        end = start
+        while end + 1 < len(points) and key(end + 1) == key(start):
+            end += 1
+        suitable = [index for index in range(start, end + 1) if not is_d(index)]
+        if suitable:
+            arrivals = [index for index in suitable if getattr(points[index], "planned_arrival", None)]
+            departures = [index for index in suitable if getattr(points[index], "planned_departure", None)]
+            if arrivals:
+                allowed.add((arrivals[0], "arrival"))
+            if departures:
+                allowed.add((departures[-1], "departure"))
+        else:
+            # Die bisherige separate Durchfahrtsminute bleibt erhalten.
+            for index in range(start, end + 1):
+                allowed.update(((index, "arrival"), (index, "departure")))
+        start = end + 1
+    return frozenset(allowed)
+
+
 def build_colored_minute_event_labels(
     points: Iterable[PlotPoint], train_color: str,
+    allowed_schedule_events: frozenset[tuple[int, str]] | None = None,
 ) -> tuple[ColoredMinuteEventLabel, ...]:
     """Bindet Minutenlabels ohne zweite Farbentscheidung an die Zuggrundfarbe."""
+    candidates = tuple(
+        point for point in points
+        if allowed_schedule_events is None
+        or point.original_schedule_index is None
+        or (point.original_schedule_index, point.kind) in allowed_schedule_events
+    )
     return tuple(ColoredMinuteEventLabel(event, train_color)
-                 for event in build_minute_event_labels(points))
+                 for event in build_minute_event_labels(candidates))
 
 
-def replace_service_schedule(service: object, schedule: tuple[object, ...]) -> object:
+def replace_service_schedule(
+    service: object, schedule: tuple[object, ...], source_indices: tuple[int, ...] = (),
+) -> object:
     """Kleine unveränderliche Sicht auf einen Service mit gefiltertem Plan."""
     class ServiceView:
         pass
@@ -239,25 +299,29 @@ def replace_service_schedule(service: object, schedule: tuple[object, ...]) -> o
     for name in ("zid", "name", "service_kind", "current_delay", "origin", "destination"):
         if hasattr(service, name):
             setattr(view, name, getattr(service, name))
-    view.original_schedule = schedule
+    class IndexedSchedule(tuple):
+        pass
+    indexed = IndexedSchedule(schedule)
+    indexed.source_indices = source_indices
+    view.original_schedule = indexed
     return view
 
 
 def _matching_schedule_run(
     schedule: tuple[object, ...], route: RouteInstanceProjection,
-) -> tuple[object, ...] | None:
+) -> tuple[tuple[int, object], ...] | None:
     raw_to_index = {
         raw_name: index
         for index, point in enumerate(route.points)
         for raw_name in point.raw_names
     }
     mapped = []
-    for schedule_point in schedule:
+    for original_index, schedule_point in enumerate(schedule):
         raw_name = getattr(schedule_point, "planned_name", None) or getattr(schedule_point, "raw_name", None)
         if raw_name in raw_to_index:
-            mapped.append((schedule_point, raw_to_index[raw_name]))
+            mapped.append((original_index, schedule_point, raw_to_index[raw_name]))
     distinct = []
-    for _point, index in mapped:
+    for _original_index, _point, index in mapped:
         if not distinct or distinct[-1] != index:
             distinct.append(index)
     if len(distinct) < 2:
@@ -266,7 +330,7 @@ def _matching_schedule_run(
     decreasing = all(left > right for left, right in zip(distinct, distinct[1:]))
     if not increasing and not decreasing:
         return None
-    return tuple(point for point, _index in mapped)
+    return tuple((original_index, point) for original_index, point, _route_index in mapped)
 
 
 def extend_trace_to_boundaries(
