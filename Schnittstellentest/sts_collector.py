@@ -237,6 +237,7 @@ class STSLiveCollector:
         self.observed_train_times: dict[int, ObservedTrainTimes] = {}
         self.pending_observed_departures: dict[int, PendingObservedDeparture] = {}
         self.confirmed_observed_departures: dict[int, PendingObservedDeparture] = {}
+        self.previous_remaining_original_indices: dict[int, tuple[int, ...]] = {}
         self.messages: list[str] = []
         if self.storage_path and self.storage_path.exists():
             self.load()
@@ -258,7 +259,8 @@ class STSLiveCollector:
         return messages
 
     def process(self, element: ET.Element, raw_xml: str | None = None,
-                *, event_simtime_seconds: float | None = None) -> list[str]:
+                *, event_simtime_seconds: float | None = None,
+                schedule_simtime_seconds: float | None = None) -> list[str]:
         raw = raw_xml if raw_xml is not None else ET.tostring(element, encoding="unicode")
         self.raw_xml.append(raw)
         commands: list[str] = []
@@ -271,7 +273,7 @@ class STSLiveCollector:
         elif element.tag == "zugdetails":
             self._process_details(element, raw)
         elif element.tag == "zugfahrplan":
-            self._process_schedule(element, raw)
+            self._process_schedule(element, raw, schedule_simtime_seconds)
         elif element.tag == "ereignis" and element.get("zid") is not None:
             self._process_event(element, raw, event_simtime_seconds)
         self.save()
@@ -421,7 +423,8 @@ class STSLiveCollector:
             self._update_state(service, element)
             service.raw_details.append(raw)
 
-    def _process_schedule(self, element: ET.Element, raw: str) -> None:
+    def _process_schedule(self, element: ET.Element, raw: str,
+                          schedule_simtime_seconds: float | None = None) -> None:
         service = self._service(element)
         if not service:
             return
@@ -443,6 +446,9 @@ class STSLiveCollector:
             service.original_schedule = points
         service.current_schedule = points
         service.raw_schedules.append(raw)
+        if schedule_simtime_seconds is None and self.simtime is not None:
+            schedule_simtime_seconds = self._sim_day * 86400 + self.simtime / 1000
+        self._observe_remaining_schedule(service, schedule_simtime_seconds)
 
     def _record_track_changes(self, service: TrainService, points: list[SchedulePoint]) -> None:
         previous = {(p.planned_name, p.planned_arrival, p.planned_departure): p for p in service.current_schedule}
@@ -494,10 +500,17 @@ class STSLiveCollector:
 
     def _remaining_original_indices(self, service: TrainService) -> tuple[int, ...]:
         """Ordnet den Restfahrplan wie die Tabellenansicht reihenfolgestabil zu."""
+        solutions = self._remaining_original_index_solutions(service)
+        return max(solutions, key=lambda value: value[0] if value else -1) if solutions else ()
+
+    def _remaining_original_index_solutions(
+        self, service: TrainService,
+    ) -> tuple[tuple[int, ...], ...]:
+        """Liefert alle reihenfolgestabilen Abbildungen des Restfahrplans."""
         original = tuple(map(self._schedule_identity, service.original_schedule))
         current = tuple(map(self._schedule_identity, service.current_schedule))
         if not current:
-            return ()
+            return ((),)
         solutions: list[tuple[int, ...]] = []
 
         def match(current_index: int, start: int, chosen: tuple[int, ...]) -> None:
@@ -509,7 +522,67 @@ class STSLiveCollector:
                     match(current_index + 1, index + 1, (*chosen, index))
 
         match(0, 0, ())
-        return max(solutions, key=lambda value: value[0]) if solutions else ()
+        return tuple(solutions)
+
+    def _observe_remaining_schedule(
+        self, service: TrainService, observed_simtime_seconds: float | None,
+    ) -> None:
+        """Erfasst nur live beobachtete vorhanden→fehlend-Uebergaenge."""
+        solutions = self._remaining_original_index_solutions(service)
+        unique_solutions = tuple(dict.fromkeys(solutions))
+        if len(unique_solutions) != 1:
+            LOGGER.debug(
+                "observed_departure zid=%s train_name=%r "
+                "reason=departure_remaining_mapping_unsafe mappings=%s",
+                service.zid, service.name, unique_solutions,
+            )
+            return
+        current = unique_solutions[0]
+        previous = self.previous_remaining_original_indices.get(service.zid)
+        if previous is None:
+            self.previous_remaining_original_indices[service.zid] = current
+            return
+        if observed_simtime_seconds is None:
+            return
+        current_set = set(current)
+        disappeared = tuple(index for index in previous if index not in current_set)
+        if len(disappeared) > 1:
+            LOGGER.debug(
+                "observed_departure zid=%s train_name=%r "
+                "reason=departure_multiple_rows_disappeared previous_remaining=%s "
+                "current_remaining=%s disappeared=%s first_missing_simtime_seconds=%r",
+                service.zid, service.name, previous, current, disappeared,
+                observed_simtime_seconds,
+            )
+        minute = self._event_minute(observed_simtime_seconds)
+        state = self.observed_train_times.setdefault(service.zid, ObservedTrainTimes())
+        for index in disappeared:
+            point = service.original_schedule[index]
+            pending = self.pending_observed_departures.get(service.zid)
+            had_matching_pending = bool(
+                pending is not None and pending.original_schedule_index == index)
+            row = state.rows.setdefault(index, ObservedScheduleRowTime())
+            if self._is_d_point(point):
+                reason = "d_point"
+            elif row.actual_departure_minute is not None:
+                reason = "departure_missing_already_recorded"
+            else:
+                row.actual_departure_minute = minute
+                reason = ("departure_fallback_pending_first_missing" if had_matching_pending
+                          else "departure_fallback_first_missing")
+                if had_matching_pending:
+                    self.pending_observed_departures.pop(service.zid, None)
+                    self.confirmed_observed_departures[service.zid] = pending
+            LOGGER.debug(
+                "observed_departure zid=%s train_name=%r reason=%s source=first_missing "
+                "original_schedule_index=%s planned_name=%r previous_remaining=%s "
+                "current_remaining=%s first_missing_simtime_seconds=%r stored_minute=%r "
+                "pending_departure=%s",
+                service.zid, service.name, reason, index, point.planned_name,
+                previous, current, observed_simtime_seconds,
+                row.actual_departure_minute, had_matching_pending,
+            )
+        self.previous_remaining_original_indices[service.zid] = current
 
     @staticmethod
     def _is_d_point(point: SchedulePoint) -> bool:
@@ -738,6 +811,7 @@ class STSLiveCollector:
             self.observed_train_times.clear()
             self.pending_observed_departures.clear()
             self.confirmed_observed_departures.clear()
+            self.previous_remaining_original_indices.clear()
             self.messages.append(
                 f"Stellwerkwechsel erkannt: AID {old_aid} → {aid}. Alter Zustand archiviert: {archive}"
             )

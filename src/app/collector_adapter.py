@@ -106,11 +106,14 @@ class CollectorAdapter:
                 self._display_clock.synchronize(*sync)
                 self._last_display_sync = sync
             return commands
-        event_simtime_seconds = None
-        if element.tag == "ereignis":
-            event_simtime_seconds, _running = self._display_clock.value(self._client.connected)
+        observed_simtime_seconds = None
+        if element.tag in {"ereignis", "zugfahrplan"}:
+            observed_simtime_seconds, _running = self._display_clock.value(self._client.connected)
         return self.collector.process(
-            element, raw, event_simtime_seconds=event_simtime_seconds)
+            element, raw,
+            event_simtime_seconds=(observed_simtime_seconds if element.tag == "ereignis" else None),
+            schedule_simtime_seconds=(observed_simtime_seconds if element.tag == "zugfahrplan" else None),
+        )
 
     def _send(self, command: str) -> None:
         try:

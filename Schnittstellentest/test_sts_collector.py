@@ -259,7 +259,7 @@ class CollectorTests(unittest.TestCase):
         collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="true" />'))
         collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="D" amgleis="false" />'))
         rows = collector.observed_train_times[7].rows
-        self.assertEqual(set(rows), {1, 3})
+        self.assertEqual(set(rows), {0, 1, 2, 3})
         self.assertEqual(rows[1].actual_arrival_minute, 611)
         self.assertEqual(rows[3].actual_arrival_minute, 631)
 
@@ -399,6 +399,99 @@ class CollectorTests(unittest.TestCase):
                               event_simtime_seconds=360)
         self.assertNotIn(7, collector.observed_train_times)
         self.assertIn("reason=departure_false_without_pending", "\n".join(logs.output))
+
+    def test_schedule_first_missing_sets_fallback_departure_without_backfill(self):
+        collector = STSLiveCollector()
+        full = ('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                '<gleis name="B" plan="B" /><gleis name="C" plan="C" /></zugfahrplan>')
+        collector.process(xml(full), schedule_simtime_seconds=600 * 60)
+        self.assertEqual(collector.observed_train_times.get(7), None)
+        collector.process(
+            xml('<zugfahrplan zid="7"><gleis name="B" plan="B" />'
+                '<gleis name="C" plan="C" /></zugfahrplan>'),
+            schedule_simtime_seconds=601 * 60,
+        )
+        self.assertEqual(
+            collector.observed_train_times[7].rows[0].actual_departure_minute, 601)
+
+        startup = STSLiveCollector()
+        startup.process(xml(full), schedule_simtime_seconds=600 * 60)
+        startup.previous_remaining_original_indices.clear()
+        startup.process(
+            xml('<zugfahrplan zid="7"><gleis name="B" plan="B" />'
+                '<gleis name="C" plan="C" /></zugfahrplan>'),
+            schedule_simtime_seconds=601 * 60,
+        )
+        self.assertEqual(startup.observed_train_times.get(7), None)
+
+    def test_confirmed_event_departure_has_priority_over_first_missing(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=599 * 60)
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="A" amgleis="true" />'),
+                          event_simtime_seconds=600 * 60)
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="false" />'),
+                          event_simtime_seconds=600 * 60)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=601 * 60)
+        self.assertEqual(
+            collector.observed_train_times[7].rows[0].actual_departure_minute, 600)
+
+    def test_first_missing_confirms_pending_and_later_false_cannot_overwrite(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=609 * 60)
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="A" amgleis="true" />'),
+                          event_simtime_seconds=610 * 60)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=610 * 60 + 8)
+        self.assertNotIn(7, collector.pending_observed_departures)
+        row = collector.observed_train_times[7].rows[0]
+        self.assertEqual(row.actual_departure_minute, 610)
+        collector.process(xml('<ereignis art="abfahrt" zid="7" plangleis="B" amgleis="false" />'),
+                          event_simtime_seconds=610 * 60 + 72)
+        self.assertEqual(row.actual_departure_minute, 610)
+        self.assertNotIn(1, collector.observed_train_times[7].rows)
+
+    def test_first_missing_uses_original_indices_for_repeated_points(self):
+        collector = STSLiveCollector()
+        collector.process(xml(
+            '<zugfahrplan zid="7"><gleis name="A" plan="A" an="10:00" />'
+            '<gleis name="B" plan="B" an="10:10" /><gleis name="C" plan="C" an="10:20" />'
+            '<gleis name="B" plan="B" an="10:30" /><gleis name="D" plan="D" an="10:40" />'
+            '</zugfahrplan>'), schedule_simtime_seconds=600 * 60)
+        collector.process(xml(
+            '<zugfahrplan zid="7"><gleis name="C" plan="C" an="10:20" />'
+            '<gleis name="B" plan="B" an="10:30" /><gleis name="D" plan="D" an="10:40" />'
+            '</zugfahrplan>'), schedule_simtime_seconds=601 * 60)
+        rows = collector.observed_train_times[7].rows
+        self.assertEqual(set(rows), {0, 1})
+        self.assertEqual(rows[1].actual_departure_minute, 601)
+        self.assertNotIn(3, rows)
+
+    def test_first_missing_skips_d_points_and_unsafe_mappings(self):
+        collector = STSLiveCollector()
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="X" plan="X" flags="D" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=600 * 60)
+        collector.process(xml('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=601 * 60)
+        rows = collector.observed_train_times[7].rows
+        self.assertEqual(rows[0].actual_departure_minute, 601)
+        self.assertIsNone(rows[1].actual_departure_minute)
+
+        ambiguous = STSLiveCollector()
+        ambiguous.process(xml('<zugfahrplan zid="8"><gleis name="B" plan="B" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=600 * 60)
+        previous = ambiguous.previous_remaining_original_indices[8]
+        ambiguous.process(xml('<zugfahrplan zid="8"><gleis name="B" plan="B" /></zugfahrplan>'),
+                          schedule_simtime_seconds=601 * 60)
+        self.assertNotIn(8, ambiguous.observed_train_times)
+        self.assertEqual(ambiguous.previous_remaining_original_indices[8], previous)
 
     def test_missing_amgleis_is_ignored_and_xml_boole_are_not_string_truthy(self):
         collector = STSLiveCollector()

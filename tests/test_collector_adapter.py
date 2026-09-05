@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -48,6 +49,7 @@ class CollectorStartupTests(unittest.TestCase):
             adapter = CollectorAdapter(Path(directory) / "missing.json", offline=False)
             adapter._display_clock = SimTimeInterpolator(
                 lambda: now[0], max_extrapolation=30)
+            adapter._client = SimpleNamespace(connected=True)
             simtime = (6 * 3600 + 5 * 60 + 40) * 1000
             adapter._process_protocol_element(
                 ET.fromstring(f'<simzeit zeit="{simtime}" />'), "")
@@ -62,6 +64,27 @@ class CollectorStartupTests(unittest.TestCase):
             self.assertEqual(
                 adapter.collector.observed_train_times[7].rows[0].actual_arrival_minute,
                 366,
+            )
+
+    def test_schedule_disappearance_uses_interpolated_receipt_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            now = [100.0]
+            adapter = CollectorAdapter(Path(directory) / "missing.json", offline=False)
+            adapter._display_clock = SimTimeInterpolator(
+                lambda: now[0], max_extrapolation=60)
+            adapter._client = SimpleNamespace(connected=True)
+            simtime = (10 * 3600 + 10) * 1000
+            adapter._process_protocol_element(
+                ET.fromstring(f'<simzeit zeit="{simtime}" />'), "")
+            adapter._process_protocol_element(
+                ET.fromstring('<zugfahrplan zid="7"><gleis name="A" plan="A" />'
+                              '<gleis name="B" plan="B" /></zugfahrplan>'), "")
+            now[0] += 35
+            adapter._process_protocol_element(
+                ET.fromstring('<zugfahrplan zid="7"><gleis name="B" plan="B" /></zugfahrplan>'), "")
+            self.assertEqual(
+                adapter.collector.observed_train_times[7].rows[0].actual_departure_minute,
+                601,
             )
 
 
