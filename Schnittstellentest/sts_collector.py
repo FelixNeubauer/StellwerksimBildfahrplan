@@ -497,6 +497,20 @@ class STSLiveCollector:
 
     def _observe_schedule_time(self, service: TrainService, event: TrainEvent) -> None:
         """Matcht echte Ankunft/Abfahrt konservativ nur per exaktem ``plangleis``."""
+        # Nur das Ereignis selbst zusammen mit dem von STS explizit gesetzten
+        # Zustand ist Evidenz. Insbesondere darf ein vorausgemeldetes Event mit
+        # amgleis=false keinerlei Matching- oder Sequenzzustand anlegen.
+        if event.at_track is not True:
+            reason = "missing_amgleis" if event.at_track is None else "ignored_not_at_track"
+            LOGGER.debug(
+                "observed_train_time zid=%s train_name=%r event_type=%s gleis=%r plangleis=%r "
+                "amgleis=%r event_simtime=%r candidate_original_indices=[] "
+                "selected_original_index=None selected_planned_name=None action=ignored reason=%s changed=False",
+                service.zid, service.name, event.art, event.track, event.planned_track,
+                event.at_track, event.simtime, reason,
+            )
+            return
+
         state = self.observed_train_times.setdefault(service.zid, ObservedTrainTimes())
         planned = event.planned_track
         candidates = ([index for index, point in enumerate(service.original_schedule)
@@ -565,11 +579,12 @@ class STSLiveCollector:
         selected_name = (service.original_schedule[selected].planned_name
                          if selected is not None else None)
         LOGGER.debug(
-            "observed_train_time zid=%s train_name=%r event_type=%s gleis=%r plangleis=%r "
+            "observed_train_time zid=%s train_name=%r event_type=%s gleis=%r plangleis=%r amgleis=%r "
             "event_simtime=%r candidate_original_indices=%s selected_original_index=%r "
-            "selected_planned_name=%r reason=%s changed=%s",
-            service.zid, service.name, event.art, event.track, planned, event.simtime,
-            candidates, selected, selected_name, reason, changed,
+            "selected_planned_name=%r action=%s reason=%s changed=%s",
+            service.zid, service.name, event.art, event.track, planned, event.at_track,
+            event.simtime, candidates, selected, selected_name,
+            "stored" if changed else "ignored", reason, changed,
         )
 
     def _process_departure(self, service: TrainService, event: TrainEvent) -> None:
