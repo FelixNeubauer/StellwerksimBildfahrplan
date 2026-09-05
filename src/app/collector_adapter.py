@@ -122,6 +122,11 @@ class CollectorAdapter:
             return
         time.sleep(0.05)
 
+    def set_operating_point_assignments(self, assignments: dict[str, str]) -> None:
+        """Uebergibt die zentrale logische Ortszuordnung thread-sicher an den Collector."""
+        with self._lock:
+            self.collector.operating_point_assignments = dict(assignments)
+
     def _poll_simtime(self) -> None:
         while not self._stop.wait(5):
             self._send('<simzeit sender="bildfahrplan" />')

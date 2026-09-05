@@ -116,6 +116,7 @@ class PendingObservedDeparture:
 
     zid: int
     original_schedule_index: int
+    matched_original_index: int
     planned_name: str
     true_track: str | None
     true_event_simtime_seconds: float | None
@@ -238,6 +239,7 @@ class STSLiveCollector:
         self.pending_observed_departures: dict[int, PendingObservedDeparture] = {}
         self.confirmed_observed_departures: dict[int, PendingObservedDeparture] = {}
         self.previous_remaining_original_indices: dict[int, tuple[int, ...]] = {}
+        self.operating_point_assignments: dict[str, str] = {}
         self.messages: list[str] = []
         if self.storage_path and self.storage_path.exists():
             self.load()
@@ -556,15 +558,33 @@ class STSLiveCollector:
             )
         minute = self._event_minute(observed_simtime_seconds)
         state = self.observed_train_times.setdefault(service.zid, ObservedTrainTimes())
+        handled_groups: set[tuple[int, int]] = set()
         for index in disappeared:
-            point = service.original_schedule[index]
+            group_start, group_end, _arrival_target, departure_target, operating_point = (
+                self._contiguous_operating_point_group(service, index))
+            group = (group_start, group_end)
+            if group in handled_groups:
+                continue
+            handled_groups.add(group)
+            group_indices = set(range(group_start, group_end + 1))
+            if group_indices & current_set:
+                LOGGER.debug(
+                    "observed_departure zid=%s train_name=%r "
+                    "reason=departure_group_still_remaining operating_point=%r "
+                    "contiguous_group_start=%s contiguous_group_end=%s previous_remaining=%s "
+                    "current_remaining=%s first_missing_simtime_seconds=%r",
+                    service.zid, service.name, operating_point, group_start, group_end,
+                    previous, current, observed_simtime_seconds,
+                )
+                continue
+            if departure_target is None:
+                continue
+            point = service.original_schedule[departure_target]
             pending = self.pending_observed_departures.get(service.zid)
             had_matching_pending = bool(
-                pending is not None and pending.original_schedule_index == index)
-            row = state.rows.setdefault(index, ObservedScheduleRowTime())
-            if self._is_d_point(point):
-                reason = "d_point"
-            elif row.actual_departure_minute is not None:
+                pending is not None and pending.original_schedule_index == departure_target)
+            row = state.rows.setdefault(departure_target, ObservedScheduleRowTime())
+            if row.actual_departure_minute is not None:
                 reason = "departure_missing_already_recorded"
             else:
                 row.actual_departure_minute = minute
@@ -575,11 +595,12 @@ class STSLiveCollector:
                     self.confirmed_observed_departures[service.zid] = pending
             LOGGER.debug(
                 "observed_departure zid=%s train_name=%r reason=%s source=first_missing "
-                "original_schedule_index=%s planned_name=%r previous_remaining=%s "
+                "original_schedule_index=%s planned_name=%r operating_point=%r "
+                "contiguous_group_start=%s contiguous_group_end=%s previous_remaining=%s "
                 "current_remaining=%s first_missing_simtime_seconds=%r stored_minute=%r "
                 "pending_departure=%s",
-                service.zid, service.name, reason, index, point.planned_name,
-                previous, current, observed_simtime_seconds,
+                service.zid, service.name, reason, departure_target, point.planned_name,
+                operating_point, group_start, group_end, previous, current, observed_simtime_seconds,
                 row.actual_departure_minute, had_matching_pending,
             )
         self.previous_remaining_original_indices[service.zid] = current
@@ -587,6 +608,24 @@ class STSLiveCollector:
     @staticmethod
     def _is_d_point(point: SchedulePoint) -> bool:
         return "D" in _FLAG_TOKEN.findall(point.flags_raw or "")
+
+    def _operating_point_key(self, point: SchedulePoint, index: int) -> object:
+        mapped = point.operating_point or self.operating_point_assignments.get(point.planned_name)
+        return mapped if mapped is not None else ("unassigned_schedule_row", index)
+
+    def _contiguous_operating_point_group(
+        self, service: TrainService, index: int,
+    ) -> tuple[int, int, int | None, int | None, object]:
+        schedule = service.original_schedule
+        key = self._operating_point_key(schedule[index], index)
+        start = index
+        while start > 0 and self._operating_point_key(schedule[start - 1], start - 1) == key:
+            start -= 1
+        end = index
+        while end + 1 < len(schedule) and self._operating_point_key(schedule[end + 1], end + 1) == key:
+            end += 1
+        suitable = tuple(i for i in range(start, end + 1) if not self._is_d_point(schedule[i]))
+        return start, end, (suitable[0] if suitable else None), (suitable[-1] if suitable else None), key
 
     @staticmethod
     def _event_minute(event_simtime_seconds: float | None) -> int | None:
@@ -666,14 +705,24 @@ class STSLiveCollector:
                     reason = "ambiguous"
 
         changed = False
+        group_start = group_end = arrival_target = departure_target = None
+        operating_point = None
+        if selected is not None:
+            group_start, group_end, arrival_target, departure_target, operating_point = (
+                self._contiguous_operating_point_group(service, selected))
         if selected is not None and reason != "duplicate" and event.art == "abfahrt":
+            if departure_target is None:
+                departure_target = selected
             if pending is not None:
-                reason = "departure_true_conflict"
+                reason = ("departure_true_duplicate"
+                          if pending.original_schedule_index == departure_target
+                          else "departure_true_conflict")
                 self._log_departure_transition(service, event, pending, reason, None)
             else:
                 pending = PendingObservedDeparture(
                     zid=service.zid,
-                    original_schedule_index=selected,
+                    original_schedule_index=departure_target,
+                    matched_original_index=selected,
                     planned_name=service.original_schedule[selected].planned_name,
                     true_track=event.track,
                     true_event_simtime_seconds=event.event_simtime_seconds,
@@ -691,7 +740,9 @@ class STSLiveCollector:
                 reason = "departure_pending_created"
                 self._log_departure_transition(service, event, pending, reason, None)
         elif selected is not None and reason != "duplicate":
-            row = state.rows.setdefault(selected, ObservedScheduleRowTime())
+            if arrival_target is None:
+                arrival_target = selected
+            row = state.rows.setdefault(arrival_target, ObservedScheduleRowTime())
             attribute = "actual_arrival_minute"
             if getattr(row, attribute) is None:
                 minute = self._event_minute(event.event_simtime_seconds)
@@ -705,6 +756,8 @@ class STSLiveCollector:
                     state.last_event_type = event.art
                     state.last_event_planned_track = planned
                     state.last_event_original_index = selected
+                    if arrival_target != selected:
+                        reason = "arrival_normalized_to_group_start"
             else:
                 reason = "duplicate"
 
@@ -713,11 +766,14 @@ class STSLiveCollector:
         LOGGER.debug(
             "observed_train_time zid=%s train_name=%r event_type=%s gleis=%r plangleis=%r amgleis=%r "
             "server_simtime_ms=%r event_simtime_seconds=%r stored_minute=%r "
-            "candidate_original_indices=%s selected_original_index=%r selected_planned_name=%r "
+            "candidate_original_indices=%s matched_original_index=%r selected_planned_name=%r "
+            "operating_point=%r contiguous_group_start=%r contiguous_group_end=%r "
+            "normalized_arrival_target_index=%r normalized_departure_target_index=%r "
             "action=%s reason=%s changed=%s",
             service.zid, service.name, event.art, event.track, planned, event.at_track,
             event.simtime, event.event_simtime_seconds,
             self._event_minute(event.event_simtime_seconds), candidates, selected, selected_name,
+            operating_point, group_start, group_end, arrival_target, departure_target,
             "stored" if changed else "ignored", reason, changed,
         )
 
@@ -755,6 +811,7 @@ class STSLiveCollector:
         LOGGER.debug(
             "observed_departure zid=%s train_name=%r reason=%s "
             "true_original_schedule_index=%r true_plangleis=%r true_gleis=%r "
+            "matched_original_index=%r "
             "true_event_simtime_seconds=%r event_gleis=%r event_plangleis=%r event_amgleis=%r "
             "event_simtime_seconds=%r false_gleis=%r false_plangleis=%r "
             "false_event_simtime_seconds=%r stored_minute=%r",
@@ -762,6 +819,7 @@ class STSLiveCollector:
             pending.original_schedule_index if pending else None,
             pending.planned_name if pending else None,
             pending.true_track if pending else None,
+            pending.matched_original_index if pending else None,
             pending.true_event_simtime_seconds if pending else None,
             event.track, event.planned_track, event.at_track, event.event_simtime_seconds,
             event.track if event.at_track is False else None,

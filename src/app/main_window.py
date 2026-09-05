@@ -59,6 +59,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.diagram.refresh(snapshot)
         self.operating_points.refresh(snapshot)
+        self.adapter.set_operating_point_assignments(self.operating_points.model.assignments)
         self._update_infrastructure_gate()
         self.infrastructure.refresh(snapshot)
 
