@@ -7,7 +7,6 @@ from bildfahrplan.profile import RouteProfile
 from bildfahrplan.timeline import (
     BoundaryEndpoint, RouteInstanceProjection, RouteInstanceProjectionPoint,
     build_colored_minute_event_labels, build_route_instance_train_segments, format_axis_time,
-    grouped_minute_label_indices,
 )
 from bildfahrplan.train_colors import (
     TrainSegmentExtent, VisibleTrainGeometry, assign_colorful_train_colors,
@@ -108,7 +107,6 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._latest_services = {}
         self._known_services = {}
         self._observed_train_times = {}
-        self._operating_point_assignments = {}
         self.open_train_windows = {}
         controls = QtWidgets.QHBoxLayout()
         controls.addWidget(QtWidgets.QLabel(f"Streckenprofil: {profile.name}"))
@@ -165,7 +163,6 @@ class BildfahrplanTab(QtWidgets.QWidget):
         self._latest_services = {service.zid: service for service in snapshot.services}
         self._known_services.update(self._latest_services)
         self._observed_train_times = snapshot.observed_train_times
-        self._operating_point_assignments = snapshot.operating_point_assignments
         self._refresh_train_windows()
         # Die 1-Hz-Uhr aktualisiert primaer nur Zeitlinie und Statusanzeige.
         reference = snapshot.display_simtime
@@ -209,10 +206,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
             for route in x_layout.routes
         )
         settings = self._settings_provider()
-        operating_point_assignment_signature = tuple(sorted(
-            self._operating_point_assignments.items()))
         trace_signature = (configuration_signature, layout_signature,
-                           operating_point_assignment_signature,
                            settings.train_color_mode, settings.single_train_color,
                            tuple(sorted(settings.category_train_colors.items())),
                            tuple(sorted(settings.train_type_colors.items())),
@@ -381,11 +375,8 @@ class BildfahrplanTab(QtWidgets.QWidget):
             seen_zids.add(service.zid)
             color = settings.train_color(
                 rendered, service.name, self._colorful_train_colors.get(service.zid))
-            minute_label_indices = grouped_minute_label_indices(
-                service.original_schedule, self._operating_point_assignments)
             service_signature = (
-                self._x_source_signature, operating_point_assignment_signature,
-                color, service.current_delay,
+                self._x_source_signature, color, service.current_delay,
                 getattr(service, "origin", None), getattr(service, "destination", None),
                 tuple((p.planned_name, p.planned_arrival, p.planned_departure)
                       for p in service.original_schedule),
@@ -415,8 +406,7 @@ class BildfahrplanTab(QtWidgets.QWidget):
                 point = segment.projected[len(segment.projected) // 2]
                 label_specs.append(((segment.zid, segment.instance_id, "train"), segment.label,
                                     point.position, point.time_seconds, color, "train", 100))
-                for colored_minute in build_colored_minute_event_labels(
-                        segment.projected, color, minute_label_indices):
+                for colored_minute in build_colored_minute_event_labels(segment.projected, color):
                     minute = colored_minute.event
                     label_specs.append((
                         (segment.zid, segment.instance_id, "minute", minute.index, minute.kind),
